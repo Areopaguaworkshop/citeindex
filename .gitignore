@@ -10,5 +10,4 @@ tests/**/*
 # venv
 .venv
 ## OTher files
-./GEMINI.md
 instruction/**/*
