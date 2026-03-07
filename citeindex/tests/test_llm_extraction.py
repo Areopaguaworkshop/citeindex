@@ -1,6 +1,6 @@
 import pytest
-from citation.main import CitationExtractor
-from citation.utils import to_csl_json
+from citeindex.main import CitationExtractor
+from citeindex.utils import to_csl_json
 
 @pytest.mark.parametrize("url, expected_author, expected_date", [
     (

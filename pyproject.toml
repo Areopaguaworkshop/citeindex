@@ -27,7 +27,7 @@ requires-python = ">= 3.12"
 license = "MIT"
 
 [project.scripts]
-citation = "citation.cli:main"
+citeindex = "citeindex.cli:main"
 
 [build-system]
 requires = ["hatchling==1.26.3", "hatch-vcs"]
@@ -38,4 +38,4 @@ managed = true
 dev-dependencies = ["pytest>=7.0.0", "pytest-cov>=2.12.1"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["citation"]
+packages = ["citeindex"]

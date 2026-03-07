@@ -1,5 +1,5 @@
 import pytest
-from citation.citation_style import format_bibliography
+from citeindex.citation_style import format_bibliography
 
 def test_format_bibliography_chicago():
     """Test bibliography formatting with Chicago style."""

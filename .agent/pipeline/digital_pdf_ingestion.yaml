@@ -1,0 +1,284 @@
+pipeline:
+  name: citeindex_digital_pdf_ingestion
+  version: 0.1
+  description: >
+    Deterministic ingestion pipeline for born-digital academic PDFs.
+    Extracts structured text, detects multi-column layouts and footnotes,
+    and generates a Merkle-tree index for deterministic retrieval.
+
+  goals:
+    - avoid OCR when text layer exists
+    - preserve academic layout structure
+    - support multi-column journal formats
+    - detect and isolate footnotes
+    - deterministic reading order
+    - compatible with scanned ingestion pipeline
+
+  inputs:
+    pdf:
+      type: digital_pdf
+      required: true
+      description: born-digital academic PDF
+
+  outputs:
+    document_json:
+      description: structured document representation
+      format: json
+
+    merkle_index:
+      description: Merkle tree used for deterministic retrieval
+      format: json
+
+    citations:
+      description: extracted references in CSL JSON
+      format: csl_json
+
+---
+
+stages:
+
+  - stage: pdf_validation
+    purpose: >
+      Determine whether the PDF contains a text layer.
+      If not, redirect to scanned ingestion pipeline.
+
+    input:
+      pdf
+
+    output:
+      pdf_type:
+        values:
+          - digital
+          - scanned
+
+---
+
+  - stage: text_layer_extraction
+    tool: pdfminer
+    purpose: >
+      Extract text blocks with positional coordinates.
+
+    input:
+      pdf
+
+    output:
+      text_blocks:
+        schema:
+          page
+          block_id
+          text
+          bbox
+          font_size
+          font_name
+
+---
+
+  - stage: layout_analysis
+    tool: layoutparser
+    purpose: >
+      Identify layout structures such as columns, paragraphs,
+      tables, figures, and footnote regions.
+
+    input:
+      text_blocks
+
+    output:
+      layout_blocks:
+        schema:
+          page
+          block_id
+          block_type
+          column_id
+          bbox
+          probable_footnote
+
+    options:
+      detect_columns: true
+      detect_tables: true
+      detect_figures: true
+      detect_footnotes: true
+
+---
+
+  - stage: column_detection
+    purpose: >
+      Detect column boundaries using x-coordinate clustering.
+
+    algorithm:
+      steps:
+        - group_blocks_by_page
+        - cluster_blocks_by_x_coordinate
+        - determine_column_count
+        - assign_column_id
+
+    input:
+      layout_blocks
+
+    output:
+      column_blocks
+
+---
+
+  - stage: footnote_detection
+    purpose: >
+      Identify footnotes based on position and font size.
+
+    rules:
+      - located near bottom of page
+      - smaller font size than body text
+      - often begins with numeric marker
+
+    input:
+      column_blocks
+
+    output:
+      body_blocks
+      footnote_blocks
+
+---
+
+  - stage: reading_order_resolution
+    purpose: >
+      Construct deterministic reading order across columns.
+
+    algorithm:
+      steps:
+        - sort_columns_left_to_right
+        - sort_blocks_top_to_bottom
+        - append_footnotes_after_body
+
+    input:
+      body_blocks
+      footnote_blocks
+
+    output:
+      ordered_blocks
+
+---
+
+  - stage: document_structure_builder
+    purpose: >
+      Build hierarchical document structure.
+
+    input:
+      ordered_blocks
+
+    output:
+      document_structure
+
+    schema:
+      document:
+        pages:
+          - page_number
+            columns:
+              - column_id
+                paragraphs:
+                  - paragraph_id
+                    lines
+            footnotes:
+              - footnote_id
+                text
+
+---
+
+  - stage: citation_extraction
+    tool: grobid
+    purpose: >
+      Extract bibliographic references and inline citation markers.
+
+    input:
+      document_structure
+
+    output:
+      citations:
+        format: csl_json
+
+      citation_markers:
+        schema:
+          citation_id
+          page
+          column
+          paragraph
+          context
+
+---
+
+  - stage: merkle_tree_generation
+    purpose: >
+      Build deterministic Merkle-tree structure for document verification.
+
+    hash_algorithm: sha256
+
+    input:
+      document_structure
+
+    algorithm:
+      leaf_nodes:
+        - line
+        - footnote
+
+      aggregation:
+        paragraph = hash(lines)
+        column = hash(paragraphs)
+        page = hash(columns + footnotes)
+        document = hash(pages)
+
+    output:
+      merkle_tree
+
+---
+
+  - stage: retrieval_index_generation
+    purpose: >
+      Create deterministic retrieval index based on Merkle nodes.
+
+    input:
+      merkle_tree
+      document_structure
+      citations
+
+    output:
+      retrieval_index:
+        schema:
+          hash
+          page
+          column
+          paragraph
+          text_reference
+
+---
+
+storage:
+
+  file_structure:
+    root:
+      /documents/{doc_id}/
+      /documents/{doc_id}/source.pdf
+      /documents/{doc_id}/text_blocks.json
+      /documents/{doc_id}/layout.json
+      /documents/{doc_id}/structure.json
+      /documents/{doc_id}/citations.json
+      /documents/{doc_id}/merkle.json
+      /documents/{doc_id}/index.json
+
+---
+
+determinism:
+
+  guarantees:
+    - fixed parsing configuration
+    - deterministic reading order
+    - stable hash algorithm
+    - identical structure across identical inputs
+
+---
+
+cli_interface:
+
+  command: citeindex ingest-digital
+  arguments:
+    - input_pdf
+    - output_directory
+
+  example: |
+    citeindex ingest-digital article.pdf --out ./index/

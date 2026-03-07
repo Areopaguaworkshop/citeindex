@@ -1,0 +1,209 @@
+import logging
+import os
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+from ..deterministic import build_merkle_tree, canonicalize_text, hash_payload
+from ..models import IngestionConfig
+
+logger = logging.getLogger(__name__)
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def slugify(value: str) -> str:
+    value = value.strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    return value.strip("_") or "source"
+
+
+def make_source_id(input_ref: str) -> str:
+    base = os.path.basename(input_ref) or input_ref
+    base = os.path.splitext(base)[0]
+    return slugify(base)
+
+
+def split_paragraphs(text: str) -> List[str]:
+    chunks = [canonicalize_text(p) for p in re.split(r"\n\s*\n", text)]
+    return [p for p in chunks if p]
+
+
+def build_nodes(source_id: str, page_paragraphs: List[Tuple[int, List[str]]]) -> List[Dict[str, Any]]:
+    nodes: List[Dict[str, Any]] = []
+    for page_number, paragraphs in page_paragraphs:
+        for idx, paragraph in enumerate(paragraphs, start=1):
+            text = canonicalize_text(paragraph)
+            if not text:
+                continue
+            text_hash = hash_payload(text)
+            section_slug = f"p{page_number}"
+            unit_slug = f"para{idx}"
+            node_id = f"{source_id}:{section_slug}:{unit_slug}:{text_hash[:8]}"
+            nodes.append(
+                {
+                    "node_id": node_id,
+                    "source_id": source_id,
+                    "section_path": section_slug,
+                    "text": text,
+                    "sha256": text_hash,
+                    "page": page_number,
+                    "paragraph": idx,
+                }
+            )
+    nodes.sort(key=lambda n: n["node_id"])
+    return nodes
+
+
+def build_document_structure(page_paragraphs: List[Tuple[int, List[str]]]) -> Dict[str, Any]:
+    return {
+        "pages": [
+            {
+                "page_number": page_number,
+                "paragraphs": [
+                    {"paragraph_id": f"p{page_number}_{i+1}", "text": p}
+                    for i, p in enumerate(paragraphs)
+                ],
+            }
+            for page_number, paragraphs in page_paragraphs
+        ]
+    }
+
+
+def build_layout_document_structure(page_layouts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build document structure from layout analysis results (pages → columns → paragraphs)."""
+    return {
+        "pages": [
+            {
+                "page_number": pl["page_number"],
+                "columns": pl.get("columns", []),
+                "footnotes": pl.get("footnotes", []),
+            }
+            for pl in page_layouts
+        ]
+    }
+
+
+def build_retrieval_index(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "entries": [
+            {
+                "hash": n["sha256"],
+                "page": n.get("page"),
+                "paragraph": n.get("paragraph"),
+                "text_reference": n["node_id"],
+            }
+            for n in nodes
+        ]
+    }
+
+
+def build_merkle_for_nodes(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    leaf_hashes = [n["sha256"] for n in nodes]
+    return build_merkle_tree(leaf_hashes)
+
+
+def make_basic_csl(source_id: str, title: str, csl_type: str, extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    csl: Dict[str, Any] = {
+        "id": source_id,
+        "type": csl_type,
+        "title": title,
+    }
+    if extra:
+        csl.update(extra)
+    return csl
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: LLM-based citation extraction (merged from legacy CitationExtractor)
+# ---------------------------------------------------------------------------
+
+def determine_doc_type(pdf_path: str, num_pages: int) -> str:
+    """Determine document type using legacy type_judge rules."""
+    from ...type_judge import determine_document_type
+    return determine_document_type(pdf_path, num_pages)
+
+
+def extract_citation_with_llm(
+    text: str,
+    doc_type: str,
+    config: Optional[IngestionConfig] = None,
+) -> Dict[str, Any]:
+    """Run LLM-based citation extraction and return rich CSL JSON.
+
+    Merges the legacy CitationLLM path into the ingestion pipeline so that
+    ``citeindex ingest`` produces both structural artifacts AND rich citation
+    metadata in a single pass.
+    """
+    cfg = config or IngestionConfig()
+
+    from ...model import CitationLLM
+    from ...utils import to_csl_json
+
+    llm = CitationLLM(cfg.llm_model)
+
+    # Truncate for LLM context window
+    truncated = text[:8000] if len(text) > 8000 else text
+
+    use_vertical = cfg.text_direction in ("vertical", "auto") and doc_type == "book"
+    if use_vertical:
+        try:
+            from ...vertical_llm import VerticalCitationLLM
+            vertical_llm = VerticalCitationLLM(cfg.llm_model)
+            extracted = vertical_llm.extract_vertical_citation(truncated, doc_type)
+        except Exception:
+            logger.warning("Vertical LLM failed, falling back to standard LLM", exc_info=True)
+            extracted = llm.extract_citation_from_text(truncated, doc_type)
+    else:
+        extracted = llm.extract_citation_from_text(truncated, doc_type)
+
+    if not extracted:
+        logger.warning("LLM citation extraction returned empty result")
+        return {}
+
+    csl = to_csl_json(extracted, doc_type)
+    return csl
+
+
+def enrich_csl_with_llm(
+    base_csl: Dict[str, Any],
+    ordered_text: str,
+    pdf_path: Optional[str],
+    num_pages: int,
+    config: Optional[IngestionConfig] = None,
+) -> Dict[str, Any]:
+    """Enrich a basic CSL JSON dict with LLM-extracted citation metadata.
+
+    This is the primary merge point between the structural ingestion pipeline
+    and the legacy citation extraction capability.  It:
+    1. Determines document type (book/journal/thesis/chapter).
+    2. Runs LLM extraction on the ordered text.
+    3. Merges LLM fields into the base CSL, preferring LLM values when present.
+    """
+    cfg = config or IngestionConfig()
+
+    # Determine document type
+    if cfg.doc_type_override:
+        doc_type = cfg.doc_type_override
+    elif pdf_path:
+        doc_type = determine_doc_type(pdf_path, num_pages)
+    else:
+        doc_type = "book" if num_pages >= 70 else "journal"
+
+    logger.info("Document type determined: %s (pages=%d)", doc_type, num_pages)
+
+    llm_csl = extract_citation_with_llm(ordered_text, doc_type, cfg)
+    if not llm_csl:
+        return base_csl
+
+    # Merge: LLM values win for metadata fields; keep structural fields from base
+    merged = dict(base_csl)
+    for key, value in llm_csl.items():
+        if key in ("id",):
+            continue  # keep deterministic id from base
+        if value is not None:
+            merged[key] = value
+
+    return merged

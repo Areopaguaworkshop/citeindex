@@ -91,13 +91,13 @@ brew install tesseract mediainfo
 
 ```bash
 # Extract from a PDF
-citation "path/to/research-paper.pdf"
+citeindex "path/to/research-paper.pdf"
 
 # Extract from a URL
-citation "https://www.nature.com/articles/s41586-023-06627-7"
+citeindex "https://www.nature.com/articles/s41586-023-06627-7"
 
 # Extract from a document with vertical text
-citation "path/to/vertical-text-document.pdf" --text-direction vertical
+citeindex "path/to/vertical-text-document.pdf" --text-direction vertical
 ```
 
 ## 📖 Usage
@@ -106,29 +106,29 @@ citation "path/to/vertical-text-document.pdf" --text-direction vertical
 
 ```bash
 # Basic usage
-citation "document.pdf"
+citeindex "document.pdf"
 
 # Specify document type
-citation "thesis.pdf" --type thesis
+citeindex "thesis.pdf" --type thesis
 
 # Use different LLM
-citation "paper.pdf" --llm gemini/gemini-1.5-flash
+citeindex "paper.pdf" --llm gemini/gemini-1.5-flash
 
 # Custom output directory
-citation "book.pdf" --output-dir ./citations
+citeindex "book.pdf" --output-dir ./citations
 
 # Specific page range for large documents
-citation "book.pdf" --page-range "1-5, -3"
+citeindex "book.pdf" --page-range "1-5, -3"
 
 # Different citation style
-citation "article.pdf" --citation-style apa
+citeindex "article.pdf" --citation-style apa
 ```
 
 ### Python API
 
 ```python
-from citation.main import CitationExtractor
-from citation.citation_style import format_bibliography
+from citeindex.main import CitationExtractor
+from citeindex.citation_style import format_bibliography
 
 # Initialize with your preferred LLM
 extractor = CitationExtractor(llm_model="ollama/qwen3")
@@ -151,13 +151,13 @@ if csl_data:
 
 ```bash
 # For non-English documents, let the tool auto-detect the language
-citation "chinese-paper.pdf" --lang auto
+citeindex "chinese-paper.pdf" --lang auto
 
 # Or specify manually
-citation "another-paper.pdf" --lang chi_sim+eng
+citeindex "another-paper.pdf" --lang chi_sim+eng
 
 # Verbose output for debugging
-citation "document.pdf" --verbose
+citeindex "document.pdf" --verbose
 ```
 
 ## 🤝 Contributing

@@ -1,7 +1,7 @@
 import os
 import pytest
-from citation import CitationExtractor
-from citation.utils import format_author_csl
+from citeindex import CitationExtractor
+from citeindex.utils import format_author_csl
 
 TEST_PDF_DIR = "examples"
 TEST_URL = "https://www.example.com"
