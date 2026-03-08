@@ -57,13 +57,63 @@ def build_nodes(source_id: str, page_paragraphs: List[Tuple[int, List[str]]]) ->
     return nodes
 
 
+def build_nodes_with_granularity(
+    source_id: str,
+    page_paragraphs: List[Tuple[int, List[str]]],
+    is_primary: bool = False,
+) -> List[Dict[str, Any]]:
+    """Build nodes with granularity based on source classification.
+
+    Primary sources: line-level nodes (each line is a node)
+    Secondary sources (default): paragraph-level nodes
+    """
+    if not is_primary:
+        return build_nodes(source_id, page_paragraphs)
+
+    nodes: List[Dict[str, Any]] = []
+    for page_number, paragraphs in page_paragraphs:
+        for pidx, paragraph in enumerate(paragraphs, start=1):
+            text = canonicalize_text(paragraph)
+            if not text:
+                continue
+            lines = [line for line in text.split("\n") if line.strip()]
+            if not lines:
+                continue
+            section_slug = f"p{page_number}"
+            for lidx, line in enumerate(lines, start=1):
+                line_text = canonicalize_text(line)
+                if not line_text:
+                    continue
+                line_hash = hash_payload(line_text)
+                unit_slug = f"para{pidx}_line{lidx}"
+                node_id = f"{source_id}:{section_slug}:{unit_slug}:{line_hash[:8]}"
+                nodes.append(
+                    {
+                        "node_id": node_id,
+                        "source_id": source_id,
+                        "section_path": section_slug,
+                        "text": line_text,
+                        "sha256": line_hash,
+                        "page": page_number,
+                        "paragraph": pidx,
+                        "line": lidx,
+                    }
+                )
+    nodes.sort(key=lambda n: n["node_id"])
+    return nodes
+
+
 def build_document_structure(page_paragraphs: List[Tuple[int, List[str]]]) -> Dict[str, Any]:
     return {
         "pages": [
             {
                 "page_number": page_number,
                 "paragraphs": [
-                    {"paragraph_id": f"p{page_number}_{i+1}", "text": p}
+                    {
+                        "paragraph_id": f"p{page_number}_{i+1}",
+                        "text": p,
+                        "lines": [line for line in p.split("\n") if line.strip()],
+                    }
                     for i, p in enumerate(paragraphs)
                 ],
             }
@@ -122,8 +172,12 @@ def make_basic_csl(source_id: str, title: str, csl_type: str, extra: Dict[str, A
 
 def determine_doc_type(pdf_path: str, num_pages: int) -> str:
     """Determine document type using legacy type_judge rules."""
-    from ...type_judge import determine_document_type
-    return determine_document_type(pdf_path, num_pages)
+    try:
+        from ...type_judge import determine_document_type
+        return determine_document_type(pdf_path, num_pages)
+    except Exception:
+        logger.warning("type_judge unavailable, falling back to page-count heuristic")
+        return "book" if num_pages >= 70 else "journal"
 
 
 def extract_citation_with_llm(
@@ -136,11 +190,18 @@ def extract_citation_with_llm(
     Merges the legacy CitationLLM path into the ingestion pipeline so that
     ``citeindex ingest`` produces both structural artifacts AND rich citation
     metadata in a single pass.
+
+    Gracefully returns ``{}`` when dspy / LLM dependencies are unavailable so
+    that the structural pipeline always completes.
     """
     cfg = config or IngestionConfig()
 
-    from ...model import CitationLLM
-    from ...utils import to_csl_json
+    try:
+        from ...model import CitationLLM
+        from ...utils import to_csl_json
+    except Exception:
+        logger.warning("LLM dependencies (dspy) not available; skipping citation extraction")
+        return {}
 
     llm = CitationLLM(cfg.llm_model)
 

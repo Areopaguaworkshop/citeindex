@@ -38,6 +38,7 @@ class IngestionConfig:
     citation_style: str = "chicago-author-date"
     doc_type_override: Optional[str] = None
     use_layout_analysis: bool = True
+    is_primary: bool = False
 
 
 @dataclass

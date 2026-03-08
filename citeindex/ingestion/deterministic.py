@@ -55,6 +55,93 @@ def build_merkle_tree(leaf_hashes: List[str]) -> Dict[str, Any]:
     }
 
 
+def build_hierarchical_merkle_tree(
+    document_structure: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a hierarchical Merkle tree from document structure.
+
+    Hierarchy: line → paragraph → column → page → document
+    Per the YAML spec:
+      paragraph = hash(lines)
+      column = hash(paragraphs)
+      page = hash(columns + footnotes)
+      document = hash(pages)
+    """
+    proof_tree: Dict[str, Any] = {"pages": []}
+    page_hashes: List[str] = []
+
+    for page in document_structure.get("pages", []):
+        page_number = page.get("page_number", 0)
+        page_proof: Dict[str, Any] = {"page_number": page_number, "columns": [], "footnotes": []}
+        column_hashes: List[str] = []
+
+        columns = page.get("columns", [])
+        if not columns:
+            # Fall back to paragraphs directly (non-layout structure)
+            paragraphs = page.get("paragraphs", [])
+            if paragraphs:
+                columns = [{"paragraphs": paragraphs}]
+
+        for column in columns:
+            col_proof: Dict[str, Any] = {"paragraphs": []}
+            paragraph_hashes: List[str] = []
+
+            for para in column.get("paragraphs", []):
+                text = para.get("text", "")
+                lines = para.get("lines", [])
+
+                if lines:
+                    line_hashes: List[str] = []
+                    line_proofs: List[Dict[str, str]] = []
+                    for line in lines:
+                        canon = canonicalize_text(line)
+                        lh = sha256_hex(canon)
+                        line_hashes.append(lh)
+                        line_proofs.append({"text": line, "hash": lh})
+                    para_hash = sha256_hex("".join(line_hashes))
+                    col_proof["paragraphs"].append({
+                        "hash": para_hash,
+                        "lines": line_proofs,
+                    })
+                else:
+                    canon = canonicalize_text(text)
+                    para_hash = sha256_hex(canon)
+                    col_proof["paragraphs"].append({
+                        "hash": para_hash,
+                        "text": text,
+                    })
+
+                paragraph_hashes.append(para_hash)
+
+            col_hash = sha256_hex("".join(paragraph_hashes)) if paragraph_hashes else sha256_hex("")
+            col_proof["hash"] = col_hash
+            column_hashes.append(col_hash)
+            page_proof["columns"].append(col_proof)
+
+        footnote_hashes: List[str] = []
+        for fn in page.get("footnotes", []):
+            fn_text = fn.get("text", "") if isinstance(fn, dict) else str(fn)
+            canon = canonicalize_text(fn_text)
+            fn_hash = sha256_hex(canon)
+            footnote_hashes.append(fn_hash)
+            page_proof["footnotes"].append({"text": fn_text, "hash": fn_hash})
+
+        all_page_child_hashes = column_hashes + footnote_hashes
+        pg_hash = sha256_hex("".join(all_page_child_hashes)) if all_page_child_hashes else sha256_hex("")
+        page_proof["hash"] = pg_hash
+        page_hashes.append(pg_hash)
+        proof_tree["pages"].append(page_proof)
+
+    doc_hash = sha256_hex("".join(page_hashes)) if page_hashes else sha256_hex("")
+
+    return {
+        "algorithm": "sha256",
+        "root": doc_hash,
+        "page_hashes": page_hashes,
+        "proof_tree": proof_tree,
+    }
+
+
 def build_merkle_proof(tree: Dict[str, Any], leaf_index: int) -> List[Dict[str, str]]:
     levels = tree.get("levels", [])
     if not levels or leaf_index < 0 or leaf_index >= len(levels[0]):
