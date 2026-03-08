@@ -3,6 +3,7 @@ import json
 import logging
 import sys
 
+
 def _configure_logging(verbose: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -22,6 +23,7 @@ def _run_ingest(args: argparse.Namespace) -> int:
         page_range=args.page_range,
         doc_type_override=args.type,
         use_layout_analysis=not args.no_layout,
+        is_primary=args.is_primary,
     )
     orchestrator = CiteIndexIngestionOrchestrator(
         corpus_root=args.corpus_root,
@@ -62,9 +64,9 @@ def _run_chat(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_ops_parser() -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="citeindex", description="Unified citeindex CLI"
+        prog="citeindex", description="CiteIndex — AI research knowledge infrastructure"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -122,16 +124,27 @@ def _build_ops_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable layout analysis (column/footnote detection)",
     )
+    ingest_parser.add_argument(
+        "--is-primary",
+        action="store_true",
+        help="Mark source as primary (line-level granularity). Default: secondary (paragraph-level)",
+    )
+    ingest_parser.add_argument(
+        "--citation-style",
+        "-cs",
+        default="chicago-author-date",
+        help="Citation style for formatted output (default: chicago-author-date)",
+    )
 
     search_parser = subparsers.add_parser(
-        "search", help="Deterministic search (placeholder)"
+        "search", help="Deterministic search"
     )
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose logs"
     )
 
-    chat_parser = subparsers.add_parser("chat", help="Deterministic chat (placeholder)")
+    chat_parser = subparsers.add_parser("chat", help="Deterministic chat")
     chat_parser.add_argument("--thread", default="default", help="Chat thread id")
     chat_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose logs"
@@ -141,7 +154,7 @@ def _build_ops_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    parser = _build_ops_parser()
+    parser = _build_parser()
     args = parser.parse_args()
     _configure_logging(getattr(args, "verbose", False))
 

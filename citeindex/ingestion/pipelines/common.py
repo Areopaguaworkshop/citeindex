@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..deterministic import build_merkle_tree, canonicalize_text, hash_payload
+from ..deterministic import build_merkle_tree, build_hierarchical_merkle_tree, canonicalize_text, hash_payload
 from ..models import IngestionConfig
 
 logger = logging.getLogger(__name__)

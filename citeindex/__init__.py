@@ -1,16 +1,20 @@
 """
-Citation extraction and ingestion package.
+CiteIndex — AI research knowledge infrastructure.
 """
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 __all__ = [
+    "CiteIndexIngestionOrchestrator",
     "CitationLLM",
     "format_bibliography",
-    "CiteIndexIngestionOrchestrator",
 ]
 
 
 def __getattr__(name):
+    if name == "CiteIndexIngestionOrchestrator":
+        from .ingestion import CiteIndexIngestionOrchestrator
+
+        return CiteIndexIngestionOrchestrator
     if name == "CitationLLM":
         from .model import CitationLLM
 
@@ -19,8 +23,4 @@ def __getattr__(name):
         from .citation_style import format_bibliography
 
         return format_bibliography
-    if name == "CiteIndexIngestionOrchestrator":
-        from .ingestion import CiteIndexIngestionOrchestrator
-
-        return CiteIndexIngestionOrchestrator
     raise AttributeError(f"module 'citeindex' has no attribute {name!r}")
