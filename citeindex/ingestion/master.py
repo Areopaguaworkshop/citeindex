@@ -98,6 +98,17 @@ class CiteIndexIngestionOrchestrator:
                 "ingestion_log_entry": log_entry,
             }
 
+            # Phase 1.5: Schema validation (best-effort)
+            try:
+                from .schema_validator import validate_ingestion_output
+
+                errors = validate_ingestion_output(output)
+                if errors:
+                    logger.warning("Schema validation warnings: %s", errors)
+                    output["schema_validation_warnings"] = errors
+            except Exception:
+                pass
+
             write_json(os.path.join(document_path, "ingestion_output.json"), output)
             return output
         except Exception as e:

@@ -18,6 +18,21 @@ def _ensure_searchable_with_lang_detection(pdf_path: str, config: IngestionConfi
     return ensure_searchable_pdf_with_detection(pdf_path)
 
 
+def _clean_ocr_text(text: str, num_pages: int, config: IngestionConfig) -> str:
+    """Apply OCR text cleaning before further processing."""
+    try:
+        from ...ocr_text_clean_before_llm import clean_extracted_text
+        from ...utils import parse_page_range
+
+        extracted_pages = parse_page_range(config.page_range, num_pages)
+        return clean_extracted_text(
+            text, num_pages, config.text_direction, config.page_range, extracted_pages
+        )
+    except Exception:
+        logger.warning("OCR text cleaning failed, using raw text", exc_info=True)
+        return text
+
+
 def _handle_vertical_text(pdf_path: str, config: IngestionConfig) -> Optional[str]:
     """Detect and handle vertical CJK text, returning extracted text or None."""
     if config.text_direction == "horizontal":

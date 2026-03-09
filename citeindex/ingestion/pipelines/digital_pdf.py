@@ -5,11 +5,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import fitz
 
 from ..models import IngestionConfig, PipelineResult
+from ..deterministic import build_hierarchical_merkle_tree
 from .common import (
     build_document_structure,
     build_layout_document_structure,
     build_merkle_for_nodes,
     build_nodes,
+    build_nodes_with_granularity,
     build_retrieval_index,
     enrich_csl_with_llm,
     make_basic_csl,
@@ -98,8 +100,15 @@ def run(
             "\n".join(paras) for _, paras in page_paragraphs
         )
 
-    nodes = build_nodes(source_id, page_paragraphs)
+    nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
     merkle_tree = build_merkle_for_nodes(nodes)
+
+    # Build hierarchical Merkle tree from document structure when layout is available
+    if cfg.use_layout_analysis and document_structure.get("pages"):
+        hierarchical_merkle = build_hierarchical_merkle_tree(document_structure)
+        merkle_tree["hierarchical_root"] = hierarchical_merkle["root"]
+        merkle_tree["proof_tree"] = hierarchical_merkle.get("proof_tree")
+
     retrieval_index = build_retrieval_index(nodes)
 
     doc = fitz.open(pdf_path)

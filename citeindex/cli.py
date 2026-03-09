@@ -35,32 +35,54 @@ def _run_ingest(args: argparse.Namespace) -> int:
 
 
 def _run_search(args: argparse.Namespace) -> int:
-    print(
-        json.dumps(
-            {
-                "status": "todo",
-                "message": "search pipeline not implemented yet",
-                "query": args.query,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
+    from citeindex.agents.chat import SearchPipeline
+
+    pipeline = SearchPipeline(
+        corpus_root=args.corpus_root,
     )
-    return 0
+    result = pipeline.search(args.query, top_k=args.top_k)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0 if result.get("status") == "ok" else 1
 
 
 def _run_chat(args: argparse.Namespace) -> int:
-    print(
-        json.dumps(
-            {
-                "status": "todo",
-                "message": "chat pipeline not implemented yet",
-                "thread": args.thread,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
+    from citeindex.agents.chat import ChatPipeline
+
+    pipeline = ChatPipeline(
+        corpus_root=args.corpus_root,
+        llm_model=args.llm,
     )
+
+    if args.prompt:
+        # Single-shot mode
+        result = pipeline.chat(args.prompt, thread_id=args.thread)
+        if result.get("answer_human"):
+            print(result["answer_human"])
+        else:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0 if result.get("status") == "ok" else 1
+
+    # Interactive loop
+    print("CiteIndex Chat (type /quit to exit)")
+    print("---")
+    while True:
+        try:
+            user_input = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not user_input or user_input in ("/quit", "/exit", "/q"):
+            break
+        result = pipeline.chat(user_input, thread_id=args.thread)
+        if result.get("status") == "needs_clarification":
+            print("Clarification needed:")
+            for q in result.get("questions", []):
+                print(f"  - {q}")
+        elif result.get("answer_human"):
+            print(result["answer_human"])
+        else:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        print()
     return 0
 
 
@@ -137,15 +159,32 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     search_parser = subparsers.add_parser(
-        "search", help="Deterministic search"
+        "search", help="Deterministic BM25 search over ingested corpus"
     )
     search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument(
+        "--corpus-root", default="corpus", help="Corpus root directory"
+    )
+    search_parser.add_argument(
+        "--top-k", type=int, default=20, help="Number of results to return (default: 20)"
+    )
     search_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose logs"
     )
 
-    chat_parser = subparsers.add_parser("chat", help="Deterministic chat")
+    chat_parser = subparsers.add_parser(
+        "chat", help="Retrieval-augmented chat with trace-bound citations"
+    )
+    chat_parser.add_argument("--prompt", "-p", default=None, help="Single-shot prompt (non-interactive)")
     chat_parser.add_argument("--thread", default="default", help="Chat thread id")
+    chat_parser.add_argument(
+        "--corpus-root", default="corpus", help="Corpus root directory"
+    )
+    chat_parser.add_argument(
+        "--llm",
+        default="ollama/qwen3",
+        help="LLM model for generation (default: ollama/qwen3)",
+    )
     chat_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose logs"
     )

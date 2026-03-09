@@ -228,20 +228,41 @@ def extract_citation_with_llm(
     return csl
 
 
-def enrich_csl_with_llm(
+def _extract_citation_grobid(pdf_path: str) -> Dict[str, Any]:
+    """Try grobid header extraction. Returns CSL dict or {}."""
+    try:
+        from .grobid import extract_document_metadata_grobid, is_grobid_available
+
+        if not is_grobid_available():
+            logger.info("GROBID not available, skipping")
+            return {}
+
+        csl = extract_document_metadata_grobid(pdf_path)
+        if csl.get("title"):
+            logger.info("GROBID metadata extraction succeeded")
+            return csl
+        logger.info("GROBID returned no title, treating as empty")
+        return {}
+    except Exception:
+        logger.warning("GROBID extraction failed", exc_info=True)
+        return {}
+
+
+def enrich_csl_with_citation_cascade(
     base_csl: Dict[str, Any],
     ordered_text: str,
     pdf_path: Optional[str],
     num_pages: int,
     config: Optional[IngestionConfig] = None,
 ) -> Dict[str, Any]:
-    """Enrich a basic CSL JSON dict with LLM-extracted citation metadata.
+    """Enrich a basic CSL JSON dict using the citation extraction cascade.
 
-    This is the primary merge point between the structural ingestion pipeline
-    and the legacy citation extraction capability.  It:
-    1. Determines document type (book/journal/thesis/chapter).
-    2. Runs LLM extraction on the ordered text.
-    3. Merges LLM fields into the base CSL, preferring LLM values when present.
+    Cascade order (per migration plan Phase 1.3):
+      1. GROBID (deterministic, primary)
+      2. LLM extraction (probabilistic, fallback)
+      3. PDF metadata only (last resort — base_csl as-is)
+
+    Merges extracted fields into base_csl, preferring extracted values.
     """
     cfg = config or IngestionConfig()
 
@@ -255,16 +276,40 @@ def enrich_csl_with_llm(
 
     logger.info("Document type determined: %s (pages=%d)", doc_type, num_pages)
 
-    llm_csl = extract_citation_with_llm(ordered_text, doc_type, cfg)
-    if not llm_csl:
+    # --- Cascade ---
+    extracted_csl: Dict[str, Any] = {}
+    extraction_method = "metadata-only"
+
+    # 1. Try GROBID
+    if pdf_path:
+        extracted_csl = _extract_citation_grobid(pdf_path)
+        if extracted_csl:
+            extraction_method = "grobid"
+
+    # 2. Fallback to LLM
+    if not extracted_csl:
+        extracted_csl = extract_citation_with_llm(ordered_text, doc_type, cfg)
+        if extracted_csl:
+            extraction_method = "llm"
+
+    # 3. Last resort: base_csl as-is
+    if not extracted_csl:
+        logger.info("Citation cascade: using metadata-only (no enrichment)")
         return base_csl
 
-    # Merge: LLM values win for metadata fields; keep structural fields from base
+    logger.info("Citation cascade: using %s extraction", extraction_method)
+
+    # Merge: extracted values win for metadata fields; keep structural fields from base
     merged = dict(base_csl)
-    for key, value in llm_csl.items():
+    for key, value in extracted_csl.items():
         if key in ("id",):
             continue  # keep deterministic id from base
         if value is not None:
             merged[key] = value
+    merged["_extraction_method"] = extraction_method
 
     return merged
+
+
+# Backward-compatible alias
+enrich_csl_with_llm = enrich_csl_with_citation_cascade
