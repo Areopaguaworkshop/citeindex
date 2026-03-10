@@ -7,6 +7,8 @@ def canonicalize_text(text: str) -> str:
     """Normalize text for deterministic hashing."""
     if text is None:
         return ""
+    if not isinstance(text, str):
+        return str(text) if text else ""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = [" ".join(line.split()) for line in text.split("\n")]
     return "\n".join(lines).strip()

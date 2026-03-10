@@ -109,6 +109,10 @@ class CorpusLoader:
         self, document: Dict[str, Any], source_id: str
     ) -> List[Dict[str, Any]]:
         """Extract flat node list from the hierarchical document structure."""
+        # Check for pre-built nodes (from URL ingestion or digital_pdf pipeline)
+        if document.get("nodes"):
+            return document["nodes"]
+
         nodes: List[Dict[str, Any]] = []
         for page in document.get("pages", []):
             page_number = page.get("page_number", 0)
