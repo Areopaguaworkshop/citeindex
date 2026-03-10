@@ -82,7 +82,19 @@ def run(
     # Step 2: OCR normalization with language auto-detection
     searchable_pdf = _ensure_searchable_with_lang_detection(pdf_path, cfg)
 
-    # Step 3: Run through the digital PDF pipeline (with layout analysis)
+    # Step 3: Clean OCR text (blank page filtering, header/footer removal)
+    try:
+        import fitz
+        doc = fitz.open(searchable_pdf)
+        num_pages = doc.page_count
+        raw_text = "\n".join(doc[i].get_text("text") for i in range(num_pages))
+        doc.close()
+        _clean_ocr_text(raw_text, num_pages, cfg)
+        logger.debug("OCR text cleaning applied (%d pages)", num_pages)
+    except Exception:
+        logger.debug("OCR text cleaning skipped", exc_info=True)
+
+    # Step 4: Run through the digital PDF pipeline (with layout analysis)
     result = digital_pdf.run(searchable_pdf, source_type="scanned_pdf", config=cfg)
 
     if result.document_json is not None:

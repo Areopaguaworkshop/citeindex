@@ -1,72 +1,74 @@
 <p align="center">
-  <img src="./Citation-Extractor-logo.PNG" alt="Citation Extractor Logo" width="150">
+  <img src="./Citation-Extractor-logo.PNG" alt="CiteIndex Logo" width="150">
 </p>
 
-<h1 align="center">🔍 Citation Extractor</h1>
+<h1 align="center">CiteIndex</h1>
 
 <p align="center">
-  <strong>We're living in an era where AI can write beautifully, but can't cite properly.</strong>
-  <br>
-  <em>Because every claim deserves a source, and every source deserves proper citation.</em>
+  <strong>An AI research agent that never hallucinates — every claim is traced, verified, and cited.</strong>
 </p>
 
 <p align="center">
-  <a href="#--why-this-matters">Why This Matters</a> •
-  <a href="#--features">Features</a> •
-  <a href="#--quick-start">Quick Start</a> •
-  <a href="#--usage">Usage</a> •
-  <a href="#--contributing">Contributing</a>
+  <a href="#why-this-exists">Why</a> •
+  <a href="#how-it-works">How It Works</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/rust-1.75+-orange.svg" alt="Rust 1.75+">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT">
   <img src="https://img.shields.io/pypi/v/cite-extractor.svg" alt="PyPI version">
-  <img src="https://img.shields.io/pypi/dm/cite-extractor.svg" alt="PyPI downloads">
 </p>
 
 ---
 
-## 🚨 Why This Matters
+## Why This Exists
 
-**We're living in an era where AI can write beautifully, but can't cite properly.**
+Large Language Models write fluently but **cannot cite their sources**. When an LLM tells you about a study, a historical event, or a legal precedent, there is no way to verify the claim, trace it back to a page, or reproduce the evidence chain. For scholars, this makes LLM output fundamentally unusable in serious work.
 
-Large Language Models (LLMs) like ChatGPT, Claude, and Gemini are incredible at generating human-like text, but they have a **fundamental flaw**: they lack reliable citation mechanisms. When an LLM tells you about a scientific study, historical event, or technical concept, you're left wondering:
+**CiteIndex is an AI research agent — like Claude Code, but for academic scholarship.** Instead of writing code, it reads your research materials, indexes them into a Merkle-verified knowledge base, and answers your questions with deterministic, trace-bound citations. Every claim maps to a specific text passage, verified by cryptographic hash, with a full Merkle proof from leaf node to document root.
 
-- 📚 **Where did this information come from?**
-- 🔍 **How can I verify these claims?**
-- 📝 **How do I properly cite this in my research?**
+### What CiteIndex does for researchers
 
-This creates a **trust gap** that undermines the reliability of AI-generated content, especially in academic, professional, and research contexts.
+- **Ingests any source** — PDFs (digital or scanned), URLs, DJVU, EPUB, DOCX, video/audio — into a structured, hash-verified corpus.
+- **Answers questions** with Chicago author-date citations, where every inline reference traces to a specific passage in your documents.
+- **Eliminates hallucination** by design: BM25 deterministic retrieval (no embeddings), mandatory evidence-to-claim mapping, and fail-closed integrity verification.
+- **Handles CJK vertical text**, multi-column layouts, footnote isolation, and scanned documents with automatic OCR language detection.
+- **Provides a terminal UI** (ratatui) for interactive research sessions: chat, search, ingest, and browse your citation graph — all from the terminal.
 
-**Citation Extractor exists to fill this gap.** 
+---
 
-While LLMs struggle with proper citations, this tool excels at extracting structured, verifiable citation data from any source. It's the missing piece that makes AI-generated content trustworthy and academically sound.
+## How It Works
 
-## 🌟 Features
+CiteIndex enforces a strict contract: **no claim without evidence, no evidence without a hash, no hash without a Merkle proof.**
 
-### 🎯 **Universal Source Support**
-- **📄 Document Versatility**: Handles `.pdf`, `.docx`, `.djvu`, `.epub`, and more.
-- **🌐 Web & Media**: Extracts citations directly from URLs and media files (`.mp4`, `.mp3`).
+```
+Document → Ingest → Nodes (paragraph/line) → SHA-256 hashes → Merkle tree
+                                                    ↓
+Query → BM25 Retrieval → Ranked Evidence → Generation (LLM or extractive)
+                                                    ↓
+                                          Integrity Verifier (fail-closed)
+                                                    ↓
+                                          Answer + Chicago citations + Merkle proofs
+```
 
-### 🧠 **AI-Powered Intelligence**
-- **Smart Document Classification**: Automatically detects if a source is a book, journal article, thesis, or chapter.
-- **Advanced, Multilingual OCR**: Accurately processes scanned documents, including those with **vertical text** layouts (e.g., Chinese, Japanese).
-- **Smarter Language Detection**: Intelligently skips blank cover pages to find the first page with text, ensuring the correct language is used for OCR.
-- **Automatic OCR Error Correction**: Proactively fixes common OCR mistakes (e.g., `郭庆沙` → `郭庆藩`) before extraction for higher accuracy.
-- **Flexible LLM Backend**: Works with Ollama (local) or cloud APIs (Gemini, OpenAI).
+**7 deterministic agents** form the pipeline:
 
-### 📚 **Research-Grade Output**
-- **CSL-JSON Standard**: Compatible with Zotero, Mendeley, and all major reference managers.
-- **Multiple Citation Styles**: Instantly format in Chicago, APA, MLA, or any other CSL style.
-- **Rich, Structured Metadata**: Captures author, title, date, DOI, ISBN, and even complex author details like historical dynasties (`[清]`).
+1. **Ingestion** — Parse documents into structural nodes with hierarchical Merkle trees
+2. **Indexing** — Build inverted index, section index, and cross-source links
+3. **Query Planning** — Classify intent, detect ambiguity, emit search plan
+4. **Retrieval** — Three-stage BM25: metadata filter → keyword search → trace filter
+5. **Clarification** — Ask up to 3 questions when the query is ambiguous
+6. **Generation** — Produce answers strictly from evidence, with Chicago citations
+7. **Integrity** — Recompute hashes, verify Merkle proofs, resolve citation keys. Reject if any check fails.
 
-### ⚡ **Optimized Performance**
-- **Smart Page Selection**: Processes only the most relevant pages for speed.
-- **Iterative Extraction**: Stops as soon as all essential citation fields are found.
-- **Batch Processing**: Handle multiple documents efficiently.
+---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -78,139 +80,162 @@ pip install cite-extractor
 
 ```bash
 # Ubuntu/Debian
-sudo apt-get install tesseract-ocr mediainfo
+sudo apt-get install tesseract-ocr mediainfo ffmpeg
 
 # macOS
-brew install tesseract mediainfo
+brew install tesseract mediainfo ffmpeg
 
-# For local LLM support (optional)
-# Install Ollama: https://ollama.ai/
+# LLM backend (required for chat/generation)
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull qwen3
 ```
 
-### First Citation
+### Optional Services
 
 ```bash
-# Extract from a PDF
-citeindex "path/to/research-paper.pdf"
+# GROBID — primary citation extraction (recommended)
+docker run -d -p 8070:8070 lfoppiano/grobid:0.8.1
 
-# Extract from a URL
-citeindex "https://www.nature.com/articles/s41586-023-06627-7"
+# Playwright browsers — for JS-rendered URL fetching
+playwright install chromium
 
-# Extract from a document with vertical text
-citeindex "path/to/vertical-text-document.pdf" --text-direction vertical
+# Zotero translation-server — rich URL metadata
+docker run -d -p 1969:1969 zotero/translation-server
 ```
 
-## 📖 Usage
+---
 
-### Command Line Interface
+## Usage
+
+### Ingest documents
 
 ```bash
-# Basic usage
-citeindex "document.pdf"
+# Ingest a PDF into the corpus
+citeindex ingest "research-paper.pdf"
 
-# Specify document type
-citeindex "thesis.pdf" --type thesis
+# Scanned PDF with auto-detected OCR language
+citeindex ingest "scanned-book.pdf" --lang auto
 
-# Use different LLM
-citeindex "paper.pdf" --llm gemini/gemini-1.5-flash
+# Vertical CJK text
+citeindex ingest "chinese-manuscript.pdf" --text-direction vertical
 
-# Custom output directory
-citeindex "book.pdf" --output-dir ./citations
+# Primary source (line-level granularity)
+citeindex ingest "ancient-text.pdf" --is-primary
 
-# Specific page range for large documents
-citeindex "book.pdf" --page-range "1-5, -3"
-
-# Different citation style
-citeindex "article.pdf" --citation-style apa
+# URL article
+citeindex ingest "https://www.nature.com/articles/s41586-023-06627-7"
 ```
 
-### Python API
-
-```python
-from citeindex.main import CitationExtractor
-from citeindex.citation_style import format_bibliography
-
-# Initialize with your preferred LLM
-extractor = CitationExtractor(llm_model="ollama/qwen3")
-
-# Extract citation data
-csl_data = extractor.extract_citation("research-paper.pdf")
-
-if csl_data:
-    # Format as bibliography
-    bibliography, in_text = format_bibliography([csl_data], "chicago-author-date")
-    
-    print("📚 Bibliography:")
-    print(bibliography)
-    
-    print("\n📝 In-text citation:")
-    print(in_text)
-```
-
-### Advanced Configuration
+### Search your corpus
 
 ```bash
-# For non-English documents, let the tool auto-detect the language
-citeindex "chinese-paper.pdf" --lang auto
+# BM25 deterministic search
+citeindex search "Kantian categorical imperative"
 
-# Or specify manually
-citeindex "another-paper.pdf" --lang chi_sim+eng
-
-# Verbose output for debugging
-citeindex "document.pdf" --verbose
+# Return more results
+citeindex search "machine learning fairness" --top-k 50
 ```
 
-## 🤝 Contributing
-
-**We're thrilled to have you join this mission!** 🎉
-
-This project addresses a fundamental need in our AI-driven world, and we believe it can make a real difference in how we handle information credibility. Whether you're a developer, researcher, or just someone who cares about proper attribution, there's a place for you here.
-
-### 🚀 How to Contribute
-
-1. **🐛 Report Issues**: Found a bug or have a feature request?
-2. **💡 Suggest Improvements**: Ideas for better citation extraction?
-3. **🔧 Submit Code**: Bug fixes, new features, or optimizations
-4. **📚 Improve Documentation**: Help others understand and use the tool
-5. **🌍 Add Language Support**: Extend OCR and extraction to new languages
-6. **🎨 Citation Styles**: Add support for more academic citation styles
-
-### 💻 Development Setup
+### Chat with trace-bound citations
 
 ```bash
-git clone https://github.com/your-username/citation-extractor.git
-cd citation-extractor
+# Single-shot question
+citeindex chat --prompt "What does the author argue about social contract theory?"
 
-# Install development dependencies
+# Interactive chat session
+citeindex chat
+
+# Specify LLM backend
+citeindex chat --llm ollama/qwen3 --prompt "Compare the two authors' positions on free will"
+```
+
+### Memory & plugins
+
+```bash
+# Search past conversations
+citeindex memory search "social contract"
+
+# List installed plugins
+citeindex plugin list
+
+# Install a plugin
+citeindex plugin install ./my-plugin
+```
+
+### Terminal UI (Rust)
+
+```bash
+# Build and run the TUI
+cd citeindex-rs && cargo run
+
+# Keyboard shortcuts:
+#   Ctrl+T  — toggle dark/light theme
+#   Ctrl+B  — toggle side panel
+#   /search — switch to search mode
+#   /ingest — switch to ingest mode
+#   /quit   — exit
+```
+
+---
+
+## Architecture
+
+CiteIndex is a **hybrid Rust + Python** system:
+
+| Layer | Language | Role |
+|-------|----------|------|
+| **TUI & Orchestrator** | Rust | Terminal UI (ratatui), plugin system, memory DAG, Python IPC |
+| **AI Engine** | Python | 7-agent pipeline, LLM integration, document parsing, OCR |
+| **Storage** | Files | `corpus/{hash}/` with `csl.json`, `document.json`, `merkle.json` |
+
+### Key design rules
+
+- **No embeddings.** All retrieval is BM25 keyword search — deterministic and reproducible.
+- **Merkle-verified.** Every text node has a SHA-256 hash. Document integrity is a Merkle tree: `line → paragraph → column → page → document`.
+- **Fail-closed integrity.** The integrity verifier rejects answers where any hash, Merkle proof, or citation key fails to resolve.
+- **Citation cascade.** GROBID (deterministic) → LLM extraction (fallback) → PDF metadata (last resort).
+
+### Corpus layout
+
+```
+corpus/
+└── {sha256-hash}/
+    ├── csl.json          # CSL-JSON citation metadata
+    ├── document.json     # Structural nodes (pages → columns → paragraphs → lines)
+    ├── merkle.json       # Hierarchical Merkle tree
+    └── retrieval.json    # Inverted index for BM25
+```
+
+---
+
+## Contributing
+
+```bash
+git clone https://github.com/areopaguaworkshop/citation.git
+cd citation
+
+# Python development
 pip install -e ".[dev]"
-
-# Run tests
 pytest
 
-# Format code
-black .
+# Rust development
+cd citeindex-rs
+cargo build
+cargo test
 ```
 
-## 🏆 Acknowledgments
+Contributions welcome — especially for:
+- Additional citation styles beyond Chicago
+- Language-specific OCR improvements
+- New ingestion pipelines (e.g., EPUB, LaTeX)
+- TUI enhancements (Refs mode, Project mode)
 
-This project stands on the shoulders of giants:
-- **DSPy**: For flexible LLM integration
-- **Tesseract**: For OCR capabilities
-- **citeproc-py**: For citation formatting
-- **The Open Source Community**: For making tools like this possible
+## License
 
-## 📄 License
-
-MIT License - feel free to use this in your projects, commercial or otherwise.
+MIT License
 
 ---
 
 <p align="center">
-  <strong>Made with ❤️ for the research community</strong>
-  <br>
-  <em>Because every claim deserves a source, and every source deserves respect.</em>
-</p>
-
-<p align="center">
-  ⭐ <strong>Star this repo if you find it useful!</strong> ⭐
+  <em>Every claim deserves a source. Every source deserves a hash. Every hash deserves a proof.</em>
 </p>
