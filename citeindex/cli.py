@@ -189,7 +189,148 @@ def _build_parser() -> argparse.ArgumentParser:
         "--verbose", "-v", action="store_true", help="Verbose logs"
     )
 
+    # ── memory subcommand ──────────────────────────────────────────────
+    memory_parser = subparsers.add_parser(
+        "memory", help="Search past chat memory"
+    )
+    memory_parser.add_argument("action", choices=["search", "list"], help="Memory action")
+    memory_parser.add_argument("query", nargs="?", default="", help="Search query")
+    memory_parser.add_argument("--thread", default=None, help="Restrict to a specific thread")
+    memory_parser.add_argument(
+        "--corpus-root", default="corpus", help="Corpus root directory"
+    )
+    memory_parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Verbose logs"
+    )
+
+    # ── plugin subcommand ─────────────────────────────────────────────
+    plugin_parser = subparsers.add_parser(
+        "plugin", help="Manage CiteIndex plugins"
+    )
+    plugin_parser.add_argument(
+        "action", choices=["install", "list"],
+        help="Plugin action",
+    )
+    plugin_parser.add_argument(
+        "path", nargs="?", default=None,
+        help="Plugin path or git URL (for install)",
+    )
+    plugin_parser.add_argument(
+        "--plugins-dir", default="plugins", help="Plugins directory"
+    )
+    plugin_parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Verbose logs"
+    )
+
     return parser
+
+
+def _run_memory(args: argparse.Namespace) -> int:
+    from citeindex.agents.memory import MemoryStore
+
+    store = MemoryStore(memory_dir=f"{args.corpus_root}/.memory")
+
+    if args.action == "list":
+        threads = store._list_threads()
+        if not threads:
+            print(json.dumps({"status": "ok", "threads": []}, indent=2))
+        else:
+            print(json.dumps({"status": "ok", "threads": threads}, indent=2))
+        return 0
+
+    if args.action == "search":
+        if not args.query:
+            print(json.dumps({"status": "error", "message": "Query required for search"}, indent=2))
+            return 1
+        results = store.search(args.query, thread_id=args.thread)
+        output = {
+            "status": "ok",
+            "query": args.query,
+            "total": len(results),
+            "results": [e.to_dict() for e in results[:20]],
+        }
+        print(json.dumps(output, indent=2, ensure_ascii=False))
+        return 0
+
+    return 0
+
+
+def _run_plugin(args: argparse.Namespace) -> int:
+    import os
+
+    plugins_dir = os.path.abspath(args.plugins_dir)
+
+    if args.action == "list":
+        plugins = []
+        if os.path.isdir(plugins_dir):
+            for name in sorted(os.listdir(plugins_dir)):
+                plugin_dir = os.path.join(plugins_dir, name)
+                manifest_path = os.path.join(plugin_dir, "plugin.toml")
+                if os.path.isfile(manifest_path):
+                    try:
+                        import tomllib
+                    except ImportError:
+                        try:
+                            import tomli as tomllib
+                        except ImportError:
+                            plugins.append({"name": name, "status": "manifest unreadable (no toml parser)"})
+                            continue
+                    with open(manifest_path, "rb") as f:
+                        manifest = tomllib.load(f)
+                    plugins.append({
+                        "name": manifest.get("name", name),
+                        "version": manifest.get("version", "?"),
+                        "commands": list(manifest.get("commands", {}).keys()),
+                    })
+        print(json.dumps({"status": "ok", "plugins": plugins}, indent=2))
+        return 0
+
+    if args.action == "install":
+        if not args.path:
+            print(json.dumps({"status": "error", "message": "Path or URL required for install"}, indent=2))
+            return 1
+        # Simple local copy for now (Rust plugin manager handles git)
+        import shutil
+
+        src = os.path.abspath(args.path)
+        if not os.path.isdir(src):
+            print(json.dumps({"status": "error", "message": f"Source not found: {src}"}, indent=2))
+            return 1
+
+        # Read manifest to get name
+        manifest_path = os.path.join(src, "plugin.toml")
+        if not os.path.isfile(manifest_path):
+            print(json.dumps({"status": "error", "message": "No plugin.toml found"}, indent=2))
+            return 1
+
+        try:
+            import tomllib
+        except ImportError:
+            try:
+                import tomli as tomllib
+            except ImportError:
+                print(json.dumps({"status": "error", "message": "No toml parser available"}, indent=2))
+                return 1
+
+        with open(manifest_path, "rb") as f:
+            manifest = tomllib.load(f)
+
+        name = manifest.get("name", os.path.basename(src))
+        dest = os.path.join(plugins_dir, name)
+        os.makedirs(plugins_dir, exist_ok=True)
+
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+
+        print(json.dumps({
+            "status": "ok",
+            "message": f"Plugin '{name}' installed",
+            "path": dest,
+        }, indent=2))
+        return 0
+
+    return 0
 
 
 def main() -> None:
@@ -201,6 +342,12 @@ def main() -> None:
         code = _run_ingest(args)
     elif args.command == "search":
         code = _run_search(args)
+    elif args.command == "chat":
+        code = _run_chat(args)
+    elif args.command == "memory":
+        code = _run_memory(args)
+    elif args.command == "plugin":
+        code = _run_plugin(args)
     else:
         code = _run_chat(args)
     sys.exit(code)

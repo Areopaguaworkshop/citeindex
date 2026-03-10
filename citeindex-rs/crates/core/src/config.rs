@@ -166,13 +166,13 @@ impl CiteIndexConfig {
 
     /// Search for config.toml in standard locations.
     pub fn discover() -> Self {
-        let candidates = [
+        let mut candidates: Vec<PathBuf> = vec![
             PathBuf::from("config.toml"),
             PathBuf::from("citeindex.toml"),
-            dirs::config_dir()
-                .map(|d| d.join("citeindex").join("config.toml"))
-                .unwrap_or_default(),
         ];
+        if let Some(config_dir) = dirs::config_dir() {
+            candidates.push(config_dir.join("citeindex").join("config.toml"));
+        }
 
         for path in &candidates {
             if path.exists() {
