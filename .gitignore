@@ -1,4 +1,4 @@
-# python generated files
+# Python generated files
 __pycache__/
 *.py[oc]
 build/
@@ -11,5 +11,19 @@ tests/**/*
 .venv
 # corpus
 corpus/
-## OTher files
+# instruction
 instruction/**/*
+
+# Rust
+target/
+Cargo.lock
+*.rs.bk
+*.pdb
+rust-tools.json
+rustfmt.toml
+.daplint
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
