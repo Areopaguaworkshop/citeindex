@@ -1,3 +1,14 @@
+"""Digital PDF ingestion pipeline.
+
+New workflow (v0.2):
+  1. GROBID  — deterministic metadata + references from raw PDF
+  2. MinerU  — layout analysis (middle JSON + markdown)
+  3. DSPy    — extract/reconcile fields from MinerU output
+  4. Build document structure, Merkle tree, retrieval index
+
+Falls back to legacy fitz-based layout when MinerU is unavailable.
+"""
+
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -13,15 +24,18 @@ from .common import (
     build_nodes,
     build_nodes_with_granularity,
     build_retrieval_index,
-    enrich_csl_with_llm,
+    determine_doc_type,
     make_basic_csl,
     make_source_id,
     split_paragraphs,
 )
-from .layout import analyze_document_layout
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Legacy fitz-based extraction (kept as fallback)
+# ---------------------------------------------------------------------------
 
 def _extract_page_paragraphs(pdf_path: str) -> List[Tuple[int, List[str]]]:
     doc = fitz.open(pdf_path)
@@ -78,6 +92,101 @@ def _collect_ordered_text(page_layouts: List[Dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Step 1: GROBID extraction
+# ---------------------------------------------------------------------------
+
+def _run_grobid(pdf_path: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Run GROBID on raw PDF. Returns (metadata_csl, references_dict)."""
+    try:
+        from .grobid import (
+            extract_citations_grobid,
+            extract_document_metadata_grobid,
+            is_grobid_available,
+        )
+
+        if not is_grobid_available():
+            logger.info("GROBID not available, skipping initial extraction")
+            return {}, {}
+
+        logger.info("Step 1: Running GROBID on raw PDF")
+        metadata = extract_document_metadata_grobid(pdf_path)
+        references = extract_citations_grobid(pdf_path)
+
+        logger.info(
+            "GROBID: metadata=%d fields, references=%d",
+            len(metadata),
+            len(references.get("references", [])),
+        )
+        return metadata, references
+
+    except Exception:
+        logger.warning("GROBID extraction failed", exc_info=True)
+        return {}, {}
+
+
+# ---------------------------------------------------------------------------
+# Step 2: MinerU layout analysis
+# ---------------------------------------------------------------------------
+
+def _run_mineru(pdf_path: str) -> Optional[Dict[str, Any]]:
+    """Run MinerU layout analysis. Returns output dict or None on failure."""
+    try:
+        from .mineru import is_mineru_available, run_mineru
+
+        if not is_mineru_available():
+            logger.info("MinerU not available, will fall back to fitz layout")
+            return None
+
+        logger.info("Step 2: Running MinerU layout analysis")
+        result = run_mineru(pdf_path)
+        logger.info("MinerU: output_dir=%s", result.get("output_dir", "?"))
+        return result
+
+    except Exception:
+        logger.warning("MinerU failed, falling back to fitz layout", exc_info=True)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Step 3: DSPy field extraction from MinerU output
+# ---------------------------------------------------------------------------
+
+def _run_dspy_extraction(
+    mineru_markdown: str,
+    grobid_metadata: Dict[str, Any],
+    doc_type: str,
+    config: IngestionConfig,
+) -> Dict[str, Any]:
+    """Run DSPy extraction on MinerU markdown and reconcile with GROBID."""
+    try:
+        from .dspy_extract import (
+            extract_metadata_from_mineru,
+            reconcile_grobid_and_dspy,
+        )
+
+        logger.info("Step 3: Running DSPy extraction on MinerU markdown")
+        dspy_csl = extract_metadata_from_mineru(mineru_markdown, doc_type, config)
+
+        enriched = reconcile_grobid_and_dspy(grobid_metadata, dspy_csl, doc_type, config)
+        logger.info(
+            "Reconciled CSL: method=%s, fields=%d",
+            enriched.get("_extraction_method", "?"),
+            len(enriched),
+        )
+        return enriched
+
+    except Exception:
+        logger.warning("DSPy extraction failed, using GROBID-only", exc_info=True)
+        if grobid_metadata:
+            grobid_metadata["_extraction_method"] = "grobid"
+        return grobid_metadata
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
 def run(
     pdf_path: str,
     source_type: str = "digital_pdf",
@@ -86,51 +195,110 @@ def run(
     cfg = config or IngestionConfig()
     source_id = make_source_id(pdf_path)
 
-    # Phase 2: Use layout analysis when enabled
-    if cfg.use_layout_analysis:
-        logger.info("Running layout-aware extraction for %s", pdf_path)
-        page_layouts = analyze_document_layout(pdf_path)
-        page_paragraphs = _extract_paragraphs_from_layouts(page_layouts)
-        document_structure = build_layout_document_structure(page_layouts)
-        ordered_text = _collect_ordered_text(page_layouts)
-    else:
-        page_paragraphs = _extract_page_paragraphs(pdf_path)
-        document_structure = build_document_structure(page_paragraphs)
-        ordered_text = "\n\n".join(
-            "\n".join(paras) for _, paras in page_paragraphs
-        )
-
-    nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
-    merkle_tree = build_merkle_for_nodes(nodes)
-
-    # Build hierarchical Merkle tree from document structure when layout is available
-    if cfg.use_layout_analysis and document_structure.get("pages"):
-        hierarchical_merkle = build_hierarchical_merkle_tree(document_structure)
-        merkle_tree["hierarchical_root"] = hierarchical_merkle["root"]
-        merkle_tree["proof_tree"] = hierarchical_merkle.get("proof_tree")
-
-    retrieval_index = build_retrieval_index(nodes)
-
     doc = fitz.open(pdf_path)
     title = doc.metadata.get("title") or os.path.basename(pdf_path)
     num_pages = doc.page_count
     doc.close()
 
+    # Determine document type early (needed by DSPy signatures)
+    if cfg.doc_type_override:
+        doc_type = cfg.doc_type_override
+    else:
+        doc_type = determine_doc_type(pdf_path, num_pages)
+
+    # ── Step 1: GROBID ─────────────────────────────────────────────
+    grobid_metadata, grobid_references = _run_grobid(pdf_path)
+
+    # ── Step 2: MinerU layout analysis ─────────────────────────────
+    mineru_output = _run_mineru(pdf_path) if cfg.use_layout_analysis else None
+
+    if mineru_output and mineru_output.get("middle_json"):
+        # === MinerU path (new) ===
+        logger.info("Using MinerU-based layout pipeline")
+        from .mineru import mineru_to_page_layouts, mineru_to_paragraphs
+
+        page_layouts = mineru_to_page_layouts(mineru_output["middle_json"])
+        page_paragraphs = _extract_paragraphs_from_layouts(page_layouts)
+        document_structure = build_layout_document_structure(page_layouts)
+        ordered_text = mineru_output.get("markdown", "") or _collect_ordered_text(page_layouts)
+
+        # ── Step 3: DSPy extraction from MinerU markdown ───────────
+        enriched_csl = _run_dspy_extraction(
+            mineru_markdown=ordered_text,
+            grobid_metadata=grobid_metadata,
+            doc_type=doc_type,
+            config=cfg,
+        )
+
+    elif cfg.use_layout_analysis:
+        # === Fitz fallback path (legacy) ===
+        logger.info("MinerU unavailable, falling back to fitz layout analysis")
+        from .layout import analyze_document_layout
+
+        page_layouts = analyze_document_layout(pdf_path)
+        page_paragraphs = _extract_paragraphs_from_layouts(page_layouts)
+        document_structure = build_layout_document_structure(page_layouts)
+        ordered_text = _collect_ordered_text(page_layouts)
+
+        # Still run DSPy extraction on fitz-derived text
+        enriched_csl = _run_dspy_extraction(
+            mineru_markdown=ordered_text,
+            grobid_metadata=grobid_metadata,
+            doc_type=doc_type,
+            config=cfg,
+        )
+
+    else:
+        # === No layout analysis path ===
+        page_paragraphs = _extract_page_paragraphs(pdf_path)
+        document_structure = build_document_structure(page_paragraphs)
+        ordered_text = "\n\n".join("\n".join(paras) for _, paras in page_paragraphs)
+
+        # Use the old cascade (GROBID → LLM → metadata) for non-layout mode
+        from .common import enrich_csl_with_llm
+
+        base_csl = make_basic_csl(
+            source_id=source_id,
+            title=title,
+            csl_type="book",
+            extra={"genre": source_type},
+        )
+        enriched_csl = enrich_csl_with_llm(
+            base_csl=base_csl,
+            ordered_text=ordered_text,
+            pdf_path=pdf_path,
+            num_pages=num_pages,
+            config=cfg,
+        )
+
+    # ── Build final CSL (merge enriched into base) ─────────────────
     base_csl = make_basic_csl(
         source_id=source_id,
         title=title,
         csl_type="book",
         extra={"genre": source_type},
     )
+    csl = dict(base_csl)
+    for key, value in enriched_csl.items():
+        if key == "id":
+            continue
+        if value is not None:
+            csl[key] = value
 
-    # Phase 1: Enrich CSL with LLM-based citation extraction
-    csl = enrich_csl_with_llm(
-        base_csl=base_csl,
-        ordered_text=ordered_text,
-        pdf_path=pdf_path,
-        num_pages=num_pages,
-        config=cfg,
-    )
+    # If GROBID gave us references, attach them
+    if grobid_references.get("references"):
+        csl["_cited_references"] = grobid_references["references"]
+
+    # ── Nodes, Merkle tree, retrieval index ────────────────────────
+    nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
+    merkle_tree = build_merkle_for_nodes(nodes)
+
+    if cfg.use_layout_analysis and document_structure.get("pages"):
+        hierarchical_merkle = build_hierarchical_merkle_tree(document_structure)
+        merkle_tree["hierarchical_root"] = hierarchical_merkle["root"]
+        merkle_tree["proof_tree"] = hierarchical_merkle.get("proof_tree")
+
+    retrieval_index = build_retrieval_index(nodes)
 
     document_json: Dict[str, Any] = {
         "source_id": source_id,

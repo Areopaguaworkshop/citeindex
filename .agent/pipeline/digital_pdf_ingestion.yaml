@@ -1,10 +1,11 @@
 pipeline:
   name: citeindex_digital_pdf_ingestion
-  version: 0.1
+  version: 0.2
   description: >
     Deterministic ingestion pipeline for born-digital academic PDFs.
-    Extracts structured text, detects multi-column layouts and footnotes,
-    and generates a Merkle-tree index for deterministic retrieval.
+    Uses GROBID for initial metadata/reference extraction, MinerU for
+    layout analysis, and DSPy signatures with Ollama/qwen3 for
+    structured field extraction from MinerU output.
 
   goals:
     - avoid OCR when text layer exists
@@ -13,6 +14,9 @@ pipeline:
     - detect and isolate footnotes
     - deterministic reading order
     - compatible with scanned ingestion pipeline
+    - leverage GROBID for high-precision metadata baseline
+    - use MinerU for rich layout understanding
+    - use DSPy+LLM to fill gaps from MinerU JSON/markdown
 
   inputs:
     pdf:
@@ -53,115 +57,109 @@ stages:
 
 ---
 
-  - stage: text_layer_extraction
-    tool: pdfminer
+  - stage: grobid_extraction
+    tool: grobid
     purpose: >
-      Extract text blocks with positional coordinates.
+      Initial step — send raw PDF to GROBID for deterministic,
+      high-precision extraction of document metadata (title, authors,
+      date, DOI, abstract) and bibliography (cited references as CSL JSON).
+      This provides the reliable baseline before any ML processing.
 
     input:
       pdf
 
     output:
-      text_blocks:
+      grobid_metadata:
         schema:
-          page
-          block_id
-          text
-          bbox
-          font_size
-          font_name
+          title
+          author
+          issued
+          DOI
+          abstract
+          container-title
+
+      grobid_references:
+        format: csl_json
+        description: cited references from back-matter bibliography
 
 ---
 
-  - stage: layout_analysis
-    tool: layoutparser
+  - stage: mineru_layout_analysis
+    tool: mineru
     purpose: >
-      Identify layout structures such as columns, paragraphs,
-      tables, figures, and footnote regions.
+      Run MinerU (magic-pdf) on the raw PDF for full document layout
+      analysis. Produces middle JSON with rich block-level structure
+      and markdown with reading-order text. Replaces the old
+      pdfminer + layoutparser + column_detection + footnote_detection
+      stages with a single unified layout pass.
 
     input:
-      text_blocks
+      pdf
 
     output:
-      layout_blocks:
+      mineru_middle_json:
+        description: MinerU middle JSON with block-level layout
         schema:
-          page
-          block_id
-          block_type
-          column_id
-          bbox
-          probable_footnote
+          pdf_info:
+            - page_idx
+              para_blocks
+              preproc_blocks
+              discarded_blocks
+              layout_bboxes
+
+      mineru_markdown:
+        description: MinerU markdown output with reading-order text
+        format: markdown
+
+      mineru_content_list:
+        description: content_list.json with ordered content items
+        format: json
 
     options:
-      detect_columns: true
-      detect_tables: true
-      detect_figures: true
-      detect_footnotes: true
+      parse_method: auto
+      output_format: both
 
 ---
 
-  - stage: column_detection
+  - stage: dspy_field_extraction
+    tool: dspy
+    llm: ollama/qwen3
     purpose: >
-      Detect column boundaries using x-coordinate clustering.
-
-    algorithm:
-      steps:
-        - group_blocks_by_page
-        - cluster_blocks_by_x_coordinate
-        - determine_column_count
-        - assign_column_id
+      Use DSPy Signatures with Ollama/qwen3 to extract structured
+      information from MinerU's JSON or markdown that GROBID may
+      have missed or gotten wrong. Reconciles GROBID metadata with
+      MinerU-derived content, handles CJK/vertical edge cases, and
+      produces the final enriched CSL JSON.
 
     input:
-      layout_blocks
+      mineru_markdown
+      mineru_middle_json
+      grobid_metadata
+      grobid_references
 
     output:
-      column_blocks
+      enriched_csl:
+        format: csl_json
+        description: final reconciled citation metadata
 
----
-
-  - stage: footnote_detection
-    purpose: >
-      Identify footnotes based on position and font size.
-
-    rules:
-      - located near bottom of page
-      - smaller font size than body text
-      - often begins with numeric marker
-
-    input:
-      column_blocks
-
-    output:
-      body_blocks
-      footnote_blocks
-
----
-
-  - stage: reading_order_resolution
-    purpose: >
-      Construct deterministic reading order across columns.
-
-    algorithm:
-      steps:
-        - sort_columns_left_to_right
-        - sort_blocks_top_to_bottom
-        - append_footnotes_after_body
-
-    input:
-      body_blocks
-      footnote_blocks
-
-    output:
-      ordered_blocks
+      extraction_provenance:
+        description: which fields came from grobid vs mineru vs dspy
+        schema:
+          field_name
+          source
+          confidence
 
 ---
 
   - stage: document_structure_builder
     purpose: >
-      Build hierarchical document structure.
+      Build hierarchical document structure from MinerU layout blocks.
+      Uses MinerU's block types and reading order instead of custom
+      heuristics.
 
     input:
-      ordered_blocks
+      mineru_middle_json
+      mineru_content_list
 
     output:
       document_structure
@@ -178,28 +176,6 @@ stages:
             footnotes:
               - footnote_id
                 text
-
----
-
-  - stage: citation_extraction
-    tool: grobid
-    purpose: >
-      Extract bibliographic references and inline citation markers.
-
-    input:
-      document_structure
-
-    output:
-      citations:
-        format: csl_json
-
-      citation_markers:
-        schema:
-          citation_id
-          page
-          column
-          paragraph
-          context
 
 ---
 
@@ -235,7 +211,7 @@ stages:
     input:
       merkle_tree
       document_structure
-      citations
+      enriched_csl
 
     output:
       retrieval_index:
@@ -254,8 +230,8 @@ storage:
     root:
       /documents/{doc_id}/
       /documents/{doc_id}/source.pdf
-      /documents/{doc_id}/text_blocks.json
-      /documents/{doc_id}/layout.json
+      /documents/{doc_id}/mineru_output/
+      /documents/{doc_id}/grobid_tei.xml
       /documents/{doc_id}/structure.json
       /documents/{doc_id}/citations.json
       /documents/{doc_id}/merkle.json
@@ -270,6 +246,8 @@ determinism:
     - deterministic reading order
     - stable hash algorithm
     - identical structure across identical inputs
+    - GROBID provides reproducible metadata baseline
+    - MinerU layout detection with fixed parameters
 
 ---
 
