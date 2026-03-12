@@ -20,9 +20,17 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _resolve_mineru_cli() -> Optional[str]:
+    """Return the available MinerU CLI executable name, if any."""
+    for cli_name in ("magic-pdf", "mineru"):
+        if shutil.which(cli_name):
+            return cli_name
+    return None
+
+
 def is_mineru_available() -> bool:
-    """Check whether the ``magic-pdf`` CLI is on PATH."""
-    return shutil.which("magic-pdf") is not None
+    """Check whether a supported MinerU CLI is on PATH."""
+    return _resolve_mineru_cli() is not None
 
 
 def run_mineru(
@@ -49,8 +57,9 @@ def run_mineru(
         ``content_list`` – parsed content_list.json (list of items)
         ``output_dir``   – path to the MinerU output directory
     """
-    if not is_mineru_available():
-        raise RuntimeError("magic-pdf CLI not found on PATH")
+    mineru_cli = _resolve_mineru_cli()
+    if not mineru_cli:
+        raise RuntimeError("MinerU CLI not found on PATH (expected 'magic-pdf' or 'mineru')")
 
     pdf_path = os.path.abspath(pdf_path)
     if not os.path.isfile(pdf_path):
@@ -63,7 +72,7 @@ def run_mineru(
 
     try:
         cmd = [
-            "magic-pdf",
+            mineru_cli,
             "-p", pdf_path,
             "-o", output_dir,
             "-m", parse_method,
