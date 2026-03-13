@@ -5,12 +5,14 @@ Invokes MinerU via CLI subprocess to produce:
   - markdown     (reading-order text)
   - content_list (ordered content items)
 
-Falls back to the legacy fitz-based layout analysis when MinerU is unavailable.
+Converts content_list.json into a section-hierarchical document structure
+with page → paragraph layout and overlaid section tree.
 """
 
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +21,36 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Patterns for classifying discarded items
+# ---------------------------------------------------------------------------
+
+# Footnote markers: ①②③ or LaTeX \textcircled
+_FOOTNOTE_MARKER_RE = re.compile(
+    r"^[\s]*(?:\$\\textcircled\{|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])"
+)
+
+# Page numbers: · N ·, — N —, bare small numbers (1-4 digits alone on a line)
+_PAGE_NUMBER_RE = re.compile(
+    r"^\s*(?:·\s*\d+\s*·|—\s*\d+\s*—|\d{1,4})\s*$"
+)
+
+# Running header heuristic: very short text (≤ 40 chars) that looks like a
+# repeated journal name or year+issue pattern (e.g. "考古 2023年第5期").
+_RUNNING_HEADER_RE = re.compile(
+    r"^\s*(?:[\u4e00-\u9fff]{2,8}\s*\d{4}\s*年\s*第?\s*\d+\s*期"
+    r"|第?\s*\d+\s*期"
+    r"|[\u4e00-\u9fff]{2,10})\s*$"
+)
+
+# Sub-section numbering patterns for inferring heading level
+_LEVEL2_RE = re.compile(r"^\s*[\(（][一二三四五六七八九十\d]+[\)）]")
+_LEVEL3_RE = re.compile(r"^\s*\d+\.\s")
+
+
+# ---------------------------------------------------------------------------
+# CLI invocation (kept unchanged)
+# ---------------------------------------------------------------------------
 
 def _resolve_mineru_cli() -> Optional[str]:
     """Return the available MinerU CLI executable name, if any."""
@@ -135,111 +167,262 @@ def _collect_mineru_outputs(
 
 
 # ---------------------------------------------------------------------------
-# Helpers to convert MinerU structures into the pipeline's page-layout format
+# content_list → section-hierarchical document structure
 # ---------------------------------------------------------------------------
 
-def mineru_to_page_layouts(middle_json: Any) -> List[Dict[str, Any]]:
-    """Convert MinerU middle JSON into the ``page_layouts`` list format
-    expected by ``build_layout_document_structure`` and downstream code.
+def _infer_heading_level(text: str) -> int:
+    """Infer a sub-section level from heading text patterns.
 
-    Each page dict has:
-        page_number, columns, footnotes, ordered_text
+    Returns 1 for top-level headings, 2 for (一)/(二) style, 3 for 1. 2. style.
     """
-    pdf_info = middle_json.get("pdf_info", []) if isinstance(middle_json, dict) else middle_json
-    if not pdf_info:
+    if _LEVEL3_RE.match(text):
+        return 3
+    if _LEVEL2_RE.match(text):
+        return 2
+    return 1
+
+
+def _classify_discarded(text: str) -> str:
+    """Classify a discarded item as 'footnote', 'page_number', or 'header'.
+
+    Returns one of: ``"footnote"``, ``"skip_page_number"``, ``"skip_header"``.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return "skip_page_number"
+
+    if _FOOTNOTE_MARKER_RE.match(stripped):
+        return "footnote"
+
+    if _PAGE_NUMBER_RE.match(stripped):
+        return "skip_page_number"
+
+    if _RUNNING_HEADER_RE.match(stripped) and len(stripped) <= 40:
+        return "skip_header"
+
+    # Default: treat as footnote
+    return "footnote"
+
+
+def _extract_footnote_marker(text: str) -> str:
+    """Try to extract a footnote marker (①, ②, etc.) from the text."""
+    m = re.match(r"^\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])", text)
+    if m:
+        return m.group(1)
+    m = re.match(r"^\s*\$\\textcircled\{(\d+)\}", text)
+    if m:
+        circled_digits = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+        idx = int(m.group(1)) - 1
+        if 0 <= idx < len(circled_digits):
+            return circled_digits[idx]
+        return f"({m.group(1)})"
+    return ""
+
+
+def content_list_to_document_structure(
+    content_list: Any,
+    page_number_map: Dict[int, int],
+) -> Dict[str, Any]:
+    """Build a section-hierarchical document structure from content_list.json.
+
+    Parameters
+    ----------
+    content_list : list
+        Parsed ``content_list.json`` from MinerU — a list of items each with
+        ``type``, optionally ``text_level``, ``page_idx``, ``bbox``, ``text``.
+    page_number_map : dict
+        Mapping from 0-based ``page_idx`` to actual journal page numbers.
+
+    Returns
+    -------
+    dict with ``"pages"`` (list of page dicts) and ``"section_tree"`` (nested
+    section hierarchy).
+    """
+    if not content_list or not isinstance(content_list, list):
+        return {"pages": [], "section_tree": []}
+
+    # ── Pass 1: organise items by page and track sections ──────────
+
+    # page_idx → page data accumulator
+    pages_acc: Dict[int, Dict[str, Any]] = {}
+    # section tracking
+    current_section: Optional[str] = None
+    # section tree builder: list of (level, node_dict) for stack-based nesting
+    section_stack: List[Tuple[int, Dict[str, Any]]] = []
+    section_roots: List[Dict[str, Any]] = []
+
+    for item in content_list:
+        item_type = item.get("type", "")
+        text = item.get("text", "").strip()
+        page_idx = item.get("page_idx", 0)
+        bbox = item.get("bbox", [])
+        text_level = item.get("text_level")
+
+        actual_page = page_number_map.get(page_idx, page_idx + 1)
+
+        # Ensure page accumulator exists
+        if page_idx not in pages_acc:
+            pages_acc[page_idx] = {
+                "page_number": actual_page,
+                "page_idx": page_idx,
+                "sections": [],
+                "paragraphs": [],
+                "footnotes": [],
+                "_section_set": set(),
+            }
+        page = pages_acc[page_idx]
+
+        # ── Heading ────────────────────────────────────────────────
+        if text_level is not None and text_level == 1 and text:
+            level = _infer_heading_level(text)
+            current_section = text
+
+            # Record section on this page
+            if text not in page["_section_set"]:
+                page["sections"].append(text)
+                page["_section_set"].add(text)
+
+            # Add as heading paragraph
+            para_n = len(page["paragraphs"]) + 1
+            page["paragraphs"].append({
+                "paragraph_id": f"p{actual_page}_para{para_n}",
+                "text": text,
+                "type": "heading",
+                "section": current_section,
+                "bbox": bbox,
+            })
+
+            # Build section tree
+            node: Dict[str, Any] = {
+                "title": text,
+                "level": level,
+                "page_number": actual_page,
+                "children": [],
+            }
+
+            # Pop stack until we find a parent with lower level
+            while section_stack and section_stack[-1][0] >= level:
+                section_stack.pop()
+
+            if section_stack:
+                section_stack[-1][1]["children"].append(node)
+            else:
+                section_roots.append(node)
+
+            section_stack.append((level, node))
+            continue
+
+        # ── Regular text paragraph ─────────────────────────────────
+        if item_type == "text" and text:
+            # Track current section on this page
+            if current_section and current_section not in page["_section_set"]:
+                page["sections"].append(current_section)
+                page["_section_set"].add(current_section)
+
+            para_n = len(page["paragraphs"]) + 1
+            page["paragraphs"].append({
+                "paragraph_id": f"p{actual_page}_para{para_n}",
+                "text": text,
+                "type": "text",
+                "section": current_section,
+                "bbox": bbox,
+            })
+            continue
+
+        # ── Image ──────────────────────────────────────────────────
+        if item_type == "image":
+            if current_section and current_section not in page["_section_set"]:
+                page["sections"].append(current_section)
+                page["_section_set"].add(current_section)
+
+            para_n = len(page["paragraphs"]) + 1
+            caption = text if text else ""
+            page["paragraphs"].append({
+                "paragraph_id": f"p{actual_page}_para{para_n}",
+                "text": caption,
+                "type": "image_caption",
+                "section": current_section,
+                "bbox": bbox,
+            })
+            continue
+
+        # ── Discarded items ────────────────────────────────────────
+        if item_type == "discarded" and text:
+            classification = _classify_discarded(text)
+
+            if classification == "footnote":
+                fn_n = len(page["footnotes"]) + 1
+                marker = _extract_footnote_marker(text)
+                page["footnotes"].append({
+                    "footnote_id": f"p{actual_page}_fn{fn_n}",
+                    "text": text,
+                    "marker": marker,
+                    "bbox": bbox,
+                })
+            # skip_page_number and skip_header → silently drop
+            continue
+
+    # ── Pass 2: assemble final pages list (sorted by page_idx) ─────
+
+    pages_list: List[Dict[str, Any]] = []
+    for page_idx in sorted(pages_acc):
+        page = pages_acc[page_idx]
+        # Remove internal tracking set
+        page.pop("_section_set", None)
+        pages_list.append(page)
+
+    return {
+        "pages": pages_list,
+        "section_tree": section_roots,
+    }
+
+
+# ---------------------------------------------------------------------------
+# content_list → flat paragraphs for nodes/merkle system
+# ---------------------------------------------------------------------------
+
+def content_list_to_paragraphs(
+    content_list: Any,
+    page_number_map: Dict[int, int],
+) -> List[Tuple[int, List[str]]]:
+    """Convert content_list to ``(actual_page_number, [paragraph_texts])``.
+
+    Only includes ``type: "text"`` items (excludes discarded, images, and
+    headings marked with ``text_level``).
+    """
+    if not content_list or not isinstance(content_list, list):
         return []
 
-    page_layouts: List[Dict[str, Any]] = []
-    for page_info in pdf_info:
-        page_idx = page_info.get("page_idx", 0)
-        page_number = page_idx + 1
+    # page_idx → list of paragraph texts
+    page_texts: Dict[int, List[str]] = {}
 
-        paragraphs: List[Dict[str, Any]] = []
-        footnotes: List[Dict[str, Any]] = []
-        ordered_texts: List[str] = []
+    for item in content_list:
+        if item.get("type") != "text":
+            continue
+        # Skip headings (they have text_level)
+        if item.get("text_level") is not None:
+            continue
 
-        for block in page_info.get("para_blocks", []):
-            text = _extract_block_text(block)
-            if not text:
-                continue
+        text = item.get("text", "").strip()
+        if not text:
+            continue
 
-            block_type = block.get("type", "text")
-            bbox = block.get("bbox", [])
+        page_idx = item.get("page_idx", 0)
+        if page_idx not in page_texts:
+            page_texts[page_idx] = []
+        page_texts[page_idx].append(text)
 
-            if block_type == "footnote":
-                footnotes.append({
-                    "footnote_id": f"p{page_number}_fn{len(footnotes) + 1}",
-                    "text": text,
-                    "bbox": bbox,
-                })
-            else:
-                paragraphs.append({
-                    "paragraph_id": f"p{page_number}_c0_para{len(paragraphs) + 1}",
-                    "text": text,
-                    "lines": [{"text": line, "bbox": []} for line in text.split("\n") if line.strip()],
-                    "bbox": bbox,
-                })
-
-            ordered_texts.append(text)
-
-        page_layouts.append({
-            "page_number": page_number,
-            "columns": [{
-                "column_id": 0,
-                "paragraphs": paragraphs,
-            }] if paragraphs else [],
-            "footnotes": footnotes,
-            "ordered_text": "\n\n".join(ordered_texts),
-        })
-
-    return page_layouts
-
-
-def mineru_to_paragraphs(
-    middle_json: Any,
-) -> List[Tuple[int, List[str]]]:
-    """Convert MinerU middle JSON to ``(page_number, [paragraph_texts])``."""
-    layouts = mineru_to_page_layouts(middle_json)
     result: List[Tuple[int, List[str]]] = []
-    for pl in layouts:
-        texts: List[str] = []
-        for col in pl.get("columns", []):
-            for para in col.get("paragraphs", []):
-                t = para.get("text", "").strip()
-                if t:
-                    texts.append(t)
-        for fn in pl.get("footnotes", []):
-            t = fn.get("text", "").strip()
-            if t:
-                texts.append(t)
-        result.append((pl["page_number"], texts))
+    for page_idx in sorted(page_texts):
+        actual_page = page_number_map.get(page_idx, page_idx + 1)
+        result.append((actual_page, page_texts[page_idx]))
+
     return result
 
 
-def _extract_block_text(block: Dict[str, Any]) -> str:
-    """Extract text from a MinerU para_block (handles spans/lines structure)."""
-    # Direct text field
-    if "text" in block and block["text"]:
-        return block["text"].strip()
-
-    # Lines → spans → content (standard MinerU middle JSON structure)
-    lines = block.get("lines", [])
-    parts: List[str] = []
-    for line in lines:
-        if isinstance(line, dict):
-            spans = line.get("spans", [])
-            for span in spans:
-                if isinstance(span, dict) and "content" in span:
-                    parts.append(span["content"])
-                elif isinstance(span, str):
-                    parts.append(span)
-            if not spans and "text" in line:
-                parts.append(line["text"])
-        elif isinstance(line, str):
-            parts.append(line)
-
-    return "\n".join(parts).strip()
-
+# ---------------------------------------------------------------------------
+# File I/O helpers (kept unchanged)
+# ---------------------------------------------------------------------------
 
 def _load_json(path: Path) -> Any:
     """Load JSON file, return empty dict on failure."""

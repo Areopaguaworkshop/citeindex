@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from .deterministic import hash_payload
 from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, PipelineResult
 from .pipelines import digital_pdf, media, scanned_pdf, url_article
-from .storage import append_jsonl, ensure_dir, store_corpus_artifacts, write_json
+from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,9 @@ class CiteIndexIngestionOrchestrator:
 
             artifacts = sub_result.to_dict()
             artifacts["csl_json"] = standardized_csl
-            document_hash = standardized_csl.get("content_hash") or hash_payload(artifacts)
 
-            document_path = store_corpus_artifacts(self.corpus_root, document_hash, artifacts)
+            folder_name = csl_folder_name(standardized_csl)
+            document_path = store_corpus_artifacts(self.corpus_root, folder_name, artifacts)
             log_entry = self.log_ingestion(input_ref, resource_type, standardized_csl, sub_result)
 
             output = {
