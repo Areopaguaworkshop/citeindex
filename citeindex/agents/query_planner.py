@@ -35,6 +35,8 @@ _CITATION_LOOKUP_SIGNALS = re.compile(
     r"\b(cite|citation|reference|bibliography|who wrote|author of|published by)\b",
     re.IGNORECASE,
 )
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_FILTER_PREFIX_RE = re.compile(r"\b(?:author|year|type|source):\s*\S+", re.IGNORECASE)
 
 
 def _detect_intent(query: str) -> str:
@@ -108,8 +110,18 @@ class QueryPlanner:
 
     @staticmethod
     def _extract_exact_phrases(query: str) -> List[str]:
-        """Extract double-quoted phrases — kept exact per spec."""
-        return re.findall(r'"([^"]+)"', query)
+        """Extract explicit quoted phrases or infer a single exact phrase for CJK queries."""
+        explicit_phrases = re.findall(r'"([^"]+)"', query)
+        if explicit_phrases:
+            return explicit_phrases
+
+        # For unquoted CJK queries, keep the cleaned query as an exact phrase target.
+        # This helps match OCR text when token boundaries differ around digits/punctuation.
+        cleaned = _FILTER_PREFIX_RE.sub(" ", query).strip()
+        if cleaned and _CJK_RE.search(cleaned):
+            return [cleaned]
+
+        return []
 
     @staticmethod
     def _extract_search_terms(query: str, exact_phrases: List[str]) -> List[str]:

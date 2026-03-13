@@ -58,10 +58,18 @@ class RetrievalAgent:
         # Stage 2: BM25 scoring
         search_terms = query_plan.get("search_terms", [])
         exact_phrases = query_plan.get("exact_phrases", [])
+        section_targets = query_plan.get("section_targets", [])
 
         scored = self._bm25_score(
             search_terms, candidate_ids, inverted_index, node_map, len(nodes)
         )
+        bm25_hit_count = len(scored)
+
+        if not scored and (exact_phrases or section_targets):
+            scored = {
+                node_id: {"bm25": 0.0, "total": 0.0}
+                for node_id in candidate_ids
+            }
 
         # Apply phrase boosts
         for node_id in scored:
@@ -70,13 +78,18 @@ class RetrievalAgent:
             scored[node_id]["total"] += phrase_boost
 
         # Apply section target boosts
-        section_targets = query_plan.get("section_targets", [])
         for node_id in scored:
             section_boost = self._section_boost(section_targets, node_map.get(node_id, {}))
             scored[node_id]["section_boost"] = section_boost
             scored[node_id]["total"] += section_boost
 
-        logger.info("Stage 2 (BM25): %d scored nodes", len(scored))
+        scored = self._keep_positive_scores(scored)
+
+        logger.info(
+            "Stage 2 (BM25 + boosts): %d scored nodes (%d BM25 hits)",
+            len(scored),
+            bm25_hit_count,
+        )
 
         # Stage 3: Strict trace filter — drop nodes missing provenance
         traced = self._trace_filter(scored, node_map)
@@ -110,7 +123,8 @@ class RetrievalAgent:
             retrieval_debug={
                 "total_nodes": len(nodes),
                 "after_metadata_filter": len(candidate_ids),
-                "after_bm25": len(scored),
+                "after_bm25": bm25_hit_count,
+                "after_boosts": len(scored),
                 "after_trace_filter": len(traced),
                 "returned": len(ranked_nodes),
             },
@@ -206,11 +220,7 @@ class RetrievalAgent:
     ) -> Dict[str, Dict[str, float]]:
         """Compute BM25 score for each candidate node."""
         if not terms:
-            # No search terms — all candidates get base score
-            return {
-                nid: {"bm25": 0.0, "total": 0.0}
-                for nid in candidate_ids
-            }
+            return {}
 
         # Average document length
         doc_lengths: Dict[str, int] = {}
@@ -257,12 +267,17 @@ class RetrievalAgent:
                 scores[nid]["bm25"] += term_score
                 scores[nid]["total"] += term_score
 
-        # Include zero-scored candidates
-        for nid in candidate_ids:
-            if nid not in scores:
-                scores[nid] = {"bm25": 0.0, "total": 0.0}
-
         return dict(scores)
+
+    @staticmethod
+    def _keep_positive_scores(
+        scored: Dict[str, Dict[str, float]],
+    ) -> Dict[str, Dict[str, float]]:
+        return {
+            node_id: score_data
+            for node_id, score_data in scored.items()
+            if score_data.get("total", 0.0) > 0.0
+        }
 
     # ------------------------------------------------------------------
     # Boosts
