@@ -29,7 +29,18 @@ def _run_ingest(args: argparse.Namespace) -> int:
         corpus_root=args.corpus_root,
         schema_version=args.schema_version,
     )
-    output = orchestrator.ingest(args.input, config=config)
+
+    if args.all_url_article or args.update_url_article:
+        output = orchestrator.ingest_all_urls(
+            root_url=args.input,
+            config=config,
+            update=args.update_url_article,
+            max_depth=args.crawl_depth,
+            max_pages=args.crawl_max_pages,
+        )
+    else:
+        output = orchestrator.ingest(args.input, config=config)
+
     print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
     return 1 if output.get("status") == "blocked" else 0
 
@@ -156,6 +167,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "-cs",
         default="chicago-author-date",
         help="Citation style for formatted output (default: chicago-author-date)",
+    )
+    ingest_parser.add_argument(
+        "--all-url-article",
+        "-aua",
+        action="store_true",
+        help="Crawl the input URL and ingest all discovered article pages",
+    )
+    ingest_parser.add_argument(
+        "--update-url-article",
+        "-uua",
+        action="store_true",
+        help="Crawl and compare content hashes; skip unchanged pages, re-ingest updated ones",
+    )
+    ingest_parser.add_argument(
+        "--crawl-depth",
+        type=int,
+        default=2,
+        help="Max BFS crawl depth for --all-url-article (default: 2)",
+    )
+    ingest_parser.add_argument(
+        "--crawl-max-pages",
+        type=int,
+        default=100,
+        help="Max pages the crawler will visit for --all-url-article (default: 100)",
     )
 
     search_parser = subparsers.add_parser(

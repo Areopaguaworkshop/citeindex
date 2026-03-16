@@ -1,7 +1,8 @@
+import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlparse
 
 from .deterministic import hash_payload
@@ -175,7 +176,7 @@ class CiteIndexIngestionOrchestrator:
         if resource_type == "scanned_pdf":
             return scanned_pdf.run(normalized_input, config=config)
         if resource_type == "url_article":
-            return url_article.run(normalized_input)
+            return url_article.run(normalized_input, config=config)
         if resource_type == "media":
             return media.run(normalized_input)
         raise ValueError(f"No route for resource type: {resource_type}")
@@ -213,6 +214,138 @@ class CiteIndexIngestionOrchestrator:
         ).to_dict()
         append_jsonl(os.path.join(self.corpus_root, "ingestion_log.jsonl"), entry)
         return entry
+
+    # ------------------------------------------------------------------
+    # Batch URL article ingestion (--all-url-article / --update-url-article)
+    # ------------------------------------------------------------------
+
+    _CONTENT_HASHES_FILE = "_url_content_hashes.json"
+
+    def _load_content_hashes(self) -> Dict[str, str]:
+        """Load URL → content-hash mapping from corpus root."""
+        path = os.path.join(self.corpus_root, self._CONTENT_HASHES_FILE)
+        if not os.path.isfile(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_content_hashes(self, hashes: Dict[str, str]) -> None:
+        """Persist URL → content-hash mapping to corpus root."""
+        write_json(os.path.join(self.corpus_root, self._CONTENT_HASHES_FILE), hashes)
+
+    def ingest_all_urls(
+        self,
+        root_url: str,
+        config: Optional[IngestionConfig] = None,
+        update: bool = False,
+        max_depth: int = 2,
+        max_pages: int = 100,
+    ) -> Dict[str, Any]:
+        """Crawl *root_url*, discover article links, and ingest each one.
+
+        Parameters
+        ----------
+        root_url : str
+            Starting page for the crawl (e.g. a site index or homepage).
+        config : IngestionConfig, optional
+            Shared ingestion config forwarded to each URL pipeline run.
+        update : bool
+            When True, fetch each page and compare its content hash with
+            the stored hash.  Skip if unchanged; re-ingest if changed or
+            new.  When False, ingest every discovered URL unconditionally.
+        max_depth : int
+            BFS crawl depth (default 2).
+        max_pages : int
+            Maximum pages the crawler will visit (default 100).
+
+        Returns
+        -------
+        dict  Summary with ``discovered``, ``ingested``, ``skipped``,
+              ``updated``, ``failed`` counts and per-URL results.
+        """
+        from .url_crawler import discover_article_urls, fetch_content_hash
+
+        logger.info("Discovering article URLs from %s (depth=%d, max_pages=%d)",
+                     root_url, max_depth, max_pages)
+        discovered = discover_article_urls(root_url, max_depth=max_depth, max_pages=max_pages)
+
+        stored_hashes: Dict[str, str] = {}
+        if update:
+            stored_hashes = self._load_content_hashes()
+            logger.info("Update mode: %d stored content hashes", len(stored_hashes))
+
+        results: List[Dict[str, Any]] = []
+        ingested_count = 0
+        updated_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        for idx, url in enumerate(discovered, start=1):
+            # ── Update mode: compare content hash before ingesting ──
+            if update:
+                new_hash = fetch_content_hash(url)
+                old_hash = stored_hashes.get(url)
+
+                if new_hash and old_hash and new_hash == old_hash:
+                    logger.info("[%d/%d] SKIP (unchanged): %s", idx, len(discovered), url)
+                    skipped_count += 1
+                    results.append({"url": url, "status": "unchanged"})
+                    continue
+
+                is_update = old_hash is not None
+            else:
+                new_hash = None
+                is_update = False
+
+            logger.info("[%d/%d] %s: %s", idx, len(discovered),
+                        "Updating" if is_update else "Ingesting", url)
+            try:
+                output = self.ingest(url, config=config)
+                status = output.get("status", "unknown")
+                if status == "ok":
+                    if is_update:
+                        updated_count += 1
+                        results.append({"url": url, "status": "updated"})
+                    else:
+                        ingested_count += 1
+                        results.append({"url": url, "status": status})
+
+                    # Store content hash (compute now if not in update mode)
+                    if new_hash is None:
+                        new_hash = fetch_content_hash(url)
+                    if new_hash:
+                        stored_hashes[url] = new_hash
+                else:
+                    failed_count += 1
+                    results.append({"url": url, "status": status})
+            except Exception as exc:
+                logger.error("Failed to ingest %s: %s", url, exc, exc_info=True)
+                results.append({"url": url, "status": "error", "error": str(exc)})
+                failed_count += 1
+
+        # Persist content hashes after batch
+        self._save_content_hashes(stored_hashes)
+
+        summary = {
+            "status": "ok",
+            "root_url": root_url,
+            "discovered": len(discovered),
+            "ingested": ingested_count,
+            "updated": updated_count,
+            "skipped": skipped_count,
+            "failed": failed_count,
+            "results": results,
+        }
+        logger.info(
+            "Batch complete: discovered=%d ingested=%d updated=%d skipped=%d failed=%d",
+            len(discovered), ingested_count, updated_count, skipped_count, failed_count,
+        )
+        return summary
+
+    # ------------------------------------------------------------------
 
     def _failure(
         self,
