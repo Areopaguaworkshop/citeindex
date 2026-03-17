@@ -197,6 +197,7 @@ name = "citeindex-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "citeindex-core",
  "citeindex-plugins",
  "clap",

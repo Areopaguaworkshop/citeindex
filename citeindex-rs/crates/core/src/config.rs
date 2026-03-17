@@ -50,6 +50,9 @@ pub struct TuiConfig {
 
     #[serde(default = "default_side_panel_width")]
     pub side_panel_width_pct: u16,
+
+    #[serde(default = "default_cite_style")]
+    pub cite_style: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +96,9 @@ fn default_theme() -> String {
 fn default_side_panel_width() -> u16 {
     30
 }
+fn default_cite_style() -> String {
+    "chicago-author-date".into()
+}
 fn default_plugin_dir() -> PathBuf {
     PathBuf::from("plugins")
 }
@@ -116,6 +122,7 @@ impl Default for TuiConfig {
             theme: default_theme(),
             side_panel_collapsed: false,
             side_panel_width_pct: default_side_panel_width(),
+            cite_style: default_cite_style(),
         }
     }
 }

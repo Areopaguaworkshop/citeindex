@@ -24,3 +24,4 @@ crossterm = { workspace = true }
 pulldown-cmark = { workspace = true }
 fuzzy-matcher = { workspace = true }
 clap = { workspace = true }
+chrono = { workspace = true }

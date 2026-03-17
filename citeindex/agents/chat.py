@@ -141,7 +141,7 @@ class SearchPipeline:
         self.corpus_root = corpus_root
         self.schema_version = schema_version
 
-    def search(self, query: str, top_k: int = 20) -> Dict[str, Any]:
+    def search(self, query: str, top_k: int = 20, cite_style: str = "chicago-author-date") -> Dict[str, Any]:
         from .corpus_loader import CorpusLoader
         from .indexing import IndexingAgent
         from .query_planner import QueryPlanner
@@ -199,6 +199,16 @@ class SearchPipeline:
             if authors:
                 first = authors[0]
                 node_copy["author"] = f"{first.get('family', '')} {first.get('given', '')}".strip()
+            # Generate formatted citation from CSL data
+            if csl:
+                try:
+                    from citeindex.citation_style import format_bibliography
+                    bib, _in_text = format_bibliography([csl], cite_style)
+                    node_copy["formatted_citation"] = bib.strip() if bib and not bib.startswith("Error") else ""
+                except Exception:
+                    node_copy["formatted_citation"] = ""
+            else:
+                node_copy["formatted_citation"] = ""
             enriched_nodes.append(node_copy)
 
         return {

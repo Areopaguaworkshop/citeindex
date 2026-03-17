@@ -51,7 +51,7 @@ def _run_search(args: argparse.Namespace) -> int:
     pipeline = SearchPipeline(
         corpus_root=args.corpus_root,
     )
-    result = pipeline.search(args.query, top_k=args.top_k)
+    result = pipeline.search(args.query, top_k=args.top_k, cite_style=args.cite_style)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result.get("status") == "ok" else 1
 
@@ -202,6 +202,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search_parser.add_argument(
         "--top-k", type=int, default=20, help="Number of results to return (default: 20)"
+    )
+    search_parser.add_argument(
+        "--cite-style",
+        default="chicago-author-date",
+        help="Citation style for formatted output (default: chicago-author-date)",
     )
     search_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose logs"

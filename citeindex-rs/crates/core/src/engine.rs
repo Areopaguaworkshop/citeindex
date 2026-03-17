@@ -53,7 +53,7 @@ impl Engine {
     pub async fn search(&self, query: &str) -> anyhow::Result<Value> {
         let corpus = self.config.corpus_root.to_string_lossy();
         let result =
-            ipc::trigger_search(&self.config.python_bin, query, &corpus).await?;
+            ipc::trigger_search(&self.config.python_bin, query, &corpus, &self.config.tui.cite_style).await?;
         Ok(result.json.unwrap_or(Value::Null))
     }
 

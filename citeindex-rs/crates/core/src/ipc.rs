@@ -77,10 +77,11 @@ pub async fn trigger_search(
     python_bin: &str,
     query: &str,
     corpus_root: &str,
+    cite_style: &str,
 ) -> anyhow::Result<PythonResult> {
     call_python(
         python_bin,
-        &["search", query, "--corpus-root", corpus_root],
+        &["search", query, "--corpus-root", corpus_root, "--cite-style", cite_style],
         None,
     )
     .await

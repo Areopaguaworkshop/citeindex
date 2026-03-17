@@ -217,3 +217,145 @@ impl InputBar {
         }
     }
 }
+
+/// A single search result displayed in the popup.
+#[derive(Debug, Clone)]
+pub struct SearchResultEntry {
+    pub title: String,
+    pub author: String,
+    pub text: String,
+    pub formatted_citation: String,
+    pub score: f64,
+    pub node_id: String,
+}
+
+/// A past search query for history.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchHistoryEntry {
+    pub timestamp: String,
+    pub query: String,
+    pub result_count: usize,
+}
+
+/// Popup state for browsing search results.
+pub struct SearchResultsPopup {
+    pub visible: bool,
+    pub results: Vec<SearchResultEntry>,
+    pub selected: usize,
+    pub expanded: bool,
+    pub scroll_offset: u16,
+    pub history: Vec<SearchHistoryEntry>,
+    history_path: Option<std::path::PathBuf>,
+}
+
+impl SearchResultsPopup {
+    pub fn new(history_dir: Option<&std::path::Path>) -> Self {
+        let history_path = history_dir.map(|d| d.join("search_history.jsonl"));
+        let history = history_path
+            .as_ref()
+            .map(|p| Self::load_history(p))
+            .unwrap_or_default();
+        Self {
+            visible: false,
+            results: Vec::new(),
+            selected: 0,
+            expanded: false,
+            scroll_offset: 0,
+            history,
+            history_path,
+        }
+    }
+
+    pub fn open(&mut self, results: Vec<SearchResultEntry>, query: &str) {
+        let entry = SearchHistoryEntry {
+            timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string(),
+            query: query.to_string(),
+            result_count: results.len(),
+        };
+        self.history.push(entry.clone());
+        self.save_history_entry(&entry);
+
+        self.results = results;
+        self.selected = 0;
+        self.expanded = false;
+        self.scroll_offset = 0;
+        self.visible = true;
+    }
+
+    pub fn close(&mut self) {
+        self.visible = false;
+        self.expanded = false;
+        self.scroll_offset = 0;
+    }
+
+    pub fn toggle_expand(&mut self) {
+        self.expanded = !self.expanded;
+        self.scroll_offset = 0;
+    }
+
+    pub fn next(&mut self) {
+        if !self.expanded && !self.results.is_empty() {
+            self.selected = (self.selected + 1) % self.results.len();
+        }
+    }
+
+    pub fn prev(&mut self) {
+        if !self.expanded && !self.results.is_empty() {
+            self.selected = self
+                .selected
+                .checked_sub(1)
+                .unwrap_or(self.results.len() - 1);
+        }
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        if self.expanded {
+            self.scroll_offset = self.scroll_offset.saturating_add(amount);
+        }
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        if self.expanded {
+            self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+        }
+    }
+
+    pub fn selected_result(&self) -> Option<&SearchResultEntry> {
+        self.results.get(self.selected)
+    }
+
+    fn save_history_entry(&self, entry: &SearchHistoryEntry) {
+        if let Some(ref path) = self.history_path {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                if let Ok(line) = serde_json::to_string(entry) {
+                    use std::io::Write;
+                    let _ = writeln!(file, "{}", line);
+                }
+            }
+        }
+    }
+
+    fn load_history(path: &std::path::Path) -> Vec<SearchHistoryEntry> {
+        if !path.exists() {
+            return Vec::new();
+        }
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return Vec::new(),
+        };
+        use std::io::BufRead;
+        std::io::BufReader::new(file)
+            .lines()
+            .filter_map(|l| l.ok())
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|l| serde_json::from_str::<SearchHistoryEntry>(&l).ok())
+            .collect()
+    }
+}

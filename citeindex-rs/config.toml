@@ -16,6 +16,7 @@ max_tokens = 1024
 theme = "dark"            # "dark" or "light"
 side_panel_collapsed = true
 side_panel_width_pct = 30
+cite_style = "chicago-author-date"
 
 [plugins]
 directory = "plugins"
