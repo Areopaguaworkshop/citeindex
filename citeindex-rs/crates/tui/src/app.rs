@@ -2,7 +2,10 @@
 
 use crate::input::{self, AutocompleteState, ParsedInput};
 use crate::mode::Mode;
-use crate::panels::{ChatMessage, ChatWindow, InputBar, MessageRole, SidePanel, SidePanelItem};
+use crate::panels::{
+    ChatMessage, ChatWindow, InputBar, MessageRole, SearchResultEntry, SearchResultsPopup,
+    SidePanel, SidePanelItem,
+};
 use crate::theme::{Theme, ThemeMode};
 use crate::ui;
 
@@ -32,6 +35,7 @@ pub struct App {
     pub input_bar: InputBar,
     pub side_panel: SidePanel,
     pub autocomplete: AutocompleteState,
+    pub search_popup: SearchResultsPopup,
     pub running: bool,
     pub busy: bool,
     thread_id: String,
@@ -57,6 +61,9 @@ impl App {
             config.tui.side_panel_width_pct,
         );
 
+        let history_dir = config.corpus_root.join(".search_history");
+        let search_popup = SearchResultsPopup::new(Some(&history_dir));
+
         Self {
             config,
             engine,
@@ -67,6 +74,7 @@ impl App {
             input_bar: InputBar::new(),
             side_panel,
             autocomplete: AutocompleteState::new(),
+            search_popup,
             running: true,
             busy: false,
             thread_id: "default".into(),
@@ -121,6 +129,50 @@ impl App {
                 return;
             }
             _ => {}
+        }
+
+        // Search popup navigation (takes priority)
+        if self.search_popup.visible {
+            match key.code {
+                KeyCode::Up => {
+                    if self.search_popup.expanded {
+                        self.search_popup.scroll_up(1);
+                    } else {
+                        self.search_popup.prev();
+                    }
+                    return;
+                }
+                KeyCode::Down => {
+                    if self.search_popup.expanded {
+                        self.search_popup.scroll_down(1);
+                    } else {
+                        self.search_popup.next();
+                    }
+                    return;
+                }
+                KeyCode::Enter => {
+                    self.search_popup.toggle_expand();
+                    return;
+                }
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    if self.search_popup.expanded {
+                        self.search_popup.expanded = false;
+                        self.search_popup.scroll_offset = 0;
+                    } else {
+                        self.search_popup.close();
+                    }
+                    return;
+                }
+                KeyCode::PageUp => {
+                    self.search_popup.scroll_up(5);
+                    return;
+                }
+                KeyCode::PageDown => {
+                    self.search_popup.scroll_down(5);
+                    return;
+                }
+                _ => return,
+            }
         }
 
         // Autocomplete navigation
@@ -311,6 +363,28 @@ impl App {
                     }
                 }
             }
+            "search-history" => {
+                if self.search_popup.history.is_empty() {
+                    self.chat_window.push(ChatMessage {
+                        role: MessageRole::System,
+                        content: "No search history.".into(),
+                        citations: Vec::new(),
+                    });
+                } else {
+                    let mut text = format!("Search history ({} entries):\n", self.search_popup.history.len());
+                    for (i, entry) in self.search_popup.history.iter().rev().take(20).enumerate() {
+                        text.push_str(&format!(
+                            "\n{}. [{}] \"{}\" → {} results",
+                            i + 1, entry.timestamp, entry.query, entry.result_count
+                        ));
+                    }
+                    self.chat_window.push(ChatMessage {
+                        role: MessageRole::System,
+                        content: text,
+                        citations: Vec::new(),
+                    });
+                }
+            }
             _ => {
                 // Try plugin commands
                 let plugin_cmds = self.plugin_manager.all_commands();
@@ -418,6 +492,7 @@ impl App {
                 }
             }
             Mode::Search => {
+                let query_text = text.to_string();
                 match self.engine.search(text).await {
                     Ok(response) => {
                         let results = response
@@ -426,19 +501,25 @@ impl App {
 
                         if let Some(results) = results {
                             let count = results.len();
-                            let mut text_out = format!("Found {} results:\n", count);
+                            let mut popup_entries = Vec::new();
                             let mut side_items = Vec::new();
 
-                            for (i, r) in results.iter().take(10).enumerate() {
+                            for r in results.iter() {
                                 let node_id = r.get("node_id").and_then(|v| v.as_str()).unwrap_or("?");
                                 let node_text = r.get("text").and_then(|v| v.as_str()).unwrap_or("");
                                 let score = r.get("total_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                 let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                                let author = r.get("author").and_then(|v| v.as_str()).unwrap_or("");
+                                let citation = r.get("formatted_citation").and_then(|v| v.as_str()).unwrap_or("");
 
-                                text_out.push_str(&format!(
-                                    "\n{}. [score: {:.2}] {}\n   {}\n   node: {}\n",
-                                    i + 1, score, title, truncate(node_text, 100), node_id
-                                ));
+                                popup_entries.push(SearchResultEntry {
+                                    title: title.to_string(),
+                                    author: author.to_string(),
+                                    text: node_text.to_string(),
+                                    formatted_citation: citation.to_string(),
+                                    score,
+                                    node_id: node_id.to_string(),
+                                });
 
                                 side_items.push(SidePanelItem {
                                     label: truncate(title, 30).to_string(),
@@ -447,10 +528,11 @@ impl App {
                             }
 
                             self.side_panel.set_search_results(side_items);
+                            self.search_popup.open(popup_entries, &query_text);
 
                             self.chat_window.push(ChatMessage {
-                                role: MessageRole::Assistant,
-                                content: text_out,
+                                role: MessageRole::System,
+                                content: format!("Found {} results. Use ↑↓ to navigate, Enter to expand, Esc to close.", count),
                                 citations: Vec::new(),
                             });
                         } else {

@@ -106,6 +106,7 @@ impl AutocompleteState {
             ("/help", "Show help"),
             ("/memory", "Search memory"),
             ("/clear", "Clear chat"),
+            ("/search-history", "Show search history"),
         ] {
             if cmd[1..].contains(&query.to_lowercase()) {
                 self.suggestions.push(AutocompleteSuggestion {

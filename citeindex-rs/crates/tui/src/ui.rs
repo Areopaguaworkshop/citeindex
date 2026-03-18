@@ -61,6 +61,11 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.autocomplete.visible {
         draw_autocomplete(f, app, main_chunks[2]);
     }
+
+    // Draw search results popup if visible
+    if app.search_popup.visible {
+        draw_search_popup(f, app, area);
+    }
 }
 
 fn draw_top_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -283,4 +288,180 @@ fn draw_autocomplete(f: &mut Frame, app: &App, input_area: Rect) {
 
     let list = List::new(items).block(block);
     f.render_widget(list, popup_area);
+}
+
+fn draw_search_popup(f: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let popup = &app.search_popup;
+
+    // Center the popup: 80% width, 70% height
+    let popup_width = (area.width as f32 * 0.80) as u16;
+    let popup_height = (area.height as f32 * 0.70) as u16;
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect {
+        x: popup_x,
+        y: popup_y,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    if popup.expanded {
+        // Expanded detail view for the selected result
+        if let Some(entry) = popup.selected_result() {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.accent_style())
+                .title(Span::styled(
+                    " Search Result — Esc: back  ↑↓/PgUp/PgDn: scroll ",
+                    theme.accent_style(),
+                ))
+                .style(Style::default().bg(theme.bg));
+
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let mut lines: Vec<Line> = Vec::new();
+
+            // Title
+            lines.push(Line::from(vec![
+                Span::styled("Title: ", theme.accent_style()),
+                Span::styled(&entry.title, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            ]));
+
+            // Author
+            if !entry.author.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("Author: ", theme.accent_style()),
+                    Span::styled(&entry.author, Style::default().fg(theme.fg)),
+                ]));
+            }
+
+            // Score
+            lines.push(Line::from(vec![
+                Span::styled("Score: ", theme.accent_style()),
+                Span::styled(format!("{:.4}", entry.score), Style::default().fg(theme.success)),
+            ]));
+
+            // Node ID
+            lines.push(Line::from(vec![
+                Span::styled("Node: ", theme.dim_style()),
+                Span::styled(&entry.node_id, theme.dim_style()),
+            ]));
+
+            lines.push(Line::from(""));
+
+            // Formatted citation
+            if !entry.formatted_citation.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "── Citation ──",
+                    theme.accent_style(),
+                )));
+                for line in entry.formatted_citation.lines() {
+                    lines.push(Line::from(Span::styled(
+                        format!("  {}", line),
+                        Style::default().fg(theme.warning),
+                    )));
+                }
+                lines.push(Line::from(""));
+            }
+
+            // Full text
+            lines.push(Line::from(Span::styled(
+                "── Text ──",
+                theme.accent_style(),
+            )));
+            for line in entry.text.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", line),
+                    Style::default().fg(theme.fg),
+                )));
+            }
+
+            let total_lines = lines.len() as u16;
+            let visible = inner.height;
+            let max_scroll = total_lines.saturating_sub(visible);
+            let scroll = max_scroll.saturating_sub(popup.scroll_offset);
+
+            let text = Text::from(lines);
+            let paragraph = Paragraph::new(text)
+                .wrap(Wrap { trim: false })
+                .scroll((scroll, 0));
+
+            f.render_widget(paragraph, inner);
+        }
+    } else {
+        // List view
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.accent_style())
+            .title(Span::styled(
+                format!(
+                    " Search Results ({}) — ↑↓: select  Enter: expand  q/Esc: close ",
+                    popup.results.len()
+                ),
+                theme.accent_style(),
+            ))
+            .style(Style::default().bg(theme.bg));
+
+        let inner = block.inner(popup_area);
+        f.render_widget(block, popup_area);
+
+        let items: Vec<ListItem> = popup
+            .results
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let style = if i == popup.selected {
+                    theme.highlight_style()
+                } else {
+                    theme.base_style()
+                };
+
+                let score_span = Span::styled(
+                    format!("[{:.2}] ", entry.score),
+                    if i == popup.selected {
+                        style
+                    } else {
+                        Style::default().fg(theme.success)
+                    },
+                );
+
+                let title_span = Span::styled(
+                    if entry.title.is_empty() { "(untitled)" } else { &entry.title },
+                    style.add_modifier(Modifier::BOLD),
+                );
+
+                let mut row_lines = vec![Line::from(vec![
+                    Span::styled(format!("{:>2}. ", i + 1), style),
+                    score_span,
+                    title_span,
+                ])];
+
+                // Show formatted citation preview on second line
+                if !entry.formatted_citation.is_empty() {
+                    let cite_preview = if entry.formatted_citation.len() > 80 {
+                        format!("    📚 {}…", &entry.formatted_citation[..80])
+                    } else {
+                        format!("    📚 {}", &entry.formatted_citation)
+                    };
+                    row_lines.push(Line::from(Span::styled(
+                        cite_preview,
+                        if i == popup.selected {
+                            style
+                        } else {
+                            theme.dim_style()
+                        },
+                    )));
+                }
+
+                ListItem::new(row_lines)
+            })
+            .collect();
+
+        let list = List::new(items);
+        f.render_widget(list, inner);
+    }
 }
