@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/tui", "crates/plugins"]
+members = ["crates/core", "crates/kernel", "crates/tui", "crates/plugins"]
 
 [workspace.package]
 version = "0.1.0"
@@ -26,3 +26,8 @@ pulldown-cmark = "0.12"
 fuzzy-matcher = "0.3"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
+uuid = { version = "1", features = ["v4", "serde"] }
+tantivy = "0.22"
+rusqlite = { version = "0.34", features = ["bundled"] }
+regex = "1"
+once_cell = "1"
