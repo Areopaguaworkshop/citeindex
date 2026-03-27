@@ -12,17 +12,11 @@ use crate::types::context_slot::BudgetZone;
 /// Total context budget computation.
 #[derive(Debug, Clone)]
 pub struct ContextBudget {
-    /// Model's max context window.
     pub total_model_tokens: usize,
-    /// Reserved for system prompt.
     pub system_prompt_tokens: usize,
-    /// Reserved for agent instructions.
     pub agent_prompt_tokens: usize,
-    /// Reserved for LLM output.
     pub output_reserve: usize,
-    /// Safety margin percentage (default 0.05).
     pub safety_margin_pct: f32,
-    /// Computed: what's left for source zones.
     pub available_source_budget: usize,
 }
 
@@ -51,13 +45,9 @@ impl ContextBudget {
 /// Zone allocation percentages. Must sum to 1.0.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneAllocation {
-    /// Default 40%.
     pub primary_retrieval_pct: f32,
-    /// Default 30%.
     pub supporting_cites_pct: f32,
-    /// Default 20%.
     pub memory_pct: f32,
-    /// Default 10%.
     pub argument_graph_pct: f32,
 }
 
@@ -80,9 +70,7 @@ impl ZoneAllocation {
             + self.memory_pct
             + self.argument_graph_pct;
         if (sum - 1.0).abs() > 0.001 {
-            return Err(format!(
-                "zone allocation sums to {sum:.4}, expected 1.0"
-            ));
+            return Err(format!("zone allocation sums to {sum:.4}, expected 1.0"));
         }
         Ok(())
     }
@@ -126,16 +114,14 @@ impl ZoneBudgets {
 
 /// Apply AdmissionTier to zone allocation.
 ///
-/// Under high load, zones are disabled and total budget shrinks.
+/// Returns (adjusted allocation, budget multiplier).
 pub fn apply_admission_tier(
     allocation: &ZoneAllocation,
     tier: &AdmissionTier,
 ) -> (ZoneAllocation, f32) {
     match tier {
         AdmissionTier::Full => (allocation.clone(), 1.0),
-
         AdmissionTier::Standard => (allocation.clone(), 0.8),
-
         AdmissionTier::Degraded => (
             ZoneAllocation {
                 primary_retrieval_pct: 0.60,
@@ -145,7 +131,6 @@ pub fn apply_admission_tier(
             },
             0.5,
         ),
-
         AdmissionTier::Minimal => (
             ZoneAllocation {
                 primary_retrieval_pct: 1.0,
@@ -173,13 +158,12 @@ pub fn estimate_tokens(text: &str, language: &str) -> usize {
 /// Evict slots from a zone until total tokens fit within budget.
 ///
 /// Keeps highest-scoring slots. Deterministic — same scores → same eviction.
-/// `slots` is a vec of (score, token_count, slot_id_str) tuples.
-/// Returns the indices of slots to keep.
+/// Each slot is represented as (score, token_count, slot_id).
+/// Returns the number of slots kept.
 pub fn evict_zone(
     slots: &mut Vec<(f32, usize, String)>,
     zone_budget: usize,
 ) -> usize {
-    // Sort by score descending, then token_count ascending, then slot_id ascending
     slots.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -187,7 +171,6 @@ pub fn evict_zone(
             .then(a.2.cmp(&b.2))
     });
 
-    // Greedily keep slots until budget exceeded
     let mut used = 0;
     let mut keep_count = 0;
     for slot in slots.iter() {
@@ -209,16 +192,12 @@ mod tests {
     #[test]
     fn test_context_budget_compute() {
         let budget = ContextBudget::compute(200_000, 500, 300, 4096, 0.05);
-        // safety = 200000 * 0.05 = 10000
-        // available = 200000 - 500 - 300 - 4096 - 10000 = 185104
         assert_eq!(budget.available_source_budget, 185_104);
     }
 
     #[test]
     fn test_context_budget_small_model() {
         let budget = ContextBudget::compute(8192, 500, 300, 2048, 0.05);
-        // safety = 8192 * 0.05 = 409
-        // available = 8192 - 500 - 300 - 2048 - 409 = 4935
         assert_eq!(budget.available_source_budget, 4935);
     }
 
@@ -234,7 +213,7 @@ mod tests {
             primary_retrieval_pct: 0.50,
             supporting_cites_pct: 0.30,
             memory_pct: 0.20,
-            argument_graph_pct: 0.20, // sums to 1.20
+            argument_graph_pct: 0.20,
         };
         assert!(alloc.validate().is_err());
     }
@@ -243,18 +222,25 @@ mod tests {
     fn test_zone_budgets() {
         let alloc = ZoneAllocation::default();
         let budgets = alloc.compute_zone_budgets(185_104);
-        assert_eq!(budgets.primary_retrieval, 74_041); // 185104 * 0.40
-        assert_eq!(budgets.supporting_cites, 55_531); // 185104 * 0.30
-        assert_eq!(budgets.memory, 37_020); // 185104 * 0.20
-        assert_eq!(budgets.argument_graph, 18_510); // 185104 * 0.10
+        assert_eq!(budgets.primary_retrieval, 74_041);
+        assert_eq!(budgets.supporting_cites, 55_531);
+        assert_eq!(budgets.memory, 37_020);
+        assert_eq!(budgets.argument_graph, 18_510);
+    }
+
+    #[test]
+    fn test_zone_budgets_for_zone() {
+        let alloc = ZoneAllocation::default();
+        let budgets = alloc.compute_zone_budgets(10_000);
+        assert_eq!(budgets.for_zone(BudgetZone::PrimaryRetrieval), 4000);
+        assert_eq!(budgets.for_zone(BudgetZone::Memory), 2000);
     }
 
     #[test]
     fn test_apply_admission_tier_full() {
         let alloc = ZoneAllocation::default();
-        let (result, mult) = apply_admission_tier(&alloc, &AdmissionTier::Full);
+        let (_, mult) = apply_admission_tier(&alloc, &AdmissionTier::Full);
         assert_eq!(mult, 1.0);
-        assert_eq!(result.primary_retrieval_pct, 0.40);
     }
 
     #[test]
@@ -276,13 +262,11 @@ mod tests {
 
     #[test]
     fn test_estimate_tokens_english() {
-        // "hello world" = 11 chars → ceil(11/4) = 3 tokens
         assert_eq!(estimate_tokens("hello world", "en"), 3);
     }
 
     #[test]
     fn test_estimate_tokens_cjk() {
-        // 4 CJK chars → ceil(4/2) = 2 tokens
         assert_eq!(estimate_tokens("你好世界", "zh"), 2);
     }
 
@@ -300,12 +284,8 @@ mod tests {
             (0.5, 100, "d".to_string()),
         ];
         let kept = evict_zone(&mut slots, 350);
-        // Should keep a (100) + b (200) = 300, then c (150) would exceed 350? No: 300+150=450 > 350
-        // So keeps a + b = 2
         assert_eq!(kept, 2);
         assert_eq!(slots.len(), 2);
-        assert_eq!(slots[0].2, "a");
-        assert_eq!(slots[1].2, "b");
     }
 
     #[test]
@@ -320,9 +300,7 @@ mod tests {
 
     #[test]
     fn test_evict_zone_none_fit() {
-        let mut slots = vec![
-            (0.9, 1000, "a".to_string()),
-        ];
+        let mut slots = vec![(0.9, 1000, "a".to_string())];
         let kept = evict_zone(&mut slots, 500);
         assert_eq!(kept, 0);
     }

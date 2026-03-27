@@ -22,6 +22,7 @@ pub mod memory_save;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use crate::scoring::ScoreFusionWeights;
 use crate::types::ids::AgentName;
@@ -108,10 +109,29 @@ pub struct AgentManifest {
 }
 
 /// Shared mutable state available to all tools.
+///
+/// Holds tantivy index handles (readers + writers) for the three indexes,
+/// a SQLite connection for the ArgumentGraph, and score fusion weights.
 pub struct ToolContext {
+    // ── Tantivy indexes ──────────────────────────────────
+    pub document_index: tantivy::Index,
+    pub claim_index: tantivy::Index,
+    pub memory_index: tantivy::Index,
+    pub document_writer: Arc<Mutex<tantivy::IndexWriter>>,
+    pub claim_writer: Arc<Mutex<tantivy::IndexWriter>>,
+    pub memory_writer: Arc<Mutex<tantivy::IndexWriter>>,
+
+    // ── SQLite ───────────────────────────────────────────
+    pub argument_graph_db: Arc<Mutex<rusqlite::Connection>>,
+
+    // ── Paths ────────────────────────────────────────────
     pub documents_dir: PathBuf,
     pub sources_dir: PathBuf,
+
+    // ── Scoring ──────────────────────────────────────────
     pub score_fusion_weights: ScoreFusionWeights,
+
+    // ── Memory access cache ──────────────────────────────
     pub memory_access_cache: HashMap<String, MemoryAccessEntry>,
 }
 

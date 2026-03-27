@@ -5,7 +5,6 @@
 //! agent process lifecycle, and agent manifests.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -23,186 +22,16 @@ pub const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 /// Protocol state machine for an agent process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentState {
-    /// Process not yet spawned.
     NotSpawned,
-    /// Process spawned, waiting for kernel to send `init`.
     Spawned,
-    /// `init` sent, waiting for `init_ack`.
     Initializing,
-    /// Ready to receive requests.
     Idle,
-    /// Processing a request.
     Running,
-    /// `shutdown` sent, waiting for `shutdown_ack` or timeout.
     ShuttingDown,
-    /// Process exited or was killed.
     Dead,
 }
 
-// ── IPC Message Types (Kernel → Agent) ───────────────────────
-
-/// `init` message — sent once after spawn.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InitMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub protocol_version: String,
-    pub agent_name: String,
-    pub config: InitConfig,
-}
-
-/// Configuration sent in the `init` message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InitConfig {
-    pub model: String,
-    pub model_tier: String,
-    pub max_tokens: u32,
-    pub temperature: f32,
-    pub tools_available: Vec<String>,
-    pub skill: String,
-    pub data_dir: String,
-}
-
-/// `request` message — asks agent to perform work.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub task_id: String,
-    pub action: String,
-    pub inputs: serde_json::Value,
-}
-
-/// `tool_response` message — kernel returns tool result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolResponseMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub call_id: String,
-    pub status: String,
-    pub result: Option<serde_json::Value>,
-    pub error: Option<serde_json::Value>,
-}
-
-/// `shutdown` message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShutdownMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-}
-
-// ── IPC Message Types (Agent → Kernel) ───────────────────────
-
-/// `init_ack` response from agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InitAckMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub agent_name: String,
-    pub protocol_version: String,
-    pub status: String,
-    pub error: Option<String>,
-}
-
-/// `tool_call` — agent requests tool execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCallMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub call_id: String,
-    pub tool: String,
-    pub params: serde_json::Value,
-}
-
-/// `progress` — optional progress report.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProgressMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub task_id: String,
-    pub stage: String,
-    pub iteration: u32,
-    pub detail: String,
-    #[serde(default)]
-    pub tool_calls_so_far: u32,
-    #[serde(default)]
-    pub llm_calls_so_far: u32,
-}
-
-/// `llm_report` — required after each LLM call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmReportMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub task_id: String,
-    pub call_index: u32,
-    pub model: String,
-    pub model_tier: String,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub total_tokens: u64,
-    pub latency_ms: u64,
-    #[serde(default)]
-    pub time_to_first_token_ms: u64,
-    pub temperature: f32,
-    pub max_tokens: u32,
-    pub system_prompt: String,
-    pub messages: Vec<serde_json::Value>,
-    #[serde(default)]
-    pub context_slot_ids: Vec<String>,
-    #[serde(default)]
-    pub context_source_ids: Vec<String>,
-}
-
-/// `result` — agent's final output.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResultMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub task_id: String,
-    pub status: String,
-    pub output: serde_json::Value,
-    pub output_hash: String,
-    pub resource_usage: ResourceUsageReport,
-}
-
-/// Resource usage reported by agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceUsageReport {
-    #[serde(default)]
-    pub llm_calls: u32,
-    #[serde(default)]
-    pub tool_calls: u32,
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-    #[serde(default)]
-    pub wall_time_ms: u64,
-}
-
-/// `error` — agent reports failure.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub task_id: String,
-    pub error_type: String,
-    pub message: String,
-    #[serde(default)]
-    pub recoverable: bool,
-    pub partial_output: Option<serde_json::Value>,
-}
-
-/// `shutdown_ack` from agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShutdownAckMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub agent_name: String,
-}
-
-// ── Incoming message routing ─────────────────────────────────
+// ── Incoming message routing (agent → kernel) ────────────────
 
 /// Any message received from an agent on stdout.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +71,7 @@ pub struct ToolCallPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressPayload {
     pub task_id: String,
+    #[serde(default)]
     pub stage: String,
     #[serde(default)]
     pub iteration: u32,
@@ -265,7 +95,9 @@ pub struct LlmReportPayload {
     pub latency_ms: u64,
     #[serde(default)]
     pub time_to_first_token_ms: u64,
+    #[serde(default)]
     pub temperature: f32,
+    #[serde(default)]
     pub max_tokens: u32,
     #[serde(default)]
     pub system_prompt: String,
@@ -284,6 +116,21 @@ pub struct ResultPayload {
     pub output: serde_json::Value,
     pub output_hash: String,
     pub resource_usage: ResourceUsageReport,
+}
+
+/// Resource usage reported by agent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ResourceUsageReport {
+    #[serde(default)]
+    pub llm_calls: u32,
+    #[serde(default)]
+    pub tool_calls: u32,
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub wall_time_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,6 +155,7 @@ pub struct ShutdownAckPayload {
 pub struct AgentManifest {
     pub agent: AgentSection,
     pub llm_contract: LlmContractSection,
+    #[serde(default)]
     pub activation: ActivationSection,
     pub tools_allowed: ToolsAllowedSection,
     #[serde(default)]
@@ -341,15 +189,10 @@ pub struct LlmContractSection {
     pub output_schema: String,
 }
 
-fn default_grounding() -> String {
-    "required".into()
-}
+fn default_grounding() -> String { "required".into() }
+fn default_max_tokens() -> u32 { 4096 }
 
-fn default_max_tokens() -> u32 {
-    4096
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ActivationSection {
     #[serde(default)]
     pub skill_bind: Vec<String>,
@@ -375,15 +218,9 @@ pub struct ResourcesSection {
     pub request_timeout_s: u64,
 }
 
-fn default_max_tool_calls() -> u32 {
-    20
-}
-fn default_max_llm_calls() -> u32 {
-    5
-}
-fn default_request_timeout() -> u64 {
-    300
-}
+fn default_max_tool_calls() -> u32 { 20 }
+fn default_max_llm_calls() -> u32 { 5 }
+fn default_request_timeout() -> u64 { 300 }
 
 impl Default for ResourcesSection {
     fn default() -> Self {
@@ -417,22 +254,11 @@ impl AgentManifest {
 
 // ── Timeout Constants ────────────────────────────────────────
 
-/// Default timeout for init handshake (seconds).
 pub const DEFAULT_INIT_TIMEOUT_S: u64 = 10;
-
-/// Default timeout for a single request (seconds).
 pub const DEFAULT_REQUEST_TIMEOUT_S: u64 = 300;
-
-/// Default timeout for tool execution (seconds).
 pub const DEFAULT_TOOL_TIMEOUT_S: u64 = 30;
-
-/// Timeout for shutdown acknowledgment (seconds).
 pub const SHUTDOWN_TIMEOUT_S: u64 = 3;
-
-/// Maximum respawn attempts before marking agent as permanently failed.
 pub const MAX_RESPAWN_ATTEMPTS: u32 = 3;
-
-// ── Respawn Backoff ──────────────────────────────────────────
 
 /// Respawn backoff durations in milliseconds.
 pub const RESPAWN_BACKOFF_MS: &[u64] = &[1_000, 5_000, 15_000];
@@ -480,7 +306,6 @@ impl AgentProcess {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
         use tokio::process::Command;
 
-        // Parse entry_point: "python -m citeindex.agents.literature_review"
         let parts: Vec<&str> = self.entry_point.split_whitespace().collect();
         if parts.is_empty() {
             anyhow::bail!("empty entry_point for agent {}", self.name.0);
@@ -490,7 +315,6 @@ impl AgentProcess {
         for arg in &parts[1..] {
             cmd.arg(arg);
         }
-
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -518,7 +342,8 @@ impl AgentProcess {
                 "max_tokens": self.manifest.llm_contract.max_tokens,
                 "temperature": self.manifest.llm_contract.temperature,
                 "tools_available": self.manifest.tools_allowed.tools,
-                "skill": self.manifest.activation.skill_bind.first().unwrap_or(&String::new()),
+                "skill": self.manifest.activation.skill_bind.first()
+                    .unwrap_or(&String::new()),
                 "data_dir": data_dir,
             }
         });
@@ -532,8 +357,7 @@ impl AgentProcess {
         let read_result = tokio::time::timeout(
             std::time::Duration::from_secs(DEFAULT_INIT_TIMEOUT_S),
             reader.read_line(&mut ack_line),
-        )
-        .await;
+        ).await;
 
         match read_result {
             Ok(Ok(0)) => {
@@ -543,20 +367,23 @@ impl AgentProcess {
             Ok(Ok(_)) => {
                 let ack: AgentMessage = serde_json::from_str(ack_line.trim())?;
                 match ack {
-                    AgentMessage::InitAck(payload) => {
-                        if payload.status != "ok" {
-                            self.state = AgentState::Dead;
-                            anyhow::bail!(
-                                "agent {} init failed: {}",
-                                self.name.0,
-                                payload.error.unwrap_or_default()
-                            );
-                        }
+                    AgentMessage::InitAck(payload) if payload.status == "ok" => {
                         self.state = AgentState::Idle;
+                    }
+                    AgentMessage::InitAck(payload) => {
+                        self.state = AgentState::Dead;
+                        anyhow::bail!(
+                            "agent {} init failed: {}",
+                            self.name.0,
+                            payload.error.unwrap_or_default()
+                        );
                     }
                     _ => {
                         self.state = AgentState::Dead;
-                        anyhow::bail!("expected init_ack from {}, got other message", self.name.0);
+                        anyhow::bail!(
+                            "expected init_ack from {}, got other message",
+                            self.name.0
+                        );
                     }
                 }
             }
@@ -618,23 +445,23 @@ impl AgentProcess {
             tracing::warn!(agent = %self.name.0, "failed to send shutdown: {e}");
         }
 
-        // Wait for shutdown_ack with timeout
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(SHUTDOWN_TIMEOUT_S),
             self.recv(),
-        )
-        .await;
+        ).await;
 
         match result {
             Ok(Ok(AgentMessage::ShutdownAck(_))) => {
                 tracing::info!(agent = %self.name.0, "graceful shutdown acknowledged");
             }
             _ => {
-                tracing::warn!(agent = %self.name.0, "shutdown ack not received, killing process");
+                tracing::warn!(
+                    agent = %self.name.0,
+                    "shutdown ack not received, killing process"
+                );
             }
         }
 
-        // Kill the child process
         if let Some(ref mut child) = self.child {
             let _ = child.kill().await;
         }
@@ -644,11 +471,7 @@ impl AgentProcess {
 
     /// Get the respawn backoff duration for the current crash count.
     pub fn respawn_backoff_ms(&self) -> Option<u64> {
-        if self.crash_count as usize >= RESPAWN_BACKOFF_MS.len() {
-            None // exceeded max respawn attempts
-        } else {
-            Some(RESPAWN_BACKOFF_MS[self.crash_count as usize])
-        }
+        RESPAWN_BACKOFF_MS.get(self.crash_count as usize).copied()
     }
 }
 
@@ -709,7 +532,7 @@ steps = ["PLAN: plan", "THINK: think", "ACT: act"]
 
     #[test]
     fn test_agent_message_deserialize_init_ack() {
-        let json = r#"{"type":"init_ack","agent_name":"TestAgent","protocol_version":"12.0","status":"ok","error":null}"#;
+        let json = r#"{"type":"init_ack","agent_name":"Test","protocol_version":"12.0","status":"ok","error":null}"#;
         let msg: AgentMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, AgentMessage::InitAck(_)));
     }
@@ -719,9 +542,9 @@ steps = ["PLAN: plan", "THINK: think", "ACT: act"]
         let json = r#"{"type":"tool_call","call_id":"uuid-1","tool":"search_documents","params":{"query":"test"}}"#;
         let msg: AgentMessage = serde_json::from_str(json).unwrap();
         match msg {
-            AgentMessage::ToolCall(payload) => {
-                assert_eq!(payload.tool, "search_documents");
-                assert_eq!(payload.call_id, "uuid-1");
+            AgentMessage::ToolCall(p) => {
+                assert_eq!(p.tool, "search_documents");
+                assert_eq!(p.call_id, "uuid-1");
             }
             _ => panic!("expected ToolCall"),
         }
@@ -729,7 +552,7 @@ steps = ["PLAN: plan", "THINK: think", "ACT: act"]
 
     #[test]
     fn test_agent_message_deserialize_result() {
-        let json = r#"{"type":"result","task_id":"t1","status":"ok","output":{"text":"hello"},"output_hash":"sha256:abc","resource_usage":{"llm_calls":1,"tool_calls":2,"input_tokens":100,"output_tokens":50,"wall_time_ms":500}}"#;
+        let json = r#"{"type":"result","task_id":"t1","status":"ok","output":{"text":"hi"},"output_hash":"sha256:abc","resource_usage":{"llm_calls":1,"tool_calls":2,"input_tokens":100,"output_tokens":50,"wall_time_ms":500}}"#;
         let msg: AgentMessage = serde_json::from_str(json).unwrap();
         assert!(matches!(msg, AgentMessage::Result(_)));
     }
@@ -739,9 +562,9 @@ steps = ["PLAN: plan", "THINK: think", "ACT: act"]
         let json = r#"{"type":"error","task_id":"t1","error_type":"llm_error","message":"rate limited","recoverable":true,"partial_output":null}"#;
         let msg: AgentMessage = serde_json::from_str(json).unwrap();
         match msg {
-            AgentMessage::Error(payload) => {
-                assert!(payload.recoverable);
-                assert_eq!(payload.error_type, "llm_error");
+            AgentMessage::Error(p) => {
+                assert!(p.recoverable);
+                assert_eq!(p.error_type, "llm_error");
             }
             _ => panic!("expected Error"),
         }
@@ -760,7 +583,7 @@ steps = ["PLAN: plan", "THINK: think", "ACT: act"]
     }
 
     #[test]
-    fn test_agent_state_transitions() {
+    fn test_agent_process_new() {
         let manifest: AgentManifest = toml::from_str(r#"
 [agent]
 name = "Test"
@@ -798,6 +621,6 @@ tools = []
         agent.crash_count = 2;
         assert_eq!(agent.respawn_backoff_ms(), Some(15_000));
         agent.crash_count = 3;
-        assert_eq!(agent.respawn_backoff_ms(), None); // exceeded max
+        assert_eq!(agent.respawn_backoff_ms(), None);
     }
 }

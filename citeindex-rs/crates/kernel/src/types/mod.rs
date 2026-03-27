@@ -20,6 +20,7 @@ pub mod recovery;
 pub mod admission;
 pub mod query_plan;
 pub mod structure;
+pub mod tree;
 
 // Re-export all public types at the `types` level.
 pub use ids::*;
@@ -36,3 +37,4 @@ pub use recovery::*;
 pub use admission::*;
 pub use query_plan::*;
 pub use structure::*;
+pub use tree::*;

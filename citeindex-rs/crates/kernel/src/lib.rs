@@ -16,3 +16,4 @@ pub mod tools;
 pub mod agent_runtime;
 pub mod context;
 pub mod retrieval;
+pub mod trace;

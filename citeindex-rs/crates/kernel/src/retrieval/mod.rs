@@ -25,25 +25,18 @@ pub fn should_escalate(bm25_max_score: f32, threshold: f32) -> bool {
 /// The 5 escalation steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EscalationStep {
-    /// Step 1: Maximally expand query using synonym tables.
     SynonymExpansion,
-    /// Step 2: Shift primary search from document_index to claim_index.
     IndexSwitch,
-    /// Step 3: N-hop traversal on citation graph.
     CitationExpansion,
-    /// Step 4: Regex-based heading search on document trees.
     StructuralSearch,
-    /// Step 5: LLM-powered deep traversal on top candidates.
     DeepTraversal,
 }
 
 impl EscalationStep {
-    /// Returns true if this step requires an LLM call.
     pub fn requires_llm(&self) -> bool {
         matches!(self, Self::DeepTraversal)
     }
 
-    /// Human-readable name for trace logging.
     pub fn name(&self) -> &'static str {
         match self {
             Self::SynonymExpansion => "Synonym Expansion",
@@ -54,7 +47,6 @@ impl EscalationStep {
         }
     }
 
-    /// Step number (1-based).
     pub fn number(&self) -> u32 {
         match self {
             Self::SynonymExpansion => 1,
@@ -88,17 +80,11 @@ pub struct StepResult {
 /// Result of the full escalation chain.
 #[derive(Debug, Clone)]
 pub struct EscalationResult {
-    /// Steps that were executed.
     pub steps_executed: Vec<StepResult>,
-    /// Final best BM25 max score after all steps.
     pub final_bm25_max: f32,
-    /// Which step produced the final results (None if no escalation needed).
     pub final_step: Option<EscalationStep>,
-    /// Total results found across all steps.
     pub total_results: usize,
-    /// Whether LLM deep traversal was triggered (Step 5).
     pub llm_deep_triggered: bool,
-    /// Whether the threshold was met by any step.
     pub threshold_met: bool,
 }
 
@@ -135,12 +121,8 @@ impl Default for EscalationConfig {
 
 /// Run the escalation chain.
 ///
-/// This is the orchestrator that tries each step in order, stopping
-/// when the BM25 max score exceeds the threshold.
-///
-/// Phase 3: stub implementation. Individual steps will be implemented
-/// when the full tool layer is connected. Returns an EscalationResult
-/// showing what would be attempted.
+/// Tries each step in order, stopping when BM25 max score exceeds threshold.
+/// Phase 3: stub implementation — individual steps return unchanged scores.
 pub fn run_escalation(
     _query: &str,
     initial_bm25_max: f32,
@@ -158,12 +140,10 @@ pub fn run_escalation(
             break;
         }
 
-        // Phase 3: stub — each step returns the same score (no real escalation).
-        // Real implementation will execute the actual search operations.
         let step_result = StepResult {
             step,
             bm25_max_before: current_bm25_max,
-            bm25_max_after: current_bm25_max, // stub: no change
+            bm25_max_after: current_bm25_max,
             results_count: 0,
             escalated: true,
         };
@@ -186,26 +166,13 @@ pub fn run_escalation(
     }
 }
 
-// ── Step 1: Synonym Expansion ────────────────────────────────
-
-/// Expand query terms using synonym tables.
-///
-/// Phase 3 stub — returns the original query unchanged.
-/// Full implementation loads `config/synonyms/*.toml` and expands all terms.
+/// Expand query terms using synonym tables (Step 1 stub).
 pub fn expand_synonyms(query: &str, _synonyms: &[(String, Vec<String>)]) -> String {
     query.to_string()
 }
 
-// ── Step 3: Citation Expansion ───────────────────────────────
-
-/// N-hop citation expansion starting from seed doc_ids.
-///
-/// Phase 3 stub — returns empty set.
-/// Full implementation queries citation_graph table in SQLite.
-pub fn citation_expand(
-    _seed_doc_ids: &[String],
-    _max_hops: u32,
-) -> Vec<String> {
+/// N-hop citation expansion (Step 3 stub).
+pub fn citation_expand(_seed_doc_ids: &[String], _max_hops: u32) -> Vec<String> {
     Vec::new()
 }
 
@@ -254,14 +221,12 @@ mod tests {
 
     #[test]
     fn test_expand_synonyms_stub() {
-        let result = expand_synonyms("attention mechanism", &[]);
-        assert_eq!(result, "attention mechanism");
+        assert_eq!(expand_synonyms("attention mechanism", &[]), "attention mechanism");
     }
 
     #[test]
     fn test_citation_expand_stub() {
-        let result = citation_expand(&["doc1".into()], 3);
-        assert!(result.is_empty());
+        assert!(citation_expand(&["doc1".into()], 3).is_empty());
     }
 
     #[test]
