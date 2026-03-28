@@ -4,6 +4,9 @@
 //! 1. Pre-grounding: inject verified sources into context before LLM call.
 //! 2. Post-verification: validate cite anchors and claim–passage similarity.
 
+pub mod verify;
+pub mod commit;
+
 use std::collections::HashSet;
 
 use once_cell::sync::Lazy;

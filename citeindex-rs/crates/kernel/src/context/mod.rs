@@ -4,6 +4,8 @@
 //! context window. Tokens are allocated across four zones, each serving
 //! a different purpose. Eviction is deterministic (score-based).
 
+pub mod assembly;
+
 use serde::{Deserialize, Serialize};
 
 use crate::types::admission::AdmissionTier;
