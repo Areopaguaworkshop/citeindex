@@ -18,3 +18,5 @@ pub mod context;
 pub mod retrieval;
 pub mod trace;
 pub mod recovery;
+pub mod ace;
+pub mod lora;
