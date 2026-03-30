@@ -359,3 +359,140 @@ impl SearchResultsPopup {
             .collect()
     }
 }
+
+/// Playbook panel — displays ACE strategies and adaptation history.
+pub struct PlaybookPanel {
+    pub strategies: Vec<PlaybookEntry>,
+    pub selected: usize,
+    pub scroll_offset: u16,
+}
+
+/// A single playbook strategy entry.
+#[derive(Debug, Clone)]
+pub struct PlaybookEntry {
+    pub category: String,
+    pub key: String,
+    pub value: String,
+    pub confidence: f32,
+    pub source_session: Option<String>,
+}
+
+impl PlaybookPanel {
+    pub fn new() -> Self {
+        Self {
+            strategies: Vec::new(),
+            selected: 0,
+            scroll_offset: 0,
+        }
+    }
+
+    pub fn set_strategies(&mut self, strategies: Vec<PlaybookEntry>) {
+        self.strategies = strategies;
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn next(&mut self) {
+        if !self.strategies.is_empty() {
+            self.selected = (self.selected + 1) % self.strategies.len();
+        }
+    }
+
+    pub fn prev(&mut self) {
+        if !self.strategies.is_empty() {
+            self.selected = self.selected.checked_sub(1)
+                .unwrap_or(self.strategies.len() - 1);
+        }
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_add(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    pub fn selected_entry(&self) -> Option<&PlaybookEntry> {
+        self.strategies.get(self.selected)
+    }
+}
+
+/// Structure panel — displays argument flow outlines.
+pub struct StructurePanel {
+    pub outline: Vec<StructureNode>,
+    pub selected: usize,
+    pub expanded_nodes: std::collections::HashSet<usize>,
+    pub scroll_offset: u16,
+}
+
+/// A node in the argument structure outline.
+#[derive(Debug, Clone)]
+pub struct StructureNode {
+    pub depth: usize,
+    pub heading: String,
+    pub node_type: StructureNodeType,
+    pub claim_count: usize,
+    pub coverage_score: Option<f32>,
+    pub has_contradictions: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructureNodeType {
+    Section,
+    Claim,
+    Evidence,
+    Contradiction,
+    Gap,
+}
+
+impl StructurePanel {
+    pub fn new() -> Self {
+        Self {
+            outline: Vec::new(),
+            selected: 0,
+            expanded_nodes: std::collections::HashSet::new(),
+            scroll_offset: 0,
+        }
+    }
+
+    pub fn set_outline(&mut self, outline: Vec<StructureNode>) {
+        self.outline = outline;
+        self.selected = 0;
+        self.expanded_nodes.clear();
+        self.scroll_offset = 0;
+    }
+
+    pub fn next(&mut self) {
+        if !self.outline.is_empty() {
+            self.selected = (self.selected + 1) % self.outline.len();
+        }
+    }
+
+    pub fn prev(&mut self) {
+        if !self.outline.is_empty() {
+            self.selected = self.selected.checked_sub(1)
+                .unwrap_or(self.outline.len() - 1);
+        }
+    }
+
+    pub fn toggle_expand(&mut self) {
+        if self.expanded_nodes.contains(&self.selected) {
+            self.expanded_nodes.remove(&self.selected);
+        } else {
+            self.expanded_nodes.insert(self.selected);
+        }
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_add(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    pub fn selected_node(&self) -> Option<&StructureNode> {
+        self.outline.get(self.selected)
+    }
+}

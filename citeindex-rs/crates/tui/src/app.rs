@@ -3,8 +3,8 @@
 use crate::input::{self, AutocompleteState, ParsedInput};
 use crate::mode::Mode;
 use crate::panels::{
-    ChatMessage, ChatWindow, InputBar, MessageRole, SearchResultEntry, SearchResultsPopup,
-    SidePanel, SidePanelItem,
+    ChatMessage, ChatWindow, InputBar, MessageRole, PlaybookPanel, SearchResultEntry,
+    SearchResultsPopup, SidePanel, SidePanelItem, StructurePanel,
 };
 use crate::theme::{Theme, ThemeMode};
 use crate::ui;
@@ -36,6 +36,8 @@ pub struct App {
     pub side_panel: SidePanel,
     pub autocomplete: AutocompleteState,
     pub search_popup: SearchResultsPopup,
+    pub playbook_panel: PlaybookPanel,
+    pub structure_panel: StructurePanel,
     pub running: bool,
     pub busy: bool,
     thread_id: String,
@@ -75,6 +77,8 @@ impl App {
             side_panel,
             autocomplete: AutocompleteState::new(),
             search_popup,
+            playbook_panel: PlaybookPanel::new(),
+            structure_panel: StructurePanel::new(),
             running: true,
             busy: false,
             thread_id: "default".into(),

@@ -20,3 +20,7 @@ pub mod trace;
 pub mod recovery;
 pub mod ace;
 pub mod lora;
+pub mod api;
+pub mod skillpack;
+pub mod migration;
+pub mod cli;

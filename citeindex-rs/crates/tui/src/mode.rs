@@ -1,4 +1,4 @@
-//! Mode manager — Chat, Ingest, Search, Plugin, Refs, Project.
+//! Mode manager — Chat, Ingest, Search, Plugin, Refs, Project, Playbook, Structure.
 //!
 //! Matches `frontend_ui_rust.yaml → mode_manager`.
 
@@ -11,6 +11,8 @@ pub enum Mode {
     Plugin,
     Refs,
     Project,
+    Playbook,
+    Structure,
 }
 
 impl Mode {
@@ -22,6 +24,8 @@ impl Mode {
         Mode::Plugin,
         Mode::Refs,
         Mode::Project,
+        Mode::Playbook,
+        Mode::Structure,
     ];
 
     /// Parse a mode from a slash command or name.
@@ -34,6 +38,8 @@ impl Mode {
             "plugin" | "plugins" => Some(Mode::Plugin),
             "refs" | "references" => Some(Mode::Refs),
             "proj" | "project" => Some(Mode::Project),
+            "playbook" => Some(Mode::Playbook),
+            "structure" | "outline" => Some(Mode::Structure),
             _ => None,
         }
     }
@@ -47,6 +53,8 @@ impl Mode {
             Mode::Plugin => "/plugin",
             Mode::Refs => "/refs",
             Mode::Project => "/proj",
+            Mode::Playbook => "/playbook",
+            Mode::Structure => "/structure",
         }
     }
 
@@ -59,6 +67,8 @@ impl Mode {
             Mode::Plugin => "Plugin",
             Mode::Refs => "Refs",
             Mode::Project => "Project",
+            Mode::Playbook => "Playbook",
+            Mode::Structure => "Structure",
         }
     }
 
@@ -71,6 +81,8 @@ impl Mode {
             Mode::Plugin => "Invoke internal/external plugin tools",
             Mode::Refs => "Reference manager",
             Mode::Project => "Project explorer",
+            Mode::Playbook => "ACE scholar playbook strategies",
+            Mode::Structure => "Argument flow outline viewer",
         }
     }
 
