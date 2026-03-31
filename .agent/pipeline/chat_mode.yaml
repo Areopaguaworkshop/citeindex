@@ -1,3 +1,8 @@
+# LEGACY NOTE:
+# This pipeline describes the older Python-first chat flow.
+# Current canonical architecture is documented in instruction/Summary.md and
+# instruction/contracts/*.
+
 pipeline:
   name: chat-model
   description: |
