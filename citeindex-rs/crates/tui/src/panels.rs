@@ -268,7 +268,9 @@ impl SearchResultsPopup {
 
     pub fn open(&mut self, results: Vec<SearchResultEntry>, query: &str) {
         let entry = SearchHistoryEntry {
-            timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string(),
+            timestamp: chrono::Utc::now()
+                .format("%Y-%m-%dT%H:%M:%S+00:00")
+                .to_string(),
             query: query.to_string(),
             result_count: results.len(),
         };
@@ -400,7 +402,9 @@ impl PlaybookPanel {
 
     pub fn prev(&mut self) {
         if !self.strategies.is_empty() {
-            self.selected = self.selected.checked_sub(1)
+            self.selected = self
+                .selected
+                .checked_sub(1)
                 .unwrap_or(self.strategies.len() - 1);
         }
     }
@@ -471,7 +475,9 @@ impl StructurePanel {
 
     pub fn prev(&mut self) {
         if !self.outline.is_empty() {
-            self.selected = self.selected.checked_sub(1)
+            self.selected = self
+                .selected
+                .checked_sub(1)
                 .unwrap_or(self.outline.len() - 1);
         }
     }

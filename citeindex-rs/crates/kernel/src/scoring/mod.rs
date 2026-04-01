@@ -30,10 +30,15 @@ impl Default for ScoreFusionWeights {
 
 impl ScoreFusionWeights {
     pub fn validate(&self) -> Result<(), String> {
-        let sum = self.w_bm25 + self.w_hierarchy + self.w_citation_degree
-                + self.w_recency + self.w_claim_density;
+        let sum = self.w_bm25
+            + self.w_hierarchy
+            + self.w_citation_degree
+            + self.w_recency
+            + self.w_claim_density;
         if (sum - 1.0).abs() > 0.001 {
-            return Err(format!("score fusion weights sum to {sum:.4}, expected 1.0"));
+            return Err(format!(
+                "score fusion weights sum to {sum:.4}, expected 1.0"
+            ));
         }
         Ok(())
     }
@@ -73,7 +78,8 @@ pub fn hierarchy_boost(query_path: &str, result_path: &str) -> f32 {
         return 0.0;
     }
 
-    let shared = query_parts.iter()
+    let shared = query_parts
+        .iter()
         .zip(result_parts.iter())
         .take_while(|(a, b)| a == b)
         .count();
@@ -133,10 +139,10 @@ pub fn fuse_score(
     let claim_den = claim_density_normalized(result_claim_count, max_claim_count);
 
     let fused = (weights.w_bm25 * bm25_norm
-               + weights.w_hierarchy * hier
-               + weights.w_citation_degree * cite_deg
-               + weights.w_recency * recency
-               + weights.w_claim_density * claim_den)
+        + weights.w_hierarchy * hier
+        + weights.w_citation_degree * cite_deg
+        + weights.w_recency * recency
+        + weights.w_claim_density * claim_den)
         .clamp(0.0, 1.0);
 
     let breakdown = ScoreBreakdown {
@@ -164,10 +170,16 @@ mod tests {
 
     #[test]
     fn test_hierarchy_boost() {
-        assert_eq!(hierarchy_boost("/cs/nlp/transformers", "/cs/nlp/transformers/attention"), 1.0);
+        assert_eq!(
+            hierarchy_boost("/cs/nlp/transformers", "/cs/nlp/transformers/attention"),
+            1.0
+        );
         let boost = hierarchy_boost("/cs/nlp/transformers", "/cs/nlp/icl");
         assert!((boost - 0.6667).abs() < 0.01);
-        assert_eq!(hierarchy_boost("/cs/nlp/transformers", "/math/algebra"), 0.0);
+        assert_eq!(
+            hierarchy_boost("/cs/nlp/transformers", "/math/algebra"),
+            0.0
+        );
         assert_eq!(hierarchy_boost("", "/cs/nlp"), 0.0);
     }
 
@@ -193,11 +205,16 @@ mod tests {
         assert!(weights.validate().is_ok());
 
         let (score, breakdown) = fuse_score(
-            10.0, 10.0,
-            Some("/cs/nlp"), "/cs/nlp/transformers",
-            2024, 2026,
-            50, 100,
-            10, 20,
+            10.0,
+            10.0,
+            Some("/cs/nlp"),
+            "/cs/nlp/transformers",
+            2024,
+            2026,
+            50,
+            100,
+            10,
+            20,
             &weights,
         );
         assert!(score > 0.0 && score <= 1.0);

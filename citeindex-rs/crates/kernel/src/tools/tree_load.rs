@@ -6,7 +6,8 @@ pub fn execute(
     params: &serde_json::Value,
     ctx: &mut ToolContext,
 ) -> Result<serde_json::Value, ToolError> {
-    let doc_id = params.get("doc_id")
+    let doc_id = params
+        .get("doc_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidParams {
             param: "doc_id".into(),

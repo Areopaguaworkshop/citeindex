@@ -86,11 +86,14 @@ pub fn merge_lessons(
                     });
                     appended += 1;
                 } else {
-                    playbook.synonym_evolution.pending_review.push(PendingSynonym {
-                        term: lesson.description.clone(),
-                        expansion: vec![],
-                        confidence: lesson.confidence,
-                    });
+                    playbook
+                        .synonym_evolution
+                        .pending_review
+                        .push(PendingSynonym {
+                            term: lesson.description.clone(),
+                            expansion: vec![],
+                            confidence: lesson.confidence,
+                        });
                     synonyms_pending += 1;
                 }
             }
@@ -211,10 +214,12 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     for i in 1..=m {
         curr[0] = i;
         for j in 1..=n {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1)
-                .min(curr[j - 1] + 1)
-                .min(prev[j - 1] + cost);
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
         }
         std::mem::swap(&mut prev, &mut curr);
     }
@@ -244,9 +249,21 @@ mod tests {
     #[test]
     fn test_prune_section() {
         let mut entries = vec![
-            PlaybookEntry { description: "a".into(), domain_path: "/".into(), confidence: 0.5 },
-            PlaybookEntry { description: "b".into(), domain_path: "/".into(), confidence: 0.9 },
-            PlaybookEntry { description: "c".into(), domain_path: "/".into(), confidence: 0.3 },
+            PlaybookEntry {
+                description: "a".into(),
+                domain_path: "/".into(),
+                confidence: 0.5,
+            },
+            PlaybookEntry {
+                description: "b".into(),
+                domain_path: "/".into(),
+                confidence: 0.9,
+            },
+            PlaybookEntry {
+                description: "c".into(),
+                domain_path: "/".into(),
+                confidence: 0.3,
+            },
         ];
         prune_section(&mut entries, 2);
         assert_eq!(entries.len(), 2);

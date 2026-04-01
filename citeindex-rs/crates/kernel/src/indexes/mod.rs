@@ -103,11 +103,14 @@ fn text_stored_raw_indexed() -> TextOptions {
 /// fast attribute is silently omitted (the contract treats it as optional
 /// optimisation).
 fn text_stored_fast_raw_indexed() -> TextOptions {
-    TextOptions::default().set_stored().set_fast(None).set_indexing_options(
-        TextFieldIndexing::default()
-            .set_tokenizer("raw")
-            .set_index_option(IndexRecordOption::Basic),
-    )
+    TextOptions::default()
+        .set_stored()
+        .set_fast(None)
+        .set_indexing_options(
+            TextFieldIndexing::default()
+                .set_tokenizer("raw")
+                .set_index_option(IndexRecordOption::Basic),
+        )
 }
 
 /// TEXT field indexed with a language-specific tokenizer (not stored).
@@ -138,10 +141,7 @@ fn i64_stored_fast_indexed() -> NumericOptions {
 
 /// DATE field: stored + indexed + fast.
 fn date_stored_fast_indexed() -> DateOptions {
-    DateOptions::default()
-        .set_stored()
-        .set_indexed()
-        .set_fast()
+    DateOptions::default().set_stored().set_indexed().set_fast()
 }
 
 // ---------------------------------------------------------------------------

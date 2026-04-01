@@ -17,16 +17,11 @@ use super::state::FrameState;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RecoveryStep {
     /// R1: Retry with exponential backoff. Max 3 retries.
-    R1RetryBackoff {
-        attempt: u32,
-        backoff_ms: u64,
-    },
+    R1RetryBackoff { attempt: u32, backoff_ms: u64 },
 
     /// R2: Diagnostic analysis of the failure.
     /// No automatic fix — prepares context for R3+.
-    R2Diagnostic {
-        analysis: String,
-    },
+    R2Diagnostic { analysis: String },
 
     /// R3: Fallback to a simpler model.
     /// Cascade: cloud_premium → cloud_standard → local_base.
@@ -37,9 +32,7 @@ pub enum RecoveryStep {
 
     /// R4: Compensatory parameter adjustment.
     /// Reduce max_tokens, lower temperature, shrink context budget.
-    R4Compensatory {
-        adjusted_params: CompensatoryParams,
-    },
+    R4Compensatory { adjusted_params: CompensatoryParams },
 
     /// R5: Decompose into smaller sub-queries.
     R5Decompose {

@@ -5,8 +5,8 @@
 //! - Curator: deterministic Rust merge/prune of scholar_playbook.toml.
 //! - Playbook: TOML config injected at PLAN/THINK/ACT stages.
 
-pub mod playbook;
 pub mod curator;
+pub mod playbook;
 pub mod reflector;
 
 /// ACE configuration loaded from `config/scholarly_ace.toml`.
@@ -64,15 +64,33 @@ pub struct CoverageGapFeedSection {
     pub min_sessions_unfilled: u32,
 }
 
-fn default_true() -> bool { true }
-fn default_reflector_tier() -> String { "cloud_standard".into() }
-fn default_reflector_tokens() -> u32 { 2048 }
-fn default_trigger() -> String { "post_commit".into() }
-fn default_similarity() -> f32 { 0.75 }
-fn default_max_entries() -> usize { 12 }
-fn default_auto_approve() -> f32 { 0.90 }
-fn default_pending_max() -> usize { 50 }
-fn default_min_sessions() -> u32 { 2 }
+fn default_true() -> bool {
+    true
+}
+fn default_reflector_tier() -> String {
+    "cloud_standard".into()
+}
+fn default_reflector_tokens() -> u32 {
+    2048
+}
+fn default_trigger() -> String {
+    "post_commit".into()
+}
+fn default_similarity() -> f32 {
+    0.75
+}
+fn default_max_entries() -> usize {
+    12
+}
+fn default_auto_approve() -> f32 {
+    0.90
+}
+fn default_pending_max() -> usize {
+    50
+}
+fn default_min_sessions() -> u32 {
+    2
+}
 
 impl Default for ScholarlyAceSection {
     fn default() -> Self {

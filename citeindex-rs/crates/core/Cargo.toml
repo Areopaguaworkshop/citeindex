@@ -7,6 +7,7 @@ authors.workspace = true
 description = "CiteIndex Rust core orchestrator — Python IPC, config, memory, Merkle DAG"
 
 [dependencies]
+citeindex-kernel = { path = "../kernel" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
@@ -18,3 +19,4 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 dirs = { workspace = true }
+uuid = { workspace = true }

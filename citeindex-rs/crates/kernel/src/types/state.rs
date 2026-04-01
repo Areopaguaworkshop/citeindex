@@ -18,7 +18,9 @@ pub enum FrameState {
     Reflect,
     Done,
     /// RECOVER tracks which state triggered recovery.
-    Recover { from: Box<FrameState> },
+    Recover {
+        from: Box<FrameState>,
+    },
 }
 
 impl FrameState {

@@ -59,11 +59,7 @@ pub enum ContextSlotError {
 
 impl ContextSlot<Raw> {
     /// Create a new raw (unverified) context slot.
-    pub fn new(
-        content: String,
-        token_count: usize,
-        zone: BudgetZone,
-    ) -> Self {
+    pub fn new(content: String, token_count: usize, zone: BudgetZone) -> Self {
         Self {
             slot_id: SlotId::new(),
             content,
@@ -105,11 +101,15 @@ impl ContextSlot<Raw> {
 impl ContextSlot<Verified> {
     /// Access the guaranteed-present source_id.
     pub fn source_id(&self) -> &CslId {
-        self.source_id.as_ref().expect("verified slot always has source_id")
+        self.source_id
+            .as_ref()
+            .expect("verified slot always has source_id")
     }
 
     /// Access the guaranteed-present merkle_hash.
     pub fn merkle_hash(&self) -> &MerkleHash {
-        self.merkle_hash.as_ref().expect("verified slot always has merkle_hash")
+        self.merkle_hash
+            .as_ref()
+            .expect("verified slot always has merkle_hash")
     }
 }

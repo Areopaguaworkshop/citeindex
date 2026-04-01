@@ -2,6 +2,6 @@
 //!
 //! Matches `plugin_add_system.yaml`.
 
-pub mod manifest;
 pub mod manager;
+pub mod manifest;
 pub mod runner;

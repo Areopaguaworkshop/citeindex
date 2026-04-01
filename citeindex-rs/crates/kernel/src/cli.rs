@@ -16,18 +16,42 @@ use crate::trace::TraceRetention;
 /// All CLI subcommands recognized by CiteIndex v12.
 #[derive(Debug, Clone)]
 pub enum CliCommand {
-    Init { data_dir: Option<PathBuf>, force: bool },
-    IndexRebuild { index: Option<String> },
-    FineTunePrune { max_age_days: u32, dry_run: bool },
+    Init {
+        data_dir: Option<PathBuf>,
+        force: bool,
+    },
+    IndexRebuild {
+        index: Option<String>,
+    },
+    FineTunePrune {
+        max_age_days: u32,
+        dry_run: bool,
+    },
     SkillpackList,
-    SkillpackInstall { source: String },
-    SkillpackUninstall { name: String },
-    Backup { output_path: PathBuf },
-    Restore { input_path: PathBuf },
-    LoraTrain { adapter_name: String, base_model: Option<String> },
-    Migrate { corpus_dir: PathBuf, dry_run: bool },
+    SkillpackInstall {
+        source: String,
+    },
+    SkillpackUninstall {
+        name: String,
+    },
+    Backup {
+        output_path: PathBuf,
+    },
+    Restore {
+        input_path: PathBuf,
+    },
+    LoraTrain {
+        adapter_name: String,
+        base_model: Option<String>,
+    },
+    Migrate {
+        corpus_dir: PathBuf,
+        dry_run: bool,
+    },
     Status,
-    TracePrune { retention_days: Option<u32> },
+    TracePrune {
+        retention_days: Option<u32>,
+    },
     Maintenance,
 }
 
@@ -64,12 +88,19 @@ pub fn dispatch(cmd: CliCommand, data_dir: Option<&Path>) -> anyhow::Result<CliR
     let start = Instant::now();
 
     let (success, message, details) = match cmd {
-        CliCommand::Init { data_dir: init_dir, force } => {
+        CliCommand::Init {
+            data_dir: init_dir,
+            force,
+        } => {
             let resolve_dir = init_dir.as_deref().or(data_dir);
             let layout = StorageLayout::resolve(resolve_dir);
             crate::storage::init(&layout, force)?;
             let msg = format!("Initialized CiteIndex home at {}", layout.root.display());
-            (true, msg, Some(serde_json::json!({ "root": layout.root.display().to_string() })))
+            (
+                true,
+                msg,
+                Some(serde_json::json!({ "root": layout.root.display().to_string() })),
+            )
         }
 
         CliCommand::IndexRebuild { index } => {
@@ -78,11 +109,18 @@ pub fn dispatch(cmd: CliCommand, data_dir: Option<&Path>) -> anyhow::Result<CliR
             (true, msg, Some(serde_json::json!({ "index": target })))
         }
 
-        CliCommand::FineTunePrune { max_age_days, dry_run } => {
+        CliCommand::FineTunePrune {
+            max_age_days,
+            dry_run,
+        } => {
             let msg = format!(
                 "Would prune fine-tune samples older than {max_age_days} days (dry_run={dry_run})"
             );
-            (true, msg, Some(serde_json::json!({ "max_age_days": max_age_days, "dry_run": dry_run })))
+            (
+                true,
+                msg,
+                Some(serde_json::json!({ "max_age_days": max_age_days, "dry_run": dry_run })),
+            )
         }
 
         CliCommand::SkillpackList => {
@@ -121,21 +159,41 @@ pub fn dispatch(cmd: CliCommand, data_dir: Option<&Path>) -> anyhow::Result<CliR
 
         CliCommand::Restore { input_path } => {
             let msg = format!("Would restore from {}", input_path.display());
-            (true, msg, Some(serde_json::json!({ "input_path": input_path.display().to_string() })))
+            (
+                true,
+                msg,
+                Some(serde_json::json!({ "input_path": input_path.display().to_string() })),
+            )
         }
 
-        CliCommand::LoraTrain { adapter_name, base_model } => {
+        CliCommand::LoraTrain {
+            adapter_name,
+            base_model,
+        } => {
             let model = base_model.as_deref().unwrap_or("default");
             let msg = format!("Would train LoRA adapter '{adapter_name}' on base model '{model}'");
-            (true, msg, Some(serde_json::json!({ "adapter_name": adapter_name, "base_model": model })))
+            (
+                true,
+                msg,
+                Some(serde_json::json!({ "adapter_name": adapter_name, "base_model": model })),
+            )
         }
 
-        CliCommand::Migrate { corpus_dir, dry_run } => {
+        CliCommand::Migrate {
+            corpus_dir,
+            dry_run,
+        } => {
             let msg = format!(
                 "Would migrate corpus from {} (dry_run={dry_run})",
                 corpus_dir.display()
             );
-            (true, msg, Some(serde_json::json!({ "corpus_dir": corpus_dir.display().to_string(), "dry_run": dry_run })))
+            (
+                true,
+                msg,
+                Some(
+                    serde_json::json!({ "corpus_dir": corpus_dir.display().to_string(), "dry_run": dry_run }),
+                ),
+            )
         }
 
         CliCommand::Status => {
@@ -164,16 +222,21 @@ pub fn dispatch(cmd: CliCommand, data_dir: Option<&Path>) -> anyhow::Result<CliR
                 "Pruned {} directories ({} files), kept {}",
                 report.directories_removed, report.files_removed, report.directories_kept,
             );
-            (true, msg, Some(serde_json::json!({
-                "retention_days": days,
-                "directories_removed": report.directories_removed,
-                "files_removed": report.files_removed,
-                "directories_kept": report.directories_kept,
-            })))
+            (
+                true,
+                msg,
+                Some(serde_json::json!({
+                    "retention_days": days,
+                    "directories_removed": report.directories_removed,
+                    "files_removed": report.files_removed,
+                    "directories_kept": report.directories_kept,
+                })),
+            )
         }
 
         CliCommand::Maintenance => {
-            let msg = "Would run scheduled maintenance (index optimize, trace prune, tmp cleanup)".to_string();
+            let msg = "Would run scheduled maintenance (index optimize, trace prune, tmp cleanup)"
+                .to_string();
             (true, msg, None)
         }
     };
@@ -215,18 +278,40 @@ mod tests {
     fn test_cli_command_variants() {
         // Ensure all variants can be constructed and debug-printed.
         let cmds: Vec<CliCommand> = vec![
-            CliCommand::Init { data_dir: None, force: false },
+            CliCommand::Init {
+                data_dir: None,
+                force: false,
+            },
             CliCommand::IndexRebuild { index: None },
-            CliCommand::FineTunePrune { max_age_days: 90, dry_run: true },
+            CliCommand::FineTunePrune {
+                max_age_days: 90,
+                dry_run: true,
+            },
             CliCommand::SkillpackList,
-            CliCommand::SkillpackInstall { source: "https://example.com/pack.tar.gz".into() },
-            CliCommand::SkillpackUninstall { name: "my-pack".into() },
-            CliCommand::Backup { output_path: PathBuf::from("/tmp/backup.tar.gz") },
-            CliCommand::Restore { input_path: PathBuf::from("/tmp/backup.tar.gz") },
-            CliCommand::LoraTrain { adapter_name: "scholarly".into(), base_model: None },
-            CliCommand::Migrate { corpus_dir: PathBuf::from("/data/corpus"), dry_run: false },
+            CliCommand::SkillpackInstall {
+                source: "https://example.com/pack.tar.gz".into(),
+            },
+            CliCommand::SkillpackUninstall {
+                name: "my-pack".into(),
+            },
+            CliCommand::Backup {
+                output_path: PathBuf::from("/tmp/backup.tar.gz"),
+            },
+            CliCommand::Restore {
+                input_path: PathBuf::from("/tmp/backup.tar.gz"),
+            },
+            CliCommand::LoraTrain {
+                adapter_name: "scholarly".into(),
+                base_model: None,
+            },
+            CliCommand::Migrate {
+                corpus_dir: PathBuf::from("/data/corpus"),
+                dry_run: false,
+            },
             CliCommand::Status,
-            CliCommand::TracePrune { retention_days: Some(7) },
+            CliCommand::TracePrune {
+                retention_days: Some(7),
+            },
             CliCommand::Maintenance,
         ];
         for cmd in &cmds {
@@ -239,7 +324,10 @@ mod tests {
     #[test]
     fn test_dispatch_init() {
         let tmp = std::env::temp_dir().join(format!("citeindex_cli_init_{}", uuid::Uuid::new_v4()));
-        let cmd = CliCommand::Init { data_dir: Some(tmp.clone()), force: true };
+        let cmd = CliCommand::Init {
+            data_dir: Some(tmp.clone()),
+            force: true,
+        };
         let result = dispatch(cmd, None).unwrap();
         assert!(result.success);
         assert!(result.message.contains("Initialized"));
@@ -250,7 +338,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_status_no_dir() {
-        let tmp = std::env::temp_dir().join(format!("citeindex_cli_status_no_{}", uuid::Uuid::new_v4()));
+        let tmp =
+            std::env::temp_dir().join(format!("citeindex_cli_status_no_{}", uuid::Uuid::new_v4()));
         // Do NOT create the directory — status should report it missing.
         let cmd = CliCommand::Status;
         let result = dispatch(cmd, Some(&tmp)).unwrap();
@@ -260,7 +349,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_status_with_dir() {
-        let tmp = std::env::temp_dir().join(format!("citeindex_cli_status_ok_{}", uuid::Uuid::new_v4()));
+        let tmp =
+            std::env::temp_dir().join(format!("citeindex_cli_status_ok_{}", uuid::Uuid::new_v4()));
         // Initialize the layout so Status finds a real home.
         let layout = StorageLayout::new(tmp.clone());
         crate::storage::init(&layout, true).unwrap();
@@ -278,7 +368,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_trace_prune() {
-        let tmp = std::env::temp_dir().join(format!("citeindex_cli_trace_{}", uuid::Uuid::new_v4()));
+        let tmp =
+            std::env::temp_dir().join(format!("citeindex_cli_trace_{}", uuid::Uuid::new_v4()));
         let traces_dir = tmp.join("traces");
         fs::create_dir_all(&traces_dir).unwrap();
 
@@ -290,7 +381,9 @@ mod tests {
         fs::create_dir_all(&old_dir).unwrap();
         fs::write(old_dir.join("trace.jsonl"), "{}").unwrap();
 
-        let cmd = CliCommand::TracePrune { retention_days: Some(30) };
+        let cmd = CliCommand::TracePrune {
+            retention_days: Some(30),
+        };
         let result = dispatch(cmd, Some(&tmp)).unwrap();
         assert!(result.success);
         assert!(result.message.contains("Pruned"));

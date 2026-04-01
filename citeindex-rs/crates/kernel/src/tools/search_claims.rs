@@ -10,51 +10,62 @@ pub fn execute(
     use tantivy::query::QueryParser;
     use tantivy::schema::Value;
 
-    let query_text = params.get("query")
+    let query_text = params
+        .get("query")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidParams {
             param: "query".into(),
             message: "required string parameter".into(),
         })?;
-    let language = params.get("language").and_then(|v| v.as_str()).unwrap_or("en");
+    let language = params
+        .get("language")
+        .and_then(|v| v.as_str())
+        .unwrap_or("en");
     let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
 
-    let reader = ctx.claim_index.reader()
+    let reader = ctx
+        .claim_index
+        .reader()
         .map_err(|e| ToolError::IndexError(format!("failed to get reader: {e}")))?;
     let searcher = reader.searcher();
     let schema = ctx.claim_index.schema();
 
     let field_name = format!("claim_text_{language}");
     let mut search_fields = Vec::new();
-    if let Ok(f) = schema.get_field(&field_name) { search_fields.push(f); }
+    if let Ok(f) = schema.get_field(&field_name) {
+        search_fields.push(f);
+    }
 
     if search_fields.is_empty() {
         return Ok(serde_json::json!({"total_hits": 0, "hits": []}));
     }
 
     let query_parser = QueryParser::for_index(&ctx.claim_index, search_fields);
-    let query = query_parser.parse_query(query_text)
+    let query = query_parser
+        .parse_query(query_text)
         .map_err(|e| ToolError::InvalidParams {
             param: "query".into(),
             message: format!("parse error: {e}"),
         })?;
 
-    let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))
+    let top_docs = searcher
+        .search(&query, &TopDocs::with_limit(limit))
         .map_err(|e| ToolError::IndexError(format!("search failed: {e}")))?;
 
     let max_bm25 = top_docs.iter().map(|(s, _)| *s).fold(0.0f32, f32::max);
 
     let mut hits = Vec::new();
     for (raw_score, doc_address) in &top_docs {
-        let doc: tantivy::TantivyDocument = searcher.doc(*doc_address)
+        let doc: tantivy::TantivyDocument = searcher
+            .doc(*doc_address)
             .map_err(|e| ToolError::IndexError(format!("doc retrieve: {e}")))?;
 
         let mut fields = serde_json::Map::new();
         for fv in doc.field_values() {
             let name = schema.get_field_name(fv.field);
             match name {
-                "claim_id" | "doc_id" | "section_ref" | "claim_text"
-                | "polarity_tag" | "entities" | "quality_tier" | "merkle_hash" => {
+                "claim_id" | "doc_id" | "section_ref" | "claim_text" | "polarity_tag"
+                | "entities" | "quality_tier" | "merkle_hash" => {
                     if let Some(text) = (&fv.value).as_str() {
                         fields.insert(name.to_string(), serde_json::json!(text));
                     }
@@ -69,7 +80,10 @@ pub fn execute(
         }
 
         let bm25_norm = crate::scoring::normalize_bm25(*raw_score, max_bm25);
-        let claim_id = fields.get("claim_id").and_then(|v| v.as_str()).unwrap_or("");
+        let claim_id = fields
+            .get("claim_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         hits.push(serde_json::json!({
             "id": claim_id,

@@ -49,7 +49,11 @@ pub fn build_merkle_tree(leaf_hashes: &[String]) -> MerkleTree {
         levels.push(next);
     }
 
-    let root = levels.last().and_then(|l| l.first()).cloned().unwrap_or_default();
+    let root = levels
+        .last()
+        .and_then(|l| l.first())
+        .cloned()
+        .unwrap_or_default();
 
     MerkleTree {
         algorithm: "sha256".into(),
@@ -70,7 +74,11 @@ pub fn build_merkle_proof(tree: &MerkleTree, leaf_index: usize) -> Vec<ProofStep
 
     for level in &tree.levels[..tree.levels.len().saturating_sub(1)] {
         let sibling_idx = idx ^ 1;
-        let sibling_idx = if sibling_idx >= level.len() { idx } else { sibling_idx };
+        let sibling_idx = if sibling_idx >= level.len() {
+            idx
+        } else {
+            sibling_idx
+        };
         let position = if sibling_idx > idx { "right" } else { "left" };
         proof.push(ProofStep {
             position: position.into(),

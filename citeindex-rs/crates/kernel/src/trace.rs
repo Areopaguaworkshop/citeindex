@@ -15,9 +15,7 @@ use uuid::Uuid;
 use crate::state_machine::{StateMachine, StepResult};
 use crate::types::ids::{FrameId, MerkleHash, ModelId, TraceId};
 use crate::types::replay::ReplayGuarantee;
-use crate::types::{
-    AgentOutput, CommitState, ExecutionFrame, Interrupt, VerifyResult,
-};
+use crate::types::{AgentOutput, CommitState, ExecutionFrame, Interrupt, VerifyResult};
 
 /// Unique identifier for a span within a trace.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -117,11 +115,7 @@ impl TraceWriter {
     /// Create a new trace file for this execution.
     ///
     /// Path: `{traces_dir}/{YYYY-MM-DD}/{trace_id}.jsonl`
-    pub fn new(
-        trace_id: TraceId,
-        frame_id: FrameId,
-        traces_dir: &Path,
-    ) -> anyhow::Result<Self> {
+    pub fn new(trace_id: TraceId, frame_id: FrameId, traces_dir: &Path) -> anyhow::Result<Self> {
         let date = Utc::now().format("%Y-%m-%d").to_string();
         let date_dir = traces_dir.join(&date);
         fs::create_dir_all(&date_dir)?;
@@ -345,51 +339,43 @@ impl<'a> TracedStateMachine<'a> {
     }
 
     /// Record the appropriate trace span based on the StepResult.
-    fn trace_step_result(
-        &mut self,
-        from: &str,
-        result: &StepResult,
-        frame: &ExecutionFrame,
-    ) {
+    fn trace_step_result(&mut self, from: &str, result: &StepResult, frame: &ExecutionFrame) {
         let _ = match result {
             StepResult::Advanced { new_state } => {
                 let to = new_state.name();
                 let guard = format!("guard_{}_to_{}", from.to_lowercase(), to.to_lowercase());
                 self.writer.record_transition(from, to, &guard, true, None)
             }
-            StepResult::Completed => {
-                self.writer.record_transition(from, "DONE", "terminal", true, None)
-            }
-            StepResult::EnteredRecovery { from: failed_state } => {
-                self.writer.record_transition(
-                    from,
-                    "RECOVER",
-                    &format!("recovery_from_{}", failed_state.name().to_lowercase()),
-                    true,
-                    None,
-                )
-            }
+            StepResult::Completed => self
+                .writer
+                .record_transition(from, "DONE", "terminal", true, None),
+            StepResult::EnteredRecovery { from: failed_state } => self.writer.record_transition(
+                from,
+                "RECOVER",
+                &format!("recovery_from_{}", failed_state.name().to_lowercase()),
+                true,
+                None,
+            ),
             StepResult::GuardFailed(err) => {
                 let msg = err.to_string();
-                self.writer.record_transition(from, "?", "guard", false, Some(&msg))
+                self.writer
+                    .record_transition(from, "?", "guard", false, Some(&msg))
             }
-            StepResult::Interrupted(interrupt) => {
-                self.writer.record(
-                    SpanType::Interrupt,
-                    &format!("Interrupt: {interrupt}"),
-                    from,
-                    None,
-                    serde_json::json!({
-                        "interrupt_type": format!("{interrupt:?}"),
-                        "frame_state_at_interrupt": from,
-                        "action_taken": if frame.state.is_terminal() {
-                            "transition_to_done"
-                        } else {
-                            "transition_to_recover"
-                        },
-                    }),
-                )
-            }
+            StepResult::Interrupted(interrupt) => self.writer.record(
+                SpanType::Interrupt,
+                &format!("Interrupt: {interrupt}"),
+                from,
+                None,
+                serde_json::json!({
+                    "interrupt_type": format!("{interrupt:?}"),
+                    "frame_state_at_interrupt": from,
+                    "action_taken": if frame.state.is_terminal() {
+                        "transition_to_done"
+                    } else {
+                        "transition_to_recover"
+                    },
+                }),
+            ),
         };
     }
 }
@@ -518,9 +504,7 @@ impl ReplayVerifier {
             if let Some(root_str) = recorded_root_str {
                 // Parse the recorded merkle root
                 let recorded_root = parse_merkle_hash(root_str);
-                let recorded_model = ModelId(
-                    recorded_model_str.unwrap_or("unknown").to_string(),
-                );
+                let recorded_model = ModelId(recorded_model_str.unwrap_or("unknown").to_string());
                 return Ok(Self::check(
                     &recorded_root,
                     current_merkle_root,
@@ -582,9 +566,7 @@ impl TraceRetention {
 
             if dir_name < cutoff_date {
                 // Count files before removal
-                let file_count = fs::read_dir(&path)?
-                    .filter_map(|e| e.ok())
-                    .count();
+                let file_count = fs::read_dir(&path)?.filter_map(|e| e.ok()).count();
                 report.directories_removed += 1;
                 report.files_removed += file_count;
 
@@ -653,7 +635,9 @@ mod tests {
     #[test]
     fn test_trace_writer_record_transition() {
         let (mut writer, dir) = make_trace_writer();
-        let span_id = writer.record_transition("INIT", "PLAN", "guard_init_to_plan", true, None).unwrap();
+        let span_id = writer
+            .record_transition("INIT", "PLAN", "guard_init_to_plan", true, None)
+            .unwrap();
         assert!(!span_id.0.is_nil());
 
         // Read back the file
@@ -697,11 +681,8 @@ mod tests {
             ModelId("test/model".into()),
             AdmissionTier::Full,
         );
-        let writer = TraceWriter::new(
-            frame.trace_id.clone(),
-            frame.frame_id.clone(),
-            &dir,
-        ).unwrap();
+        let writer =
+            TraceWriter::new(frame.trace_id.clone(), frame.frame_id.clone(), &dir).unwrap();
         (frame, writer, dir)
     }
 
@@ -711,7 +692,12 @@ mod tests {
         let mut tsm = TracedStateMachine::new(&mut writer);
 
         let result = tsm.try_advance_simple(&mut frame);
-        assert!(matches!(result, StepResult::Advanced { new_state: FrameState::Plan }));
+        assert!(matches!(
+            result,
+            StepResult::Advanced {
+                new_state: FrameState::Plan
+            }
+        ));
 
         // Read trace file and verify a transition span was recorded
         let path = tsm.writer.path().to_path_buf();
@@ -769,8 +755,12 @@ mod tests {
     #[test]
     fn test_trace_reader_read_and_filter() {
         let (mut writer, dir) = make_trace_writer();
-        writer.record_transition("INIT", "PLAN", "guard_init_to_plan", true, None).unwrap();
-        writer.record_error("test error", "TestError", "something failed", "PLAN").unwrap();
+        writer
+            .record_transition("INIT", "PLAN", "guard_init_to_plan", true, None)
+            .unwrap();
+        writer
+            .record_error("test error", "TestError", "something failed", "PLAN")
+            .unwrap();
         let path = writer.path().to_path_buf();
         writer.flush().unwrap();
         drop(writer);
@@ -808,8 +798,12 @@ mod tests {
     #[test]
     fn test_trace_reader_summary() {
         let (mut writer, dir) = make_trace_writer();
-        writer.record_transition("INIT", "PLAN", "g1", true, None).unwrap();
-        writer.record_transition("PLAN", "THINK", "g2", true, None).unwrap();
+        writer
+            .record_transition("INIT", "PLAN", "g1", true, None)
+            .unwrap();
+        writer
+            .record_transition("PLAN", "THINK", "g2", true, None)
+            .unwrap();
         writer.record_error("err", "E", "msg", "THINK").unwrap();
         let path = writer.path().to_path_buf();
         writer.flush().unwrap();
@@ -826,8 +820,12 @@ mod tests {
     #[test]
     fn test_trace_reader_duration() {
         let (mut writer, dir) = make_trace_writer();
-        writer.record_transition("INIT", "PLAN", "g1", true, None).unwrap();
-        writer.record_transition("PLAN", "THINK", "g2", true, None).unwrap();
+        writer
+            .record_transition("INIT", "PLAN", "g1", true, None)
+            .unwrap();
+        writer
+            .record_transition("PLAN", "THINK", "g2", true, None)
+            .unwrap();
         let path = writer.path().to_path_buf();
         writer.flush().unwrap();
         drop(writer);
@@ -914,7 +912,7 @@ mod tests {
     #[test]
     fn test_parse_merkle_hash_roundtrip() {
         let original = MerkleHash::from_str_content("test data");
-        let display = format!("{original}");  // "sha256:hex..."
+        let display = format!("{original}"); // "sha256:hex..."
         let parsed = parse_merkle_hash(&display);
         assert_eq!(original, parsed);
     }

@@ -40,7 +40,8 @@ fn require(condition: bool, from: &str, to: &str, reason: &str) -> Result<(), Tr
 pub fn guard_init_to_plan(frame: &ExecutionFrame) -> Result<(), TransitionError> {
     require(
         !frame.skill.0.is_empty(),
-        "INIT", "PLAN",
+        "INIT",
+        "PLAN",
         "skill must be loaded",
     )
 }
@@ -50,12 +51,14 @@ pub fn guard_init_to_plan(frame: &ExecutionFrame) -> Result<(), TransitionError>
 pub fn guard_plan_to_think(frame: &ExecutionFrame) -> Result<(), TransitionError> {
     require(
         frame.query_plan.is_some(),
-        "PLAN", "THINK",
+        "PLAN",
+        "THINK",
         "query plan must exist",
     )?;
     require(
         !frame.goal_state.required_aspects.is_empty(),
-        "PLAN", "THINK",
+        "PLAN",
+        "THINK",
         "at least one aspect required",
     )
 }
@@ -65,7 +68,8 @@ pub fn guard_plan_to_think(frame: &ExecutionFrame) -> Result<(), TransitionError
 pub fn guard_think_to_act(frame: &ExecutionFrame) -> Result<(), TransitionError> {
     require(
         !frame.context_slots.is_empty(),
-        "THINK", "ACT",
+        "THINK",
+        "ACT",
         "context slots must be populated",
     )
     // ContextSlot<Verified> is enforced by the type system — no runtime check needed.
@@ -79,12 +83,14 @@ pub fn guard_act_to_verify(
 ) -> Result<(), TransitionError> {
     require(
         !agent_output.text.is_empty(),
-        "ACT", "VERIFY",
+        "ACT",
+        "VERIFY",
         "agent output must not be empty",
     )?;
     require(
         agent_output.cite_anchor_count > 0,
-        "ACT", "VERIFY",
+        "ACT",
+        "VERIFY",
         "agent output must contain cite anchors",
     )
 }
@@ -97,12 +103,14 @@ pub fn guard_verify_to_commit(
 ) -> Result<(), TransitionError> {
     require(
         verify_result.blocked_claims.is_empty(),
-        "VERIFY", "COMMIT",
+        "VERIFY",
+        "COMMIT",
         "all claims must be verified",
     )?;
     require(
         verify_result.guardrails_passed,
-        "VERIFY", "COMMIT",
+        "VERIFY",
+        "COMMIT",
         "guardrails must pass",
     )
 }
@@ -116,7 +124,8 @@ pub fn guard_commit_to_reflect(
     // commit_hash is guaranteed by CommitState type (non-optional field — I3).
     require(
         !commit_state.csl_citations.is_empty(),
-        "COMMIT", "REFLECT",
+        "COMMIT",
+        "REFLECT",
         "CSL citations must be persisted",
     )
 }
@@ -129,14 +138,18 @@ pub fn guard_reflect_to_done(frame: &ExecutionFrame) -> Result<(), TransitionErr
         let score = coverage.get(aspect).copied().unwrap_or(0.0);
         require(
             score >= frame.goal_state.coverage_threshold,
-            "REFLECT", "DONE",
-            &format!("aspect '{}' not covered (score={:.2}, threshold={:.2})",
-                     aspect, score, frame.goal_state.coverage_threshold),
+            "REFLECT",
+            "DONE",
+            &format!(
+                "aspect '{}' not covered (score={:.2}, threshold={:.2})",
+                aspect, score, frame.goal_state.coverage_threshold
+            ),
         )?;
     }
     require(
         frame.goal_state.constraint_violations.is_empty(),
-        "REFLECT", "DONE",
+        "REFLECT",
+        "DONE",
         "no constraint violations allowed",
     )
 }
@@ -145,5 +158,7 @@ pub fn guard_reflect_to_done(frame: &ExecutionFrame) -> Result<(), TransitionErr
 
 /// No guard — RECOVER is always allowed from ACT, VERIFY, or COMMIT.
 pub fn transition_to_recover(current: FrameState) -> FrameState {
-    FrameState::Recover { from: Box::new(current) }
+    FrameState::Recover {
+        from: Box::new(current),
+    }
 }

@@ -7,11 +7,10 @@
 //! the IPC protocol (Phase 2/3). This module owns the state transitions
 //! and invariant enforcement.
 
-use crate::types::{
-    AgentOutput, CommitState, ExecutionFrame, FrameState, Interrupt,
-    TransitionError, VerifyResult,
-};
 use crate::types::transitions;
+use crate::types::{
+    AgentOutput, CommitState, ExecutionFrame, FrameState, Interrupt, TransitionError, VerifyResult,
+};
 
 /// Result of a single state machine step.
 #[derive(Debug)]
@@ -46,42 +45,40 @@ impl StateMachine {
     /// `AgentOutput`). Use the specific `advance_*` methods for those.
     pub fn try_advance_simple(frame: &mut ExecutionFrame) -> StepResult {
         match &frame.state {
-            FrameState::Init => {
-                match transitions::guard_init_to_plan(frame) {
-                    Ok(()) => {
-                        frame.state = FrameState::Plan;
-                        StepResult::Advanced { new_state: FrameState::Plan }
+            FrameState::Init => match transitions::guard_init_to_plan(frame) {
+                Ok(()) => {
+                    frame.state = FrameState::Plan;
+                    StepResult::Advanced {
+                        new_state: FrameState::Plan,
                     }
-                    Err(e) => StepResult::GuardFailed(e),
                 }
-            }
-            FrameState::Plan => {
-                match transitions::guard_plan_to_think(frame) {
-                    Ok(()) => {
-                        frame.state = FrameState::Think;
-                        StepResult::Advanced { new_state: FrameState::Think }
+                Err(e) => StepResult::GuardFailed(e),
+            },
+            FrameState::Plan => match transitions::guard_plan_to_think(frame) {
+                Ok(()) => {
+                    frame.state = FrameState::Think;
+                    StepResult::Advanced {
+                        new_state: FrameState::Think,
                     }
-                    Err(e) => StepResult::GuardFailed(e),
                 }
-            }
-            FrameState::Think => {
-                match transitions::guard_think_to_act(frame) {
-                    Ok(()) => {
-                        frame.state = FrameState::Act;
-                        StepResult::Advanced { new_state: FrameState::Act }
+                Err(e) => StepResult::GuardFailed(e),
+            },
+            FrameState::Think => match transitions::guard_think_to_act(frame) {
+                Ok(()) => {
+                    frame.state = FrameState::Act;
+                    StepResult::Advanced {
+                        new_state: FrameState::Act,
                     }
-                    Err(e) => StepResult::GuardFailed(e),
                 }
-            }
-            FrameState::Reflect => {
-                match transitions::guard_reflect_to_done(frame) {
-                    Ok(()) => {
-                        frame.state = FrameState::Done;
-                        StepResult::Completed
-                    }
-                    Err(e) => StepResult::GuardFailed(e),
+                Err(e) => StepResult::GuardFailed(e),
+            },
+            FrameState::Reflect => match transitions::guard_reflect_to_done(frame) {
+                Ok(()) => {
+                    frame.state = FrameState::Done;
+                    StepResult::Completed
                 }
-            }
+                Err(e) => StepResult::GuardFailed(e),
+            },
             FrameState::Done => StepResult::Completed,
             _ => StepResult::GuardFailed(TransitionError::GuardFailed {
                 from: frame.state.name().into(),
@@ -99,7 +96,9 @@ impl StateMachine {
         match transitions::guard_act_to_verify(frame, agent_output) {
             Ok(()) => {
                 frame.state = FrameState::Verify;
-                StepResult::Advanced { new_state: FrameState::Verify }
+                StepResult::Advanced {
+                    new_state: FrameState::Verify,
+                }
             }
             Err(e) => {
                 if frame.state.can_recover() {
@@ -121,7 +120,9 @@ impl StateMachine {
         match transitions::guard_verify_to_commit(frame, verify_result) {
             Ok(()) => {
                 frame.state = FrameState::Commit;
-                StepResult::Advanced { new_state: FrameState::Commit }
+                StepResult::Advanced {
+                    new_state: FrameState::Commit,
+                }
             }
             Err(e) => {
                 if frame.state.can_recover() {
@@ -144,7 +145,9 @@ impl StateMachine {
             Ok(()) => {
                 frame.commit_hash = Some(commit_state.commit_hash.clone());
                 frame.state = FrameState::Reflect;
-                StepResult::Advanced { new_state: FrameState::Reflect }
+                StepResult::Advanced {
+                    new_state: FrameState::Reflect,
+                }
             }
             Err(e) => {
                 if frame.state.can_recover() {
@@ -188,11 +191,9 @@ impl StateMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{
-        AdmissionTier, GoalState, ModelId, SkillName, MerkleHash, FrameState,
-    };
     use crate::types::context_slot::{BudgetZone, ContextSlot, Raw};
     use crate::types::ids::{CslId, QualityTier};
+    use crate::types::{AdmissionTier, FrameState, GoalState, MerkleHash, ModelId, SkillName};
 
     fn make_frame() -> ExecutionFrame {
         ExecutionFrame::new(
@@ -216,7 +217,12 @@ mod tests {
         assert_eq!(frame.state, FrameState::Init);
 
         let result = StateMachine::try_advance_simple(&mut frame);
-        assert!(matches!(result, StepResult::Advanced { new_state: FrameState::Plan }));
+        assert!(matches!(
+            result,
+            StepResult::Advanced {
+                new_state: FrameState::Plan
+            }
+        ));
         assert_eq!(frame.state, FrameState::Plan);
     }
 
@@ -245,15 +251,22 @@ mod tests {
 
         // Add a verified context slot
         let raw = ContextSlot::<Raw>::new("test content".into(), 10, BudgetZone::PrimaryRetrieval);
-        let verified = raw.verify(
-            CslId("test-csl".into()),
-            MerkleHash::from_str_content("test"),
-            None,
-            Some(QualityTier::Gold),
-        ).unwrap();
+        let verified = raw
+            .verify(
+                CslId("test-csl".into()),
+                MerkleHash::from_str_content("test"),
+                None,
+                Some(QualityTier::Gold),
+            )
+            .unwrap();
         frame.context_slots.push(verified);
 
         let result = StateMachine::try_advance_simple(&mut frame);
-        assert!(matches!(result, StepResult::Advanced { new_state: FrameState::Act }));
+        assert!(matches!(
+            result,
+            StepResult::Advanced {
+                new_state: FrameState::Act
+            }
+        ));
     }
 }

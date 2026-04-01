@@ -413,8 +413,26 @@ def parse_multiple_authors(author_string: str) -> List[Dict]:
     # Regex to check for CJK characters
     def is_cjk(s): return re.search(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", s)
 
-    # Split by common separators
-    author_parts = re.split(r'[,，;；\s]+', author_string)
+    normalized = re.sub(r"\s+", " ", author_string).strip()
+
+    # CJK author lists are often separated by spaces only.
+    if (
+        " and " not in normalized.lower()
+        and not re.search(r"[,，;；]", normalized)
+        and all(is_cjk(part) for part in normalized.split() if part)
+    ):
+        author_parts = normalized.split()
+    else:
+        author_parts = []
+        for chunk in re.split(r"[;；]", normalized):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            for part in re.split(r"\s+and\s+|,|，", chunk, flags=re.IGNORECASE):
+                part = part.strip()
+                if part:
+                    author_parts.append(part)
+
     parsed_authors = []
 
     for part in author_parts:
@@ -447,6 +465,11 @@ def parse_multiple_authors(author_string: str) -> List[Dict]:
             else: # Default for other lengths
                 author_info["family"] = literal_name[0]
                 author_info["given"] = literal_name[1:]
+        else:
+            western_tokens = author_name.split()
+            if len(western_tokens) >= 2:
+                author_info["family"] = western_tokens[-1]
+                author_info["given"] = " ".join(western_tokens[:-1])
         
         parsed_authors.append(author_info)
 
@@ -477,23 +500,54 @@ def format_author_csl(author_input) -> list:
         if not isinstance(author_data, dict):
             continue
 
-        csl_author = {"literal": author_data.get("literal", "")}
+        literal_value = author_data.get("literal", "")
+        csl_author = {}
 
         # Handle family/given names, converting to Pinyin for CJK
         family = author_data.get("family", "")
         given = author_data.get("given", "")
 
         if family and given:
-            try:
-                family_pinyin = "".join(item[0] for item in pinyin(family, style=Style.NORMAL)).title()
-                given_pinyin = "".join(item[0] for item in pinyin(given, style=Style.NORMAL)).title()
-                csl_author["family"] = family_pinyin
-                csl_author["given"] = given_pinyin
-            except Exception:
-                # Fallback for non-pinyin convertible names
+            if re.search(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", family + given):
+                try:
+                    family_pinyin = "".join(item[0] for item in pinyin(family, style=Style.NORMAL)).title()
+                    given_pinyin = "".join(item[0] for item in pinyin(given, style=Style.NORMAL)).title()
+                    csl_author["family"] = family_pinyin
+                    csl_author["given"] = given_pinyin
+                except Exception:
+                    # Fallback for non-pinyin convertible names
+                    csl_author["family"] = family
+                    csl_author["given"] = given
+            else:
                 csl_author["family"] = family
                 csl_author["given"] = given
+        elif family:
+            if re.search(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", family):
+                try:
+                    csl_author["family"] = "".join(
+                        item[0] for item in pinyin(family, style=Style.NORMAL)
+                    ).title()
+                except Exception:
+                    csl_author["family"] = family
+            else:
+                csl_author["family"] = family
+        elif given:
+            if re.search(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", given):
+                try:
+                    csl_author["given"] = "".join(
+                        item[0] for item in pinyin(given, style=Style.NORMAL)
+                    ).title()
+                except Exception:
+                    csl_author["given"] = given
+            else:
+                csl_author["given"] = given
         
+        if literal_value and (
+            not csl_author
+            or re.search(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", literal_value)
+        ):
+            csl_author["literal"] = literal_value
+
         # Assemble suffix from dynasty and role
         suffix_parts = []
         if author_data.get("dynasty"):

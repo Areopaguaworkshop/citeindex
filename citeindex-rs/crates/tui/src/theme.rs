@@ -101,7 +101,9 @@ impl Theme {
     }
 
     pub fn accent_style(&self) -> Style {
-        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
     }
 
     pub fn dim_style(&self) -> Style {

@@ -135,26 +135,66 @@ pub struct KernelProcessConfig {
 
 // ── Defaults ──────────────────────────────────────────────────
 
-fn default_cloud_premium() -> String { "anthropic/claude-sonnet-4-20250514".into() }
-fn default_cloud_standard() -> String { "anthropic/claude-sonnet-4-20250514".into() }
-fn default_local_base() -> String { "ollama/llama3".into() }
-fn default_personal() -> String { "ollama/llama3".into() }
-fn default_weak_signal_threshold() -> f32 { 0.40 }
-fn default_weak_signal_max_hops() -> u32 { 3 }
-fn default_weak_signal_deep_limit() -> u32 { 3 }
-fn default_weak_signal_deep_model_tier() -> String { "cloud_standard".into() }
-fn default_w_bm25() -> f32 { 0.55 }
-fn default_w_hierarchy() -> f32 { 0.15 }
-fn default_w_citation_degree() -> f32 { 0.12 }
-fn default_w_recency() -> f32 { 0.10 }
-fn default_w_claim_density() -> f32 { 0.08 }
-fn default_full_max() -> f32 { 50.0 }
-fn default_standard_max() -> f32 { 75.0 }
-fn default_degraded_max() -> f32 { 90.0 }
-fn default_api_port() -> u16 { 7432 }
-fn default_rate_limit() -> u32 { 60 }
-fn default_retention_days() -> u32 { 30 }
-fn default_python_bin() -> String { "python".into() }
+fn default_cloud_premium() -> String {
+    "anthropic/claude-sonnet-4-20250514".into()
+}
+fn default_cloud_standard() -> String {
+    "anthropic/claude-sonnet-4-20250514".into()
+}
+fn default_local_base() -> String {
+    "ollama/llama3".into()
+}
+fn default_personal() -> String {
+    "ollama/llama3".into()
+}
+fn default_weak_signal_threshold() -> f32 {
+    0.40
+}
+fn default_weak_signal_max_hops() -> u32 {
+    3
+}
+fn default_weak_signal_deep_limit() -> u32 {
+    3
+}
+fn default_weak_signal_deep_model_tier() -> String {
+    "cloud_standard".into()
+}
+fn default_w_bm25() -> f32 {
+    0.55
+}
+fn default_w_hierarchy() -> f32 {
+    0.15
+}
+fn default_w_citation_degree() -> f32 {
+    0.12
+}
+fn default_w_recency() -> f32 {
+    0.10
+}
+fn default_w_claim_density() -> f32 {
+    0.08
+}
+fn default_full_max() -> f32 {
+    50.0
+}
+fn default_standard_max() -> f32 {
+    75.0
+}
+fn default_degraded_max() -> f32 {
+    90.0
+}
+fn default_api_port() -> u16 {
+    7432
+}
+fn default_rate_limit() -> u32 {
+    60
+}
+fn default_retention_days() -> u32 {
+    30
+}
+fn default_python_bin() -> String {
+    "python".into()
+}
 
 impl Default for LlmRoutingConfig {
     fn default() -> Self {
@@ -212,13 +252,17 @@ impl Default for ApiConfig {
 
 impl Default for TracesConfig {
     fn default() -> Self {
-        Self { retention_days: default_retention_days() }
+        Self {
+            retention_days: default_retention_days(),
+        }
     }
 }
 
 impl Default for KernelProcessConfig {
     fn default() -> Self {
-        Self { python_bin: default_python_bin() }
+        Self {
+            python_bin: default_python_bin(),
+        }
     }
 }
 
@@ -240,10 +284,15 @@ impl Default for KernelConfig {
 impl ScoreFusionConfig {
     /// Validate that weights sum to 1.0.
     pub fn validate(&self) -> Result<(), String> {
-        let sum = self.w_bm25 + self.w_hierarchy + self.w_citation_degree
-                + self.w_recency + self.w_claim_density;
+        let sum = self.w_bm25
+            + self.w_hierarchy
+            + self.w_citation_degree
+            + self.w_recency
+            + self.w_claim_density;
         if (sum - 1.0).abs() > 0.001 {
-            return Err(format!("score fusion weights sum to {sum:.4}, expected 1.0"));
+            return Err(format!(
+                "score fusion weights sum to {sum:.4}, expected 1.0"
+            ));
         }
         Ok(())
     }

@@ -8,13 +8,16 @@ pub fn execute(
 ) -> Result<serde_json::Value, ToolError> {
     use sha2::{Digest, Sha256};
 
-    let data = params.get("data")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ToolError::InvalidParams {
-            param: "data".into(),
-            message: "required string parameter".into(),
-        })?;
-    let expected = params.get("expected_hash")
+    let data =
+        params
+            .get("data")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams {
+                param: "data".into(),
+                message: "required string parameter".into(),
+            })?;
+    let expected = params
+        .get("expected_hash")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidParams {
             param: "expected_hash".into(),

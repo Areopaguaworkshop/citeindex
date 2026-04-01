@@ -5,15 +5,13 @@
 
 use chrono::Utc;
 
-use crate::types::claim::{
-    BlockedClaim, BlockedReason, Claim, VerificationMethod, VerifiedClaim,
-};
+use crate::types::claim::{BlockedClaim, BlockedReason, Claim, VerificationMethod, VerifiedClaim};
 use crate::types::common::VerifyResult;
 use crate::types::ids::{CslId, MerkleHash, QualityTier};
 
 use super::{
-    check_anchors_against_injected, compute_passage_similarity,
-    detect_prohibited_phrases, parse_cite_anchors, InjectedSourceSet,
+    check_anchors_against_injected, compute_passage_similarity, detect_prohibited_phrases,
+    parse_cite_anchors, InjectedSourceSet,
 };
 
 /// Configuration for the verify pipeline.
@@ -65,8 +63,7 @@ pub fn verify_pipeline(
     config: &VerifyConfig,
 ) -> VerifyResult {
     let anchors = parse_cite_anchors(output_text);
-    let (_valid_anchors, _invalid_anchors) =
-        check_anchors_against_injected(&anchors, injected);
+    let (_valid_anchors, _invalid_anchors) = check_anchors_against_injected(&anchors, injected);
 
     let prohibited = detect_prohibited_phrases(output_text);
     if !prohibited.is_empty() {
@@ -306,7 +303,13 @@ mod tests {
     #[test]
     fn test_tier_meets_minimum() {
         assert!(tier_meets_minimum(&QualityTier::Gold, &QualityTier::Silver));
-        assert!(tier_meets_minimum(&QualityTier::Silver, &QualityTier::Silver));
-        assert!(!tier_meets_minimum(&QualityTier::Bronze, &QualityTier::Silver));
+        assert!(tier_meets_minimum(
+            &QualityTier::Silver,
+            &QualityTier::Silver
+        ));
+        assert!(!tier_meets_minimum(
+            &QualityTier::Bronze,
+            &QualityTier::Silver
+        ));
     }
 }

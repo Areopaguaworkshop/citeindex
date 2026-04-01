@@ -162,10 +162,7 @@ pub fn estimate_tokens(text: &str, language: &str) -> usize {
 /// Keeps highest-scoring slots. Deterministic — same scores → same eviction.
 /// Each slot is represented as (score, token_count, slot_id).
 /// Returns the number of slots kept.
-pub fn evict_zone(
-    slots: &mut Vec<(f32, usize, String)>,
-    zone_budget: usize,
-) -> usize {
+pub fn evict_zone(slots: &mut Vec<(f32, usize, String)>, zone_budget: usize) -> usize {
     slots.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -292,10 +289,7 @@ mod tests {
 
     #[test]
     fn test_evict_zone_all_fit() {
-        let mut slots = vec![
-            (0.9, 100, "a".to_string()),
-            (0.8, 100, "b".to_string()),
-        ];
+        let mut slots = vec![(0.9, 100, "a".to_string()), (0.8, 100, "b".to_string())];
         let kept = evict_zone(&mut slots, 500);
         assert_eq!(kept, 2);
     }

@@ -210,7 +210,11 @@ mod tests {
     #[test]
     fn test_assemble_context_basic() {
         let candidates = vec![
-            make_candidate("Primary content here for the scholar", BudgetZone::PrimaryRetrieval, 0.9),
+            make_candidate(
+                "Primary content here for the scholar",
+                BudgetZone::PrimaryRetrieval,
+                0.9,
+            ),
             make_candidate("Memory from previous session", BudgetZone::Memory, 0.7),
         ];
 

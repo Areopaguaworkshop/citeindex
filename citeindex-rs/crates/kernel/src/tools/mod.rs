@@ -3,27 +3,29 @@
 //! The kernel's syscall layer. Agents never access indexes, databases, or
 //! files directly. Every data operation goes through a tool call.
 
-pub mod search_documents;
-pub mod search_claims;
-pub mod search_memory;
-pub mod index_document;
-pub mod index_claim;
-pub mod delete_document;
 pub mod ag_query_claims;
 pub mod ag_query_contradictions;
 pub mod ag_write_edge;
+pub mod csl_render;
+pub mod delete_document;
+pub mod index_claim;
+pub mod index_document;
+pub mod memory_save;
 pub mod merkle_compute;
 pub mod merkle_verify;
-pub mod csl_render;
+pub mod regex_search;
+pub mod search_claims;
+pub mod search_documents;
+pub mod search_memory;
 pub mod tree_load;
 pub mod tree_traverse;
-pub mod regex_search;
-pub mod memory_save;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::argument_graph;
+use crate::indexes;
 use crate::scoring::ScoreFusionWeights;
 use crate::types::ids::AgentName;
 
@@ -142,6 +144,70 @@ pub struct MemoryAccessEntry {
     pub last_accessed: String,
 }
 
+/// Build a lightweight in-memory tool context backed by the kernel schemas.
+///
+/// This is useful for transitional runtimes that want to exercise the kernel
+/// dispatcher without requiring the full on-disk v12 storage layout yet.
+pub fn in_memory_context(documents_dir: PathBuf) -> anyhow::Result<ToolContext> {
+    let document_index = tantivy::Index::create_in_ram(indexes::build_document_index_schema());
+    indexes::register_tokenizers(&document_index);
+    let claim_index = tantivy::Index::create_in_ram(indexes::build_claim_index_schema());
+    indexes::register_tokenizers(&claim_index);
+    let memory_index = tantivy::Index::create_in_ram(indexes::build_memory_index_schema());
+    indexes::register_tokenizers(&memory_index);
+
+    let document_writer = Arc::new(Mutex::new(document_index.writer(50_000_000)?));
+    let claim_writer = Arc::new(Mutex::new(claim_index.writer(50_000_000)?));
+    let memory_writer = Arc::new(Mutex::new(memory_index.writer(50_000_000)?));
+
+    let conn = rusqlite::Connection::open_in_memory()?;
+    argument_graph::init_db(&conn)?;
+
+    Ok(ToolContext {
+        document_index,
+        claim_index,
+        memory_index,
+        document_writer,
+        claim_writer,
+        memory_writer,
+        argument_graph_db: Arc::new(Mutex::new(conn)),
+        documents_dir: documents_dir.clone(),
+        sources_dir: documents_dir,
+        score_fusion_weights: ScoreFusionWeights::default(),
+        memory_access_cache: HashMap::new(),
+    })
+}
+
+fn legacy_search_target(params: &serde_json::Value) -> &str {
+    params
+        .get("index")
+        .and_then(|v| v.as_str())
+        .or_else(|| params.get("target").and_then(|v| v.as_str()))
+        .unwrap_or("documents")
+}
+
+fn dispatch_legacy_tantivy_search(
+    params: &serde_json::Value,
+    ctx: &mut ToolContext,
+) -> Result<serde_json::Value, ToolError> {
+    match legacy_search_target(params) {
+        "claim" | "claims" | "claim_index" => search_claims::execute(params, ctx),
+        "memory" | "memory_index" => search_memory::execute(params, ctx),
+        _ => search_documents::execute(params, ctx),
+    }
+}
+
+fn dispatch_legacy_tantivy_index(
+    params: &serde_json::Value,
+    ctx: &mut ToolContext,
+) -> Result<serde_json::Value, ToolError> {
+    match legacy_search_target(params) {
+        "claim" | "claims" | "claim_index" => index_claim::execute(params, ctx),
+        "memory" | "memory_index" => memory_save::execute(params, ctx),
+        _ => index_document::execute(params, ctx),
+    }
+}
+
 /// Dispatch a tool call, enforcing agent permissions.
 pub fn dispatch_tool_call(
     call: &ToolCall,
@@ -159,23 +225,25 @@ pub fn dispatch_tool_call(
 
     // 2. Route to tool implementation
     let result = match call.tool.as_str() {
-        "search_documents"        => search_documents::execute(&call.params, ctx),
-        "search_claims"           => search_claims::execute(&call.params, ctx),
-        "search_memory"           => search_memory::execute(&call.params, ctx),
-        "index_document"          => index_document::execute(&call.params, ctx),
-        "index_claim"             => index_claim::execute(&call.params, ctx),
-        "delete_document"         => delete_document::execute(&call.params, ctx),
-        "ag_query_claims"         => ag_query_claims::execute(&call.params, ctx),
+        "search_documents" => search_documents::execute(&call.params, ctx),
+        "search_claims" => search_claims::execute(&call.params, ctx),
+        "search_memory" => search_memory::execute(&call.params, ctx),
+        "index_document" => index_document::execute(&call.params, ctx),
+        "index_claim" => index_claim::execute(&call.params, ctx),
+        "delete_document" => delete_document::execute(&call.params, ctx),
+        "ag_query_claims" => ag_query_claims::execute(&call.params, ctx),
         "ag_query_contradictions" => ag_query_contradictions::execute(&call.params, ctx),
-        "ag_write_edge"           => ag_write_edge::execute(&call.params, ctx),
-        "merkle_compute"          => merkle_compute::execute(&call.params, ctx),
-        "merkle_verify"           => merkle_verify::execute(&call.params, ctx),
-        "csl_render"              => csl_render::execute(&call.params, ctx),
-        "tree_load"               => tree_load::execute(&call.params, ctx),
-        "tree_traverse"           => tree_traverse::execute(&call.params, ctx),
-        "regex_search"            => regex_search::execute(&call.params, ctx),
-        "memory_save"             => memory_save::execute(&call.params, ctx),
-        _                         => Err(ToolError::UnknownTool(call.tool.clone())),
+        "ag_write_edge" => ag_write_edge::execute(&call.params, ctx),
+        "merkle_compute" => merkle_compute::execute(&call.params, ctx),
+        "merkle_verify" => merkle_verify::execute(&call.params, ctx),
+        "csl_render" => csl_render::execute(&call.params, ctx),
+        "tree_load" => tree_load::execute(&call.params, ctx),
+        "tree_traverse" => tree_traverse::execute(&call.params, ctx),
+        "regex_search" => regex_search::execute(&call.params, ctx),
+        "memory_save" => memory_save::execute(&call.params, ctx),
+        "tantivy_search" => dispatch_legacy_tantivy_search(&call.params, ctx),
+        "tantivy_index" => dispatch_legacy_tantivy_index(&call.params, ctx),
+        _ => Err(ToolError::UnknownTool(call.tool.clone())),
     };
 
     match result {

@@ -5,9 +5,7 @@
 //! partial output.
 
 use crate::types::ids::ModelId;
-use crate::types::recovery::{
-    BatchModeAction, CompensatoryParams, RecoveryOutcome, RecoveryStep,
-};
+use crate::types::recovery::{BatchModeAction, CompensatoryParams, RecoveryOutcome, RecoveryStep};
 use crate::types::state::FrameState;
 
 /// Maximum retry attempts for R1.
@@ -82,8 +80,8 @@ pub fn build_recovery_chain(
     // R4: Compensatory parameter adjustment
     steps.push(RecoveryStep::R4Compensatory {
         adjusted_params: CompensatoryParams {
-            max_tokens: Some(1024), // reduce from default
-            temperature: Some(0.0), // lower temperature
+            max_tokens: Some(1024),        // reduce from default
+            temperature: Some(0.0),        // lower temperature
             context_budget_pct: Some(0.5), // halve context
         },
     });
@@ -143,10 +141,10 @@ pub fn evaluate_recovery(
     match success_at {
         Some(idx) => {
             let resume_from = match failed_state {
-                FrameState::Act => FrameState::Think,      // retry from THINK
-                FrameState::Verify => FrameState::Act,     // retry from ACT
-                FrameState::Commit => FrameState::Verify,  // retry from VERIFY
-                _ => FrameState::Plan,                     // fallback
+                FrameState::Act => FrameState::Think,     // retry from THINK
+                FrameState::Verify => FrameState::Act,    // retry from ACT
+                FrameState::Commit => FrameState::Verify, // retry from VERIFY
+                _ => FrameState::Plan,                    // fallback
             };
             RecoveryOutcome::Recovered {
                 step: steps[idx].clone(),
@@ -172,7 +170,10 @@ mod tests {
 
         // 3 retries + diagnostic + fallback + compensatory + decompose + hitl = 8
         assert_eq!(steps.len(), 8);
-        assert!(matches!(steps[0], RecoveryStep::R1RetryBackoff { attempt: 1, .. }));
+        assert!(matches!(
+            steps[0],
+            RecoveryStep::R1RetryBackoff { attempt: 1, .. }
+        ));
         assert!(matches!(steps[3], RecoveryStep::R2Diagnostic { .. }));
         assert!(matches!(steps[4], RecoveryStep::R3Fallback { .. }));
         assert!(matches!(steps[5], RecoveryStep::R4Compensatory { .. }));
@@ -187,7 +188,9 @@ mod tests {
         let steps = build_recovery_chain(&FrameState::Act, &model, &config);
 
         // No R3 fallback since already at local_base
-        let has_fallback = steps.iter().any(|s| matches!(s, RecoveryStep::R3Fallback { .. }));
+        let has_fallback = steps
+            .iter()
+            .any(|s| matches!(s, RecoveryStep::R3Fallback { .. }));
         assert!(!has_fallback);
     }
 
@@ -209,14 +212,23 @@ mod tests {
     #[test]
     fn test_evaluate_recovery_success() {
         let steps = vec![
-            RecoveryStep::R1RetryBackoff { attempt: 1, backoff_ms: 1000 },
-            RecoveryStep::R1RetryBackoff { attempt: 2, backoff_ms: 3000 },
+            RecoveryStep::R1RetryBackoff {
+                attempt: 1,
+                backoff_ms: 1000,
+            },
+            RecoveryStep::R1RetryBackoff {
+                attempt: 2,
+                backoff_ms: 3000,
+            },
         ];
 
         let outcome = evaluate_recovery(steps, Some(1), &FrameState::Act);
         match outcome {
             RecoveryOutcome::Recovered { step, resume_from } => {
-                assert!(matches!(step, RecoveryStep::R1RetryBackoff { attempt: 2, .. }));
+                assert!(matches!(
+                    step,
+                    RecoveryStep::R1RetryBackoff { attempt: 2, .. }
+                ));
                 assert_eq!(resume_from, FrameState::Think);
             }
             _ => panic!("expected Recovered"),
@@ -225,9 +237,10 @@ mod tests {
 
     #[test]
     fn test_evaluate_recovery_exhausted() {
-        let steps = vec![
-            RecoveryStep::R1RetryBackoff { attempt: 1, backoff_ms: 1000 },
-        ];
+        let steps = vec![RecoveryStep::R1RetryBackoff {
+            attempt: 1,
+            backoff_ms: 1000,
+        }];
 
         let outcome = evaluate_recovery(steps.clone(), None, &FrameState::Act);
         assert!(matches!(outcome, RecoveryOutcome::Exhausted { .. }));
@@ -235,7 +248,10 @@ mod tests {
 
     #[test]
     fn test_next_model_cascade() {
-        assert_eq!(next_model_in_cascade("cloud_premium"), Some("cloud_standard"));
+        assert_eq!(
+            next_model_in_cascade("cloud_premium"),
+            Some("cloud_standard")
+        );
         assert_eq!(next_model_in_cascade("cloud_standard"), Some("local_base"));
         assert_eq!(next_model_in_cascade("local_base"), None);
         assert_eq!(next_model_in_cascade("unknown"), None);
@@ -243,18 +259,39 @@ mod tests {
 
     #[test]
     fn test_resume_state_mapping() {
-        let steps = vec![RecoveryStep::R1RetryBackoff { attempt: 1, backoff_ms: 1000 }];
+        let steps = vec![RecoveryStep::R1RetryBackoff {
+            attempt: 1,
+            backoff_ms: 1000,
+        }];
 
         // ACT failure → resume from THINK
         let o = evaluate_recovery(steps.clone(), Some(0), &FrameState::Act);
-        assert!(matches!(o, RecoveryOutcome::Recovered { resume_from: FrameState::Think, .. }));
+        assert!(matches!(
+            o,
+            RecoveryOutcome::Recovered {
+                resume_from: FrameState::Think,
+                ..
+            }
+        ));
 
         // VERIFY failure → resume from ACT
         let o = evaluate_recovery(steps.clone(), Some(0), &FrameState::Verify);
-        assert!(matches!(o, RecoveryOutcome::Recovered { resume_from: FrameState::Act, .. }));
+        assert!(matches!(
+            o,
+            RecoveryOutcome::Recovered {
+                resume_from: FrameState::Act,
+                ..
+            }
+        ));
 
         // COMMIT failure → resume from VERIFY
         let o = evaluate_recovery(steps, Some(0), &FrameState::Commit);
-        assert!(matches!(o, RecoveryOutcome::Recovered { resume_from: FrameState::Verify, .. }));
+        assert!(matches!(
+            o,
+            RecoveryOutcome::Recovered {
+                resume_from: FrameState::Verify,
+                ..
+            }
+        ));
     }
 }

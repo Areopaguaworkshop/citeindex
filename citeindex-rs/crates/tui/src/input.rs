@@ -32,10 +32,7 @@ pub fn parse_input(raw: &str) -> ParsedInput {
         let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
         let command = parts[0].to_string();
         let args: Vec<String> = if parts.len() > 1 {
-            parts[1]
-                .split_whitespace()
-                .map(String::from)
-                .collect()
+            parts[1].split_whitespace().map(String::from).collect()
         } else {
             Vec::new()
         };

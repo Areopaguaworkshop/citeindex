@@ -196,7 +196,10 @@ impl StorageLayout {
 /// If the root already exists, this is a no-op unless `force` is true.
 pub fn init(layout: &StorageLayout, force: bool) -> anyhow::Result<()> {
     if layout.root.exists() && !force {
-        tracing::info!("CiteIndex home already exists at {:?}, skipping init", layout.root);
+        tracing::info!(
+            "CiteIndex home already exists at {:?}, skipping init",
+            layout.root
+        );
         return Ok(());
     }
 
@@ -245,8 +248,16 @@ pub fn init(layout: &StorageLayout, force: bool) -> anyhow::Result<()> {
 
     // Write default config files (only if they don't exist or force=true)
     write_default_if_missing(&layout.config_toml, DEFAULT_CONFIG_TOML, force)?;
-    write_default_if_missing(&layout.scholarly_ace_toml, DEFAULT_SCHOLARLY_ACE_TOML, force)?;
-    write_default_if_missing(&layout.global_playbook, DEFAULT_SCHOLAR_PLAYBOOK_TOML, force)?;
+    write_default_if_missing(
+        &layout.scholarly_ace_toml,
+        DEFAULT_SCHOLARLY_ACE_TOML,
+        force,
+    )?;
+    write_default_if_missing(
+        &layout.global_playbook,
+        DEFAULT_SCHOLAR_PLAYBOOK_TOML,
+        force,
+    )?;
     write_default_if_missing(&layout.skillpacks_toml, DEFAULT_SKILLPACKS_TOML, force)?;
 
     // Write default agent manifests
@@ -424,7 +435,9 @@ GAN = ["generative adversarial network", "generative adversarial networks"]
 
 /// Default agent manifest templates (filename, content).
 const DEFAULT_AGENT_MANIFESTS: &[(&str, &str)] = &[
-    ("coordinator_agent.toml", r#"[agent]
+    (
+        "coordinator_agent.toml",
+        r#"[agent]
 name = "CoordinatorAgent"
 entry_point = "python -m citeindex.agents.coordinator"
 
@@ -449,8 +462,11 @@ steps = [
     "THINK: Assign agents to query nodes",
     "ACT: Dispatch to assigned agents in topological order",
 ]
-"#),
-    ("librarian_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "librarian_agent.toml",
+        r#"[agent]
 name = "LibrarianAgent"
 entry_point = "python -m citeindex.agents.librarian"
 
@@ -475,8 +491,11 @@ steps = [
     "THINK: Execute BM25 search via tantivy, apply score fusion",
     "ACT: Assemble context slots from ranked results",
 ]
-"#),
-    ("ingest_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "ingest_agent.toml",
+        r#"[agent]
 name = "IngestAgent"
 entry_point = "python -m citeindex.agents.ingest"
 
@@ -501,8 +520,11 @@ steps = [
     "THINK: Run ingestion pipeline (OCR, GROBID, layout detection)",
     "ACT: Build PageIndex JSON Tree, compute Merkle hash, index in tantivy",
 ]
-"#),
-    ("claim_extraction_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "claim_extraction_agent.toml",
+        r#"[agent]
 name = "ClaimExtractionAgent"
 entry_point = "python -m citeindex.agents.claim_extraction"
 
@@ -527,8 +549,11 @@ steps = [
     "THINK: Extract factual claims from each section",
     "ACT: Output Vec<Claim> with polarity tags and entities",
 ]
-"#),
-    ("contradiction_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "contradiction_agent.toml",
+        r#"[agent]
 name = "ContradictionAgent"
 entry_point = "python -m citeindex.agents.contradiction"
 
@@ -553,8 +578,11 @@ steps = [
     "THINK: Stage 2 — LLM pairwise comparison on candidate pairs",
     "ACT: Write CONTRADICTS edges to ArgumentGraph",
 ]
-"#),
-    ("gap_identification_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "gap_identification_agent.toml",
+        r#"[agent]
 name = "GapIdentificationAgent"
 entry_point = "python -m citeindex.agents.gap_identification"
 
@@ -579,8 +607,11 @@ steps = [
     "THINK: Search corpus for coverage of each aspect",
     "ACT: Report uncovered aspects with suggested search terms",
 ]
-"#),
-    ("literature_review_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "literature_review_agent.toml",
+        r#"[agent]
 name = "LiteratureReviewAgent"
 entry_point = "python -m citeindex.agents.literature_review"
 
@@ -605,8 +636,11 @@ steps = [
     "THINK: Multi-hop retrieval with citation expansion",
     "ACT: Synthesize answer with inline citations [Author, Year]",
 ]
-"#),
-    ("hierarchy_classification_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "hierarchy_classification_agent.toml",
+        r#"[agent]
 name = "HierarchyClassificationAgent"
 entry_point = "python -m citeindex.agents.hierarchy_classification"
 
@@ -631,8 +665,11 @@ steps = [
     "THINK: Keyword match against taxonomy nodes (deterministic)",
     "ACT: If confidence < 0.70, LLM fallback to suggest path",
 ]
-"#),
-    ("structure_agent.toml", r#"[agent]
+"#,
+    ),
+    (
+        "structure_agent.toml",
+        r#"[agent]
 name = "StructureAgent"
 entry_point = "python -m citeindex.agents.structure"
 
@@ -657,5 +694,6 @@ steps = [
     "THINK: Map claims to logical dependencies (foundational vs contested)",
     "ACT: LLM suggests outline with headings, claims, dependencies, coverage",
 ]
-"#),
+"#,
+    ),
 ];

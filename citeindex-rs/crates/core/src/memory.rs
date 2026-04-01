@@ -62,10 +62,7 @@ impl MemoryStore {
     /// Save a memory entry to the thread's JSONL file.
     pub fn save(&self, entry: &MemoryEntry) -> anyhow::Result<()> {
         let path = self.thread_path(&entry.thread_id);
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
         let line = serde_json::to_string(entry)?;
         writeln!(file, "{}", line)?;
         tracing::info!(
@@ -150,7 +147,13 @@ impl MemoryStore {
     fn thread_path(&self, thread_id: &str) -> PathBuf {
         let safe: String = thread_id
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.memory_dir.join(format!("{}.jsonl", safe))
     }

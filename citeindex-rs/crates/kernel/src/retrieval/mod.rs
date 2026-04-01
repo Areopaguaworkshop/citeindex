@@ -338,7 +338,10 @@ mod tests {
     fn test_expand_synonyms_with_matches() {
         let synonyms = vec![(
             "attention".to_string(),
-            vec!["self-attention".to_string(), "multi-head attention".to_string()],
+            vec![
+                "self-attention".to_string(),
+                "multi-head attention".to_string(),
+            ],
         )];
         let result = expand_synonyms("attention mechanism", &synonyms);
         assert_eq!(
@@ -364,10 +367,7 @@ mod tests {
             vec!["focus".to_string(), "concentration".to_string()],
         )];
         let result = expand_synonyms("attention mechanism", &synonyms);
-        assert_eq!(
-            result,
-            "attention mechanism OR focus OR concentration"
-        );
+        assert_eq!(result, "attention mechanism OR focus OR concentration");
     }
 
     #[test]
@@ -386,21 +386,14 @@ mod tests {
 
     #[test]
     fn test_structural_search_not_found() {
-        let headings = vec![
-            "Introduction".to_string(),
-            "Results".to_string(),
-        ];
+        let headings = vec!["Introduction".to_string(), "Results".to_string()];
         let hits = structural_search("transformer", &headings);
         assert!(hits.is_empty());
     }
 
     #[test]
     fn test_citation_expand_dedup() {
-        let seeds = vec![
-            "doc1".to_string(),
-            "doc1".to_string(),
-            "doc2".to_string(),
-        ];
+        let seeds = vec!["doc1".to_string(), "doc1".to_string(), "doc2".to_string()];
         let result = citation_expand(&seeds, 2);
         assert_eq!(result, vec!["doc1".to_string(), "doc2".to_string()]);
     }
@@ -414,10 +407,7 @@ mod tests {
                 vec!["exam".to_string(), "trial".to_string()],
             )],
             seed_doc_ids: vec!["doc1".to_string(), "doc2".to_string()],
-            headings: vec![
-                "Test Results".to_string(),
-                "Conclusion".to_string(),
-            ],
+            headings: vec!["Test Results".to_string(), "Conclusion".to_string()],
         };
         let result = run_escalation("test query", 0.30, &config, &ctx);
         assert_eq!(result.steps_executed.len(), 5);

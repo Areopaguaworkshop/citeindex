@@ -267,7 +267,9 @@ impl PageIndexTree {
 
     /// Get the publication year from Level 0 issued date.
     pub fn year(&self) -> Option<i64> {
-        self.level_0.issued.as_ref()
+        self.level_0
+            .issued
+            .as_ref()
             .and_then(|d| d.date_parts.as_ref())
             .and_then(|parts| parts.first())
             .and_then(|year_parts| year_parts.first())
@@ -276,7 +278,9 @@ impl PageIndexTree {
 
     /// Get authors as a display string.
     pub fn authors_display(&self) -> String {
-        self.level_0.author.iter()
+        self.level_0
+            .author
+            .iter()
             .map(|a| {
                 if let Some(ref lit) = a.literal {
                     lit.clone()

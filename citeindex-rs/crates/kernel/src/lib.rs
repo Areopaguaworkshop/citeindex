@@ -4,23 +4,23 @@
 //! The kernel owns the state machine and enforces invariants I1–I5 at compile
 //! time (typestate) and runtime. It never calls an LLM directly.
 
-pub mod types;
-pub mod config;
-pub mod storage;
-pub mod state_machine;
-pub mod indexes;
-pub mod argument_graph;
-pub mod scoring;
-pub mod gate;
-pub mod tools;
-pub mod agent_runtime;
-pub mod context;
-pub mod retrieval;
-pub mod trace;
-pub mod recovery;
 pub mod ace;
-pub mod lora;
+pub mod agent_runtime;
 pub mod api;
-pub mod skillpack;
-pub mod migration;
+pub mod argument_graph;
 pub mod cli;
+pub mod config;
+pub mod context;
+pub mod gate;
+pub mod indexes;
+pub mod lora;
+pub mod migration;
+pub mod recovery;
+pub mod retrieval;
+pub mod scoring;
+pub mod skillpack;
+pub mod state_machine;
+pub mod storage;
+pub mod tools;
+pub mod trace;
+pub mod types;

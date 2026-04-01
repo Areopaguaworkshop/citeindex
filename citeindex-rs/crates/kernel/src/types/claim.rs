@@ -79,9 +79,17 @@ pub struct BlockedClaim {
 /// Why a claim was blocked at the VERIFY gate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockedReason {
-    CiteIdNotInInjectedSet { cite_id: String },
-    SimilarityBelowThreshold { score: f32, threshold: f32 },
-    QualityTierBelowMinimum { tier: QualityTier, required: QualityTier },
+    CiteIdNotInInjectedSet {
+        cite_id: String,
+    },
+    SimilarityBelowThreshold {
+        score: f32,
+        threshold: f32,
+    },
+    QualityTierBelowMinimum {
+        tier: QualityTier,
+        required: QualityTier,
+    },
     MerkleHashMismatch,
     NoPassageFound,
 }

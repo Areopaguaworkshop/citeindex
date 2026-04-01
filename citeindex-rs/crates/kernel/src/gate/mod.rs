@@ -4,8 +4,8 @@
 //! 1. Pre-grounding: inject verified sources into context before LLM call.
 //! 2. Post-verification: validate cite anchors and claim–passage similarity.
 
-pub mod verify;
 pub mod commit;
+pub mod verify;
 
 use std::collections::HashSet;
 
@@ -15,9 +15,8 @@ use regex::Regex;
 use crate::types::ids::CslId;
 
 /// Matches [cite: SOURCE_ID, LOCATOR] or [cite: SOURCE_ID]
-static CITE_ANCHOR_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\[cite:\s*([^\],]+?)(?:\s*,\s*([^\]]+?))?\s*\]").unwrap()
-});
+static CITE_ANCHOR_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\[cite:\s*([^\],]+?)(?:\s*,\s*([^\]]+?))?\s*\]").unwrap());
 
 /// Recorded at request dispatch time. Used by post-verification.
 #[derive(Debug, Clone)]
@@ -73,7 +72,10 @@ pub fn check_anchors_against_injected(
     let mut invalid = Vec::new();
 
     for anchor in anchors {
-        if injected.source_ids.contains(&CslId(anchor.source_id.clone())) {
+        if injected
+            .source_ids
+            .contains(&CslId(anchor.source_id.clone()))
+        {
             valid.push(anchor.clone());
         } else {
             invalid.push(anchor.clone());
@@ -137,7 +139,8 @@ mod tests {
 
     #[test]
     fn test_parse_cite_anchors_basic() {
-        let text = "The Transformer outperforms all previous models [cite: sha256:a1b2c3, p. 6002].";
+        let text =
+            "The Transformer outperforms all previous models [cite: sha256:a1b2c3, p. 6002].";
         let anchors = parse_cite_anchors(text);
         assert_eq!(anchors.len(), 1);
         assert_eq!(anchors[0].source_id, "sha256:a1b2c3");

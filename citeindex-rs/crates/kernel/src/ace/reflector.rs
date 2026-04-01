@@ -154,8 +154,17 @@ mod tests {
 
     #[test]
     fn test_reflector_trigger() {
-        assert_eq!(ReflectorTrigger::from_str("post_commit"), ReflectorTrigger::PostCommit);
-        assert_eq!(ReflectorTrigger::from_str("manual"), ReflectorTrigger::Manual);
-        assert_eq!(ReflectorTrigger::from_str("nightly"), ReflectorTrigger::Nightly);
+        assert_eq!(
+            ReflectorTrigger::from_str("post_commit"),
+            ReflectorTrigger::PostCommit
+        );
+        assert_eq!(
+            ReflectorTrigger::from_str("manual"),
+            ReflectorTrigger::Manual
+        );
+        assert_eq!(
+            ReflectorTrigger::from_str("nightly"),
+            ReflectorTrigger::Nightly
+        );
     }
 }

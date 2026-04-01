@@ -76,8 +76,7 @@ impl PluginManager {
         run_tests: bool,
     ) -> Result<String, PluginInstallError> {
         // Step 1: Validate manifest
-        let manifest = PluginManifest::load(source)
-            .map_err(PluginInstallError::Manifest)?;
+        let manifest = PluginManifest::load(source).map_err(PluginInstallError::Manifest)?;
 
         let name = manifest.name.clone();
         tracing::info!(plugin = %name, "Validating plugin manifest");
@@ -128,9 +127,16 @@ impl PluginManager {
     }
 
     /// Install a plugin from a git URL.
-    pub fn install_from_git(&mut self, url: &str, run_tests: bool) -> Result<String, PluginInstallError> {
+    pub fn install_from_git(
+        &mut self,
+        url: &str,
+        run_tests: bool,
+    ) -> Result<String, PluginInstallError> {
         // Clone to a temp directory, then install from path
-        let tmp = std::env::temp_dir().join(format!("citeindex-plugin-{}", chrono::Utc::now().timestamp()));
+        let tmp = std::env::temp_dir().join(format!(
+            "citeindex-plugin-{}",
+            chrono::Utc::now().timestamp()
+        ));
         let status = std::process::Command::new("git")
             .args(["clone", "--depth=1", url, &tmp.to_string_lossy()])
             .status()

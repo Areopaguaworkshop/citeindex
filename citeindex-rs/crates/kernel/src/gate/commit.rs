@@ -100,12 +100,7 @@ mod tests {
             extra: serde_json::Value::Null,
         }];
 
-        let result = commit_output(
-            FrameId::new(),
-            claims,
-            csl,
-            MerkleHash::ZERO,
-        );
+        let result = commit_output(FrameId::new(), claims, csl, MerkleHash::ZERO);
         assert!(result.is_ok());
         let state = result.unwrap();
         assert_eq!(state.committed_claims.len(), 2);

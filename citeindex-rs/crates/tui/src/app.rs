@@ -1,4 +1,4 @@
-//! Main TUI application — event loop, state management, Python IPC dispatch.
+//! Main TUI application — event loop, state management, runtime dispatch.
 
 use crate::input::{self, AutocompleteState, ParsedInput};
 use crate::mode::Mode;
@@ -110,6 +110,10 @@ impl App {
                     self.handle_key(key).await;
                 }
             }
+        }
+
+        if let Err(e) = self.engine.shutdown().await {
+            tracing::warn!("Failed to shut down engine agents cleanly: {}", e);
         }
 
         disable_raw_mode()?;
@@ -279,7 +283,8 @@ impl App {
             .iter()
             .map(|(name, cmd, _)| (name.clone(), cmd.clone()))
             .collect();
-        self.autocomplete.update(&self.input_bar.content, &plugin_cmds);
+        self.autocomplete
+            .update(&self.input_bar.content, &plugin_cmds);
     }
 
     async fn handle_submit(&mut self, content: String) {
@@ -375,11 +380,17 @@ impl App {
                         citations: Vec::new(),
                     });
                 } else {
-                    let mut text = format!("Search history ({} entries):\n", self.search_popup.history.len());
+                    let mut text = format!(
+                        "Search history ({} entries):\n",
+                        self.search_popup.history.len()
+                    );
                     for (i, entry) in self.search_popup.history.iter().rev().take(20).enumerate() {
                         text.push_str(&format!(
                             "\n{}. [{}] \"{}\" → {} results",
-                            i + 1, entry.timestamp, entry.query, entry.result_count
+                            i + 1,
+                            entry.timestamp,
+                            entry.query,
+                            entry.result_count
                         ));
                     }
                     self.chat_window.push(ChatMessage {
@@ -392,7 +403,9 @@ impl App {
             _ => {
                 // Try plugin commands
                 let plugin_cmds = self.plugin_manager.all_commands();
-                if let Some((_, cmd_value, dir)) = plugin_cmds.iter().find(|(name, _, _)| name == cmd) {
+                if let Some((_, cmd_value, dir)) =
+                    plugin_cmds.iter().find(|(name, _, _)| name == cmd)
+                {
                     self.chat_window.push(ChatMessage {
                         role: MessageRole::System,
                         content: format!("Running plugin command: {} ...", cmd),
@@ -411,7 +424,10 @@ impl App {
                                 content: if output.success {
                                     output.stdout
                                 } else {
-                                    format!("Plugin error (exit {}): {}", output.exit_code, output.stderr)
+                                    format!(
+                                        "Plugin error (exit {}): {}",
+                                        output.exit_code, output.stderr
+                                    )
                                 },
                                 citations: Vec::new(),
                             });
@@ -499,9 +515,7 @@ impl App {
                 let query_text = text.to_string();
                 match self.engine.search(text).await {
                     Ok(response) => {
-                        let results = response
-                            .get("results")
-                            .and_then(|r| r.as_array());
+                        let results = response.get("results").and_then(|r| r.as_array());
 
                         if let Some(results) = results {
                             let count = results.len();
@@ -509,12 +523,18 @@ impl App {
                             let mut side_items = Vec::new();
 
                             for r in results.iter() {
-                                let node_id = r.get("node_id").and_then(|v| v.as_str()).unwrap_or("?");
-                                let node_text = r.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                                let score = r.get("total_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let node_id =
+                                    r.get("node_id").and_then(|v| v.as_str()).unwrap_or("?");
+                                let node_text =
+                                    r.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                                let score =
+                                    r.get("total_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                 let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
                                 let author = r.get("author").and_then(|v| v.as_str()).unwrap_or("");
-                                let citation = r.get("formatted_citation").and_then(|v| v.as_str()).unwrap_or("");
+                                let citation = r
+                                    .get("formatted_citation")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
 
                                 popup_entries.push(SearchResultEntry {
                                     title: title.to_string(),
@@ -576,10 +596,8 @@ impl App {
                             .unwrap_or("");
 
                         let msg = if status == "ok" {
-                            self.side_panel.add_recent_document(
-                                text.to_string(),
-                                doc_path.to_string(),
-                            );
+                            self.side_panel
+                                .add_recent_document(text.to_string(), doc_path.to_string());
                             format!("Ingestion complete: {}", doc_path)
                         } else {
                             format!("Ingestion failed: {}", status)
@@ -603,7 +621,11 @@ impl App {
             _ => {
                 self.chat_window.push(ChatMessage {
                     role: MessageRole::System,
-                    content: format!("{} mode: processing '{}' not yet implemented in TUI", self.mode.label(), text),
+                    content: format!(
+                        "{} mode: processing '{}' not yet implemented in TUI",
+                        self.mode.label(),
+                        text
+                    ),
                     citations: Vec::new(),
                 });
             }

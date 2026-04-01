@@ -24,10 +24,7 @@ pub enum Interrupt {
 
     /// Wall time or per-node timeout exceeded.
     #[error("timeout: {elapsed_ms}ms exceeded {limit_ms}ms limit")]
-    Timeout {
-        limit_ms: u64,
-        elapsed_ms: u64,
-    },
+    Timeout { limit_ms: u64, elapsed_ms: u64 },
 
     /// Token budget, step count, or tool call limit exceeded.
     #[error("budget exceeded: {resource:?} used {used}/{limit}")]
@@ -46,8 +43,5 @@ pub enum Interrupt {
 
     /// An agent process crashed, returned invalid output, or timed out.
     #[error("agent fault [{agent_name}]: {error}")]
-    AgentFault {
-        agent_name: String,
-        error: String,
-    },
+    AgentFault { agent_name: String, error: String },
 }

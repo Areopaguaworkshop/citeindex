@@ -109,10 +109,7 @@ pub enum SkillPackSource {
     /// Install from a local directory.
     LocalDir(PathBuf),
     /// Install from a git repository (stub — not yet implemented).
-    GitUrl {
-        url: String,
-        branch: Option<String>,
-    },
+    GitUrl { url: String, branch: Option<String> },
 }
 
 // ── InstallReport ────────────────────────────────────────────
@@ -173,9 +170,7 @@ impl SkillPackRegistry {
                 .modified()
                 .ok()
                 .and_then(|t| {
-                    let duration = t
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .ok()?;
+                    let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
                     DateTime::from_timestamp(duration.as_secs() as i64, 0)
                 })
                 .unwrap_or_else(Utc::now);

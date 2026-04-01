@@ -22,18 +22,15 @@ pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
 
     // Fill background
-    f.render_widget(
-        Block::default().style(theme.base_style()),
-        area,
-    );
+    f.render_widget(Block::default().style(theme.base_style()), area);
 
     // Main vertical layout: top bar (1), content (dynamic), input (3)
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),   // top bar
-            Constraint::Min(5),      // content area
-            Constraint::Length(3),   // input bar
+            Constraint::Length(1), // top bar
+            Constraint::Min(5),    // content area
+            Constraint::Length(3), // input bar
         ])
         .split(area);
 
@@ -77,7 +74,10 @@ fn draw_top_bar(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let spans = vec![
-        Span::styled(" CiteIndex ", theme.accent_style().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " CiteIndex ",
+            theme.accent_style().add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" │ ", theme.dim_style()),
         Span::styled(format!("Mode: {} ", mode_label), theme.top_bar_style()),
         Span::styled(" │ ", theme.dim_style()),
@@ -113,34 +113,30 @@ fn draw_chat_window(f: &mut Frame, app: &App, area: Rect) {
         let (prefix, style) = match msg.role {
             MessageRole::User => (
                 "You: ",
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
-            MessageRole::Assistant => (
-                "AI: ",
-                Style::default().fg(theme.success),
-            ),
-            MessageRole::System => (
-                "ℹ ",
-                theme.dim_style(),
-            ),
+            MessageRole::Assistant => ("AI: ", Style::default().fg(theme.success)),
+            MessageRole::System => ("ℹ ", theme.dim_style()),
         };
 
-        lines.push(Line::from(vec![
-            Span::styled(prefix, style),
-        ]));
+        lines.push(Line::from(vec![Span::styled(prefix, style)]));
 
         // Wrap content lines
         for content_line in msg.content.lines() {
-            lines.push(Line::from(vec![
-                Span::styled(format!("  {}", content_line), theme.base_style()),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                format!("  {}", content_line),
+                theme.base_style(),
+            )]));
         }
 
         // Show citations if any
         for citation in &msg.citations {
-            lines.push(Line::from(vec![
-                Span::styled(format!("  📚 {}", citation), theme.dim_style()),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                format!("  📚 {}", citation),
+                theme.dim_style(),
+            )]));
         }
 
         lines.push(Line::from(""));
@@ -179,7 +175,10 @@ fn draw_side_panel(f: &mut Frame, app: &App, area: Rect) {
             .map(|item| {
                 ListItem::new(vec![
                     Line::from(Span::styled(&item.label, theme.accent_style())),
-                    Line::from(Span::styled(format!("  {}", item.detail), theme.dim_style())),
+                    Line::from(Span::styled(
+                        format!("  {}", item.detail),
+                        theme.dim_style(),
+                    )),
                 ])
             })
             .collect(),
@@ -190,7 +189,10 @@ fn draw_side_panel(f: &mut Frame, app: &App, area: Rect) {
             .map(|item| {
                 ListItem::new(vec![
                     Line::from(Span::styled(&item.label, theme.accent_style())),
-                    Line::from(Span::styled(format!("  {}", item.detail), theme.dim_style())),
+                    Line::from(Span::styled(
+                        format!("  {}", item.detail),
+                        theme.dim_style(),
+                    )),
                 ])
             })
             .collect(),
@@ -198,15 +200,12 @@ fn draw_side_panel(f: &mut Frame, app: &App, area: Rect) {
             .side_panel
             .plugin_shortcuts
             .iter()
-            .map(|item| {
-                ListItem::new(Line::from(Span::styled(&item.label, theme.base_style())))
-            })
+            .map(|item| ListItem::new(Line::from(Span::styled(&item.label, theme.base_style()))))
             .collect(),
     };
 
     if items.is_empty() {
-        let empty = Paragraph::new("No items")
-            .style(theme.dim_style());
+        let empty = Paragraph::new("No items").style(theme.dim_style());
         f.render_widget(empty, inner);
     } else {
         let list = List::new(items);
@@ -280,7 +279,10 @@ fn draw_autocomplete(f: &mut Frame, app: &App, input_area: Rect) {
                 theme.base_style()
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{:<12}", s.command), style.add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{:<12}", s.command),
+                    style.add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!(" {}", s.description), style),
             ]))
         })
@@ -328,7 +330,10 @@ fn draw_search_popup(f: &mut Frame, app: &App, area: Rect) {
             // Title
             lines.push(Line::from(vec![
                 Span::styled("Title: ", theme.accent_style()),
-                Span::styled(&entry.title, Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &entry.title,
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
             ]));
 
             // Author
@@ -342,7 +347,10 @@ fn draw_search_popup(f: &mut Frame, app: &App, area: Rect) {
             // Score
             lines.push(Line::from(vec![
                 Span::styled("Score: ", theme.accent_style()),
-                Span::styled(format!("{:.4}", entry.score), Style::default().fg(theme.success)),
+                Span::styled(
+                    format!("{:.4}", entry.score),
+                    Style::default().fg(theme.success),
+                ),
             ]));
 
             // Node ID
@@ -369,10 +377,7 @@ fn draw_search_popup(f: &mut Frame, app: &App, area: Rect) {
             }
 
             // Full text
-            lines.push(Line::from(Span::styled(
-                "── Text ──",
-                theme.accent_style(),
-            )));
+            lines.push(Line::from(Span::styled("── Text ──", theme.accent_style())));
             for line in entry.text.lines() {
                 lines.push(Line::from(Span::styled(
                     format!("  {}", line),
@@ -430,7 +435,11 @@ fn draw_search_popup(f: &mut Frame, app: &App, area: Rect) {
                 );
 
                 let title_span = Span::styled(
-                    if entry.title.is_empty() { "(untitled)" } else { &entry.title },
+                    if entry.title.is_empty() {
+                        "(untitled)"
+                    } else {
+                        &entry.title
+                    },
                     style.add_modifier(Modifier::BOLD),
                 );
 

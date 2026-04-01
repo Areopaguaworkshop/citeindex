@@ -356,12 +356,7 @@ impl ApiRouter {
     /// `bearer` is the raw bearer token (if any) from the Authorization
     /// header.  `body` is the parsed JSON request body (use
     /// `Value::Null` for GET endpoints without a body).
-    pub fn handle(
-        &self,
-        path: &str,
-        body: Value,
-        bearer: Option<&str>,
-    ) -> Result<Value, ApiError> {
+    pub fn handle(&self, path: &str, body: Value, bearer: Option<&str>) -> Result<Value, ApiError> {
         self.auth.validate(bearer)?;
 
         match path {
@@ -474,11 +469,7 @@ impl ApiRouter {
         Ok(serde_json::to_value(resp).unwrap())
     }
 
-    fn handle_agent_toggle(
-        &self,
-        body: Value,
-        enable: bool,
-    ) -> Result<Value, ApiError> {
+    fn handle_agent_toggle(&self, body: Value, enable: bool) -> Result<Value, ApiError> {
         let req: AgentToggleRequest =
             serde_json::from_value(body).map_err(|e| ApiError::BadRequest(e.to_string()))?;
         let resp = AgentToggleResponse {
@@ -640,9 +631,7 @@ mod tests {
                     name: "verifier".into(),
                     enabled: false,
                     status: "stopped".into(),
-                    metadata: HashMap::from([
-                        ("version".into(), json!("1.2.0")),
-                    ]),
+                    metadata: HashMap::from([("version".into(), json!("1.2.0"))]),
                 },
             ],
         };
@@ -681,7 +670,9 @@ mod tests {
         assert!(matches!(err, ApiError::Unauthorized));
 
         // Wrong token → InvalidToken
-        let err = router.handle("/api/cite", body.clone(), Some("wrong")).unwrap_err();
+        let err = router
+            .handle("/api/cite", body.clone(), Some("wrong"))
+            .unwrap_err();
         assert!(matches!(err, ApiError::InvalidToken));
 
         // Correct token → success

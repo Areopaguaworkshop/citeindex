@@ -189,8 +189,12 @@ pub struct LlmContractSection {
     pub output_schema: String,
 }
 
-fn default_grounding() -> String { "required".into() }
-fn default_max_tokens() -> u32 { 4096 }
+fn default_grounding() -> String {
+    "required".into()
+}
+fn default_max_tokens() -> u32 {
+    4096
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ActivationSection {
@@ -218,9 +222,15 @@ pub struct ResourcesSection {
     pub request_timeout_s: u64,
 }
 
-fn default_max_tool_calls() -> u32 { 20 }
-fn default_max_llm_calls() -> u32 { 5 }
-fn default_request_timeout() -> u64 { 300 }
+fn default_max_tool_calls() -> u32 {
+    20
+}
+fn default_max_llm_calls() -> u32 {
+    5
+}
+fn default_request_timeout() -> u64 {
+    300
+}
 
 impl Default for ResourcesSection {
     fn default() -> Self {
@@ -322,9 +332,13 @@ impl AgentProcess {
         let mut child = cmd.spawn()?;
         self.state = AgentState::Spawned;
 
-        let child_stdin = child.stdin.take()
+        let child_stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| anyhow::anyhow!("failed to capture agent stdin"))?;
-        let child_stdout = child.stdout.take()
+        let child_stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| anyhow::anyhow!("failed to capture agent stdout"))?;
 
         let mut writer = BufWriter::new(child_stdin);
@@ -357,7 +371,8 @@ impl AgentProcess {
         let read_result = tokio::time::timeout(
             std::time::Duration::from_secs(DEFAULT_INIT_TIMEOUT_S),
             reader.read_line(&mut ack_line),
-        ).await;
+        )
+        .await;
 
         match read_result {
             Ok(Ok(0)) => {
@@ -380,10 +395,7 @@ impl AgentProcess {
                     }
                     _ => {
                         self.state = AgentState::Dead;
-                        anyhow::bail!(
-                            "expected init_ack from {}, got other message",
-                            self.name.0
-                        );
+                        anyhow::bail!("expected init_ack from {}, got other message", self.name.0);
                     }
                 }
             }
@@ -409,7 +421,9 @@ impl AgentProcess {
     pub async fn send(&mut self, msg: &serde_json::Value) -> anyhow::Result<()> {
         use tokio::io::AsyncWriteExt;
 
-        let writer = self.stdin.as_mut()
+        let writer = self
+            .stdin
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("agent {} not spawned", self.name.0))?;
         let line = serde_json::to_string(msg)? + "\n";
         writer.write_all(line.as_bytes()).await?;
@@ -421,7 +435,9 @@ impl AgentProcess {
     pub async fn recv(&mut self) -> anyhow::Result<AgentMessage> {
         use tokio::io::AsyncBufReadExt;
 
-        let reader = self.stdout.as_mut()
+        let reader = self
+            .stdout
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("agent {} not spawned", self.name.0))?;
         let mut line = String::new();
         let n = reader.read_line(&mut line).await?;
@@ -448,7 +464,8 @@ impl AgentProcess {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(SHUTDOWN_TIMEOUT_S),
             self.recv(),
-        ).await;
+        )
+        .await;
 
         match result {
             Ok(Ok(AgentMessage::ShutdownAck(_))) => {
@@ -584,7 +601,8 @@ steps = ["PLAN: plan", "THINK: think", "ACT: act"]
 
     #[test]
     fn test_agent_process_new() {
-        let manifest: AgentManifest = toml::from_str(r#"
+        let manifest: AgentManifest = toml::from_str(
+            r#"
 [agent]
 name = "Test"
 entry_point = "python -m test"
@@ -593,7 +611,9 @@ model_tier = "local_base"
 [activation]
 [tools_allowed]
 tools = []
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let agent = AgentProcess::new(manifest);
         assert_eq!(agent.state, AgentState::NotSpawned);
@@ -603,7 +623,8 @@ tools = []
 
     #[test]
     fn test_respawn_backoff() {
-        let manifest: AgentManifest = toml::from_str(r#"
+        let manifest: AgentManifest = toml::from_str(
+            r#"
 [agent]
 name = "Test"
 entry_point = "python -m test"
@@ -612,7 +633,9 @@ model_tier = "local_base"
 [activation]
 [tools_allowed]
 tools = []
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let mut agent = AgentProcess::new(manifest);
         assert_eq!(agent.respawn_backoff_ms(), Some(1_000));

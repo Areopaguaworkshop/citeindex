@@ -269,10 +269,7 @@ pub fn convert_csl_record(record: &serde_json::Value) -> serde_json::Value {
             "ci_migrated_at".into(),
             serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
         );
-        obj.insert(
-            "ci_version".into(),
-            serde_json::Value::String("12".into()),
-        );
+        obj.insert("ci_version".into(), serde_json::Value::String("12".into()));
         obj.insert(
             "ci_source".into(),
             serde_json::Value::String("legacy_corpus".into()),
@@ -304,7 +301,9 @@ pub fn validate_migration(target_dir: &Path) -> anyhow::Result<ValidationReport>
             report.documents_present = entries.filter_map(|e| e.ok()).count();
         }
     } else {
-        report.issues.push("documents/sources/ directory missing".into());
+        report
+            .issues
+            .push("documents/sources/ directory missing".into());
     }
 
     // Count valid tree files
@@ -328,8 +327,7 @@ pub fn validate_migration(target_dir: &Path) -> anyhow::Result<ValidationReport>
     }
 
     // Check indexes
-    report.indexes_built =
-        layout.document_index_dir.exists() && layout.claim_index_dir.exists();
+    report.indexes_built = layout.document_index_dir.exists() && layout.claim_index_dir.exists();
     if !report.indexes_built {
         report.issues.push("One or more indexes missing".into());
     }
@@ -341,7 +339,10 @@ pub fn validate_migration(target_dir: &Path) -> anyhow::Result<ValidationReport>
 
 fn execute_step(step: &MigrationStep, layout: &StorageLayout) -> Result<(), MigrationError> {
     match step {
-        MigrationStep::ConvertCslRecord { source_path, record_id } => {
+        MigrationStep::ConvertCslRecord {
+            source_path,
+            record_id,
+        } => {
             let data = fs::read_to_string(source_path).map_err(|e| MigrationError::Io {
                 path: source_path.clone(),
                 source: e,
@@ -359,15 +360,10 @@ fn execute_step(step: &MigrationStep, layout: &StorageLayout) -> Result<(), Migr
             };
 
             for rec in &records {
-                let id = rec
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
+                let id = rec.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
                 if id == record_id {
                     let converted = convert_csl_record(rec);
-                    let out_path = layout
-                        .citations_dir
-                        .join(format!("{}.json", record_id));
+                    let out_path = layout.citations_dir.join(format!("{}.json", record_id));
                     let json = serde_json::to_string_pretty(&converted).map_err(|e| {
                         MigrationError::InvalidCslJson {
                             path: out_path.clone(),
@@ -384,7 +380,10 @@ fn execute_step(step: &MigrationStep, layout: &StorageLayout) -> Result<(), Migr
             Ok(())
         }
 
-        MigrationStep::GeneratePageIndexTree { source_path, doc_id } => {
+        MigrationStep::GeneratePageIndexTree {
+            source_path,
+            doc_id,
+        } => {
             let tree = serde_json::json!({
                 "doc_id": doc_id,
                 "source": source_path.to_string_lossy(),
@@ -568,7 +567,10 @@ mod tests {
         ];
         assert_eq!(steps.len(), 5);
         assert!(matches!(steps[0], MigrationStep::ConvertCslRecord { .. }));
-        assert!(matches!(steps[1], MigrationStep::GeneratePageIndexTree { .. }));
+        assert!(matches!(
+            steps[1],
+            MigrationStep::GeneratePageIndexTree { .. }
+        ));
         assert!(matches!(steps[2], MigrationStep::CopySource { .. }));
         assert!(matches!(steps[3], MigrationStep::CreateIndex { .. }));
         assert!(matches!(steps[4], MigrationStep::RebuildMerkle));
