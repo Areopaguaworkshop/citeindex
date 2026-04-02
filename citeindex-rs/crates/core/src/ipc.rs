@@ -23,15 +23,19 @@ struct KernelToolState {
     corpus_root: PathBuf,
     ctx: ToolContext,
     indexed_corpus_dirs: HashSet<String>,
+    indexed_memory_entries: HashSet<String>,
 }
 
 impl KernelToolState {
     fn new(corpus_root: PathBuf) -> anyhow::Result<Self> {
-        let ctx = tools::in_memory_context(corpus_root.clone())?;
+        let runtime_documents_dir = corpus_root.join(".v12_runtime").join("documents");
+        fs::create_dir_all(runtime_documents_dir.join("structured"))?;
+        let ctx = tools::in_memory_context(runtime_documents_dir)?;
         Ok(Self {
             corpus_root,
             ctx,
             indexed_corpus_dirs: HashSet::new(),
+            indexed_memory_entries: HashSet::new(),
         })
     }
 
@@ -54,6 +58,71 @@ impl KernelToolState {
 
             self.index_document_dir(&path)?;
             self.indexed_corpus_dirs.insert(key);
+        }
+
+        Ok(())
+    }
+
+    fn sync_memory(&mut self) -> anyhow::Result<()> {
+        let memory_dir = self.corpus_root.join(".memory");
+        if !memory_dir.exists() {
+            return Ok(());
+        }
+
+        for entry in fs::read_dir(&memory_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+
+            let content = fs::read_to_string(&path)?;
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+
+                let value: Value = serde_json::from_str(line).with_context(|| {
+                    format!("failed to parse memory entry in {}", path.display())
+                })?;
+                let memory_id = value
+                    .get("entry_id")
+                    .and_then(|field| field.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_default();
+                if memory_id.is_empty() || self.indexed_memory_entries.contains(&memory_id) {
+                    continue;
+                }
+
+                let query = value
+                    .get("query")
+                    .and_then(|field| field.as_str())
+                    .unwrap_or("");
+                let response = value
+                    .get("response")
+                    .and_then(|field| field.as_str())
+                    .unwrap_or("");
+                let params = serde_json::json!({
+                    "memory_id": memory_id,
+                    "session_id": value.get("thread_id").and_then(|field| field.as_str()).unwrap_or("default"),
+                    "title": query,
+                    "description": query,
+                    "content": response,
+                    "merkle_hash": value.get("sha256").and_then(|field| field.as_str()).unwrap_or(""),
+                    "language": detect_language(&format!("{query} {response}")),
+                });
+
+                citeindex_kernel::tools::memory_save::execute(&params, &mut self.ctx)
+                    .map_err(anyhow::Error::from)?;
+                self.indexed_memory_entries.insert(
+                    value
+                        .get("entry_id")
+                        .and_then(|field| field.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+            }
         }
 
         Ok(())
@@ -98,6 +167,17 @@ impl KernelToolState {
             "language": language,
         });
 
+        write_compat_tree(
+            &self.ctx.documents_dir,
+            params
+                .get("doc_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default(),
+            &csl,
+            document.as_ref(),
+            merkle.as_ref(),
+        )?;
+
         citeindex_kernel::tools::index_document::execute(&params, &mut self.ctx)
             .map_err(anyhow::Error::from)?;
         Ok(())
@@ -125,7 +205,14 @@ impl AgentRuntime {
                 "CoordinatorAgent",
                 "citeindex.agents.coordinator",
                 "cloud_standard",
-                &[],
+                &[
+                    "search_memory",
+                    "tantivy_search",
+                    "memory_save",
+                    "tree_load",
+                    "tree_traverse",
+                    "csl_render",
+                ],
             )),
             librarian: Mutex::new(agent_process(
                 python_bin,
@@ -330,6 +417,7 @@ impl AgentRuntime {
             .as_mut()
             .context("kernel tool runtime not initialized")?;
         state.sync_corpus()?;
+        state.sync_memory()?;
 
         let tool_manifest = tools::AgentManifest {
             name: agent.name.0.clone(),
@@ -343,6 +431,17 @@ impl AgentRuntime {
         let response =
             tools::dispatch_tool_call(&call, &agent.name, &tool_manifest, &mut state.ctx)
                 .map_err(anyhow::Error::from)?;
+
+        if call.tool == "memory_save" {
+            if let Some(memory_id) = response
+                .result
+                .as_ref()
+                .and_then(|value| value.get("memory_id"))
+                .and_then(|value| value.as_str())
+            {
+                state.indexed_memory_entries.insert(memory_id.to_string());
+            }
+        }
 
         agent
             .send(&serde_json::json!({
@@ -514,6 +613,162 @@ fn detect_language(text: &str) -> String {
         return "zh".to_string();
     }
     "en".to_string()
+}
+
+fn write_compat_tree(
+    documents_dir: &Path,
+    doc_id: &str,
+    csl: &Value,
+    document: Option<&Value>,
+    merkle: Option<&Value>,
+) -> anyhow::Result<()> {
+    let structured_dir = documents_dir.join("structured");
+    fs::create_dir_all(&structured_dir)?;
+
+    let tree_path = structured_dir.join(format!("{doc_id}.citeindex.json"));
+    let mut sections = serde_json::Map::new();
+
+    if let Some(nodes) = document
+        .and_then(|value| value.get("nodes"))
+        .and_then(|value| value.as_array())
+    {
+        for node in nodes {
+            let section_key = node
+                .get("section_path")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+                .unwrap_or("root")
+                .to_string();
+            let entry = sections
+                .entry(section_key)
+                .or_insert_with(|| Value::Array(Vec::new()));
+            if let Some(array) = entry.as_array_mut() {
+                array.push(node.clone());
+            }
+        }
+    }
+
+    let level_1 = if sections.is_empty() {
+        let fallback_text = document.and_then(first_document_text).unwrap_or_default();
+        vec![serde_json::json!({
+            "node_id": format!("{doc_id}:section:root"),
+            "heading": "Document",
+            "section_number": serde_json::Value::Null,
+            "section_type": "document",
+            "page_range": serde_json::Value::Null,
+            "children": [{
+                "node_id": format!("{doc_id}:subsection:root"),
+                "heading": "Document",
+                "section_number": serde_json::Value::Null,
+                "children": [{
+                    "node_id": format!("{doc_id}:root"),
+                    "locator_type": "paragraph",
+                    "page_number": serde_json::Value::Null,
+                    "page_label": serde_json::Value::Null,
+                    "text_blocks": [],
+                    "figures": [],
+                    "tables": [],
+                    "paragraph_number": 0,
+                    "paragraph_id": format!("{doc_id}:root"),
+                    "text": fallback_text,
+                    "start_time": serde_json::Value::Null,
+                    "end_time": serde_json::Value::Null,
+                    "speaker": serde_json::Value::Null,
+                    "transcript_text": serde_json::Value::Null,
+                    "children": [],
+                }],
+            }],
+        })]
+    } else {
+        sections
+            .into_iter()
+            .map(|(section_path, nodes)| {
+                let locators = nodes
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .map(|(index, node)| {
+                        let node_id = node
+                            .get("node_id")
+                            .and_then(|value| value.as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| format!("{doc_id}:{section_path}:{index}"));
+                        serde_json::json!({
+                            "node_id": node_id,
+                            "locator_type": "paragraph",
+                            "page_number": node.get("page").cloned().unwrap_or(serde_json::Value::Null),
+                            "page_label": node.get("page").cloned().unwrap_or(serde_json::Value::Null),
+                            "text_blocks": [],
+                            "figures": [],
+                            "tables": [],
+                            "paragraph_number": node.get("paragraph").cloned().unwrap_or(serde_json::json!(index as i64)),
+                            "paragraph_id": node.get("node_id").cloned().unwrap_or_else(|| serde_json::json!(format!("{doc_id}:{index}"))),
+                            "text": node.get("text").cloned().unwrap_or(serde_json::Value::Null),
+                            "start_time": serde_json::Value::Null,
+                            "end_time": serde_json::Value::Null,
+                            "speaker": serde_json::Value::Null,
+                            "transcript_text": serde_json::Value::Null,
+                            "children": [],
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                serde_json::json!({
+                    "node_id": format!("{doc_id}:section:{section_path}"),
+                    "heading": section_path,
+                    "section_number": serde_json::Value::Null,
+                    "section_type": "section",
+                    "page_range": serde_json::Value::Null,
+                    "children": [{
+                        "node_id": format!("{doc_id}:subsection:{section_path}"),
+                        "heading": section_path,
+                        "section_number": serde_json::Value::Null,
+                        "children": locators,
+                    }],
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let tree = serde_json::json!({
+        "citeindex_version": "12.0",
+        "tree_version": "1.0",
+        "level_0": {
+            "id": csl.get("id").cloned().unwrap_or_else(|| serde_json::json!(doc_id)),
+            "type": csl.get("type").cloned().unwrap_or_else(|| serde_json::json!("article-journal")),
+            "title": csl.get("title").cloned().unwrap_or_else(|| serde_json::json!(doc_id)),
+            "author": csl.get("author").cloned().unwrap_or_else(|| serde_json::json!([])),
+            "editor": csl.get("editor").cloned().unwrap_or_else(|| serde_json::json!([])),
+            "issued": csl.get("issued").cloned().unwrap_or(serde_json::Value::Null),
+            "DOI": csl.get("DOI").cloned().or_else(|| csl.get("doi").cloned()).unwrap_or(serde_json::Value::Null),
+            "ISBN": csl.get("ISBN").cloned().unwrap_or(serde_json::Value::Null),
+            "URL": csl.get("URL").cloned().unwrap_or(serde_json::Value::Null),
+            "container-title": csl.get("container-title").cloned().or_else(|| csl.get("container_title").cloned()).unwrap_or(serde_json::Value::Null),
+            "volume": csl.get("volume").cloned().unwrap_or(serde_json::Value::Null),
+            "issue": csl.get("issue").cloned().unwrap_or(serde_json::Value::Null),
+            "page": csl.get("page").cloned().unwrap_or(serde_json::Value::Null),
+            "publisher": csl.get("publisher").cloned().unwrap_or(serde_json::Value::Null),
+            "publisher-place": csl.get("publisher-place").cloned().unwrap_or(serde_json::Value::Null),
+            "abstract": csl.get("abstract").cloned().or_else(|| document.and_then(first_document_text).map(serde_json::Value::String)).unwrap_or(serde_json::Value::Null),
+            "language": csl.get("language").cloned().unwrap_or_else(|| serde_json::json!(detect_language(preferred_str(csl, &["title"]).unwrap_or(doc_id)))),
+            "keyword": csl.get("keyword").cloned().unwrap_or(serde_json::Value::Null),
+            "ci_doc_id": doc_id,
+            "ci_quality_tier": csl.get("ci_quality_tier").cloned().unwrap_or_else(|| serde_json::json!("silver")),
+            "ci_hierarchy_path": csl.get("ci_hierarchy_path").cloned().unwrap_or(serde_json::Value::Null),
+            "ci_merkle_hash": merkle.and_then(|value| preferred_str(value, &["root"])).map(|value| serde_json::Value::String(value.to_string())).unwrap_or(serde_json::Value::Null),
+            "ci_source_type": csl.get("source_type").cloned().unwrap_or(serde_json::Value::Null),
+            "ci_ingested_at": csl.get("ingestion_timestamp").cloned().unwrap_or(serde_json::Value::Null),
+            "ci_structure_confidence": serde_json::Value::Null,
+            "ci_indexed_at": serde_json::Value::Null,
+            "ci_project_ids": [],
+            "ci_claim_anchors": [],
+        },
+        "level_1": level_1,
+    });
+
+    fs::write(tree_path, serde_json::to_vec_pretty(&tree)?)?;
+    Ok(())
 }
 
 fn extract_doc_type_override(extra_args: &[&str]) -> Option<String> {

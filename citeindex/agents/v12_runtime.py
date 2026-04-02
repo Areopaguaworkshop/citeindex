@@ -239,16 +239,340 @@ def _normalize_librarian_hits(tool_result: Dict[str, Any], query: str) -> Dict[s
     }
 
 
+def _normalize_memory_hits(tool_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    hits = tool_result.get("hits") if isinstance(tool_result.get("hits"), list) else []
+    normalized = []
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        fields = hit.get("fields") if isinstance(hit.get("fields"), dict) else {}
+        normalized.append(
+            {
+                "memory_id": str(hit.get("id") or ""),
+                "session_id": str(fields.get("session_id") or ""),
+                "title": str(fields.get("title") or ""),
+                "content": str(fields.get("content") or ""),
+                "score": float(hit.get("score") or 0.0),
+            }
+        )
+    return normalized
+
+
+def _query_terms(query: str) -> List[str]:
+    cleaned = query.strip().lower()
+    terms = [token for token in re.findall(r"\w+", cleaned) if len(token) > 1]
+    if terms:
+        return terms
+    return [cleaned] if cleaned else []
+
+
+def _node_text(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    for key in ("text", "transcript_text"):
+        text = value.get(key)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+
+    blocks = value.get("text_blocks")
+    if isinstance(blocks, list):
+        joined = " ".join(
+            block.get("text", "").strip()
+            for block in blocks
+            if isinstance(block, dict) and isinstance(block.get("text"), str) and block.get("text", "").strip()
+        ).strip()
+        if joined:
+            return joined
+
+    children = value.get("children")
+    if isinstance(children, list):
+        joined = " ".join(_node_text(child) for child in children).strip()
+        if joined:
+            return joined
+
+    return ""
+
+
+def _locator_string(value: Dict[str, Any]) -> str:
+    page_number = value.get("page_number")
+    if isinstance(page_number, int) and page_number > 0:
+        return f"p. {page_number}"
+    paragraph_number = value.get("paragraph_number")
+    if isinstance(paragraph_number, int) and paragraph_number >= 0:
+        return f"para. {paragraph_number}"
+    start_time = value.get("start_time")
+    if isinstance(start_time, str) and start_time:
+        return start_time
+    return ""
+
+
+def _tree_candidates(tree: Dict[str, Any]) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    for section in tree.get("level_1", []):
+        if not isinstance(section, dict):
+            continue
+        section_heading = str(section.get("heading") or section.get("node_id") or "")
+        for subsection in section.get("children", []):
+            if not isinstance(subsection, dict):
+                continue
+            subsection_heading = str(subsection.get("heading") or subsection.get("node_id") or "")
+            for locator in subsection.get("children", []):
+                if not isinstance(locator, dict):
+                    continue
+                text = _node_text(locator)
+                if not text:
+                    continue
+                section_path = " / ".join(part for part in (section_heading, subsection_heading) if part)
+                candidates.append(
+                    {
+                        "node_id": str(locator.get("node_id") or ""),
+                        "text": text,
+                        "section_path": section_path,
+                        "locator": _locator_string(locator),
+                    }
+                )
+    return candidates
+
+
+def _select_best_candidate(prompt: str, tree: Dict[str, Any]) -> Dict[str, Any]:
+    candidates = _tree_candidates(tree)
+    if not candidates:
+        return {}
+
+    terms = _query_terms(prompt)
+
+    def score(candidate: Dict[str, Any]) -> tuple[int, int, int]:
+        text_lower = candidate.get("text", "").lower()
+        exact = 1 if prompt.strip().lower() and prompt.strip().lower() in text_lower else 0
+        overlaps = sum(text_lower.count(term) for term in terms)
+        return (exact, overlaps, -len(text_lower))
+
+    return max(candidates, key=score)
+
+
+def _enrich_chat_hit(hit: Dict[str, Any], prompt: str, call_tool: ToolCaller) -> Dict[str, Any]:
+    fields = hit.get("fields") if isinstance(hit.get("fields"), dict) else {}
+    doc_id = str(hit.get("id") or "")
+    fallback_text = str(fields.get("abstract_text") or fields.get("title") or "")
+    fallback_citation = _format_citation(fields)
+    evidence = {
+        "node_id": doc_id,
+        "source_id": doc_id,
+        "sha256": str(fields.get("merkle_hash") or ""),
+        "document_merkle_root": str(fields.get("merkle_hash") or ""),
+        "merkle_proof": [],
+        "citation_key": doc_id,
+        "citation_rendered": fallback_citation,
+        "section_path": "",
+        "text": fallback_text,
+    }
+
+    try:
+        tree = call_tool("tree_load", {"doc_id": doc_id})
+        candidate = _select_best_candidate(prompt, tree)
+        if candidate:
+            evidence["node_id"] = candidate.get("node_id") or doc_id
+            evidence["section_path"] = candidate.get("section_path") or ""
+            evidence["text"] = candidate.get("text") or fallback_text
+
+            traversed = call_tool(
+                "tree_traverse",
+                {"doc_id": doc_id, "node_id": evidence["node_id"]},
+            )
+            traversed_text = _node_text(traversed)
+            if traversed_text:
+                evidence["text"] = traversed_text
+
+            locator = _locator_string(traversed if isinstance(traversed, dict) else {}) or candidate.get("locator", "")
+            citation_result = call_tool(
+                "csl_render",
+                {"doc_id": doc_id, **({"locator": locator} if locator else {})},
+            )
+            if isinstance(citation_result, dict) and isinstance(citation_result.get("citation"), str):
+                evidence["citation_rendered"] = citation_result["citation"]
+    except Exception as exc:
+        logging.warning("tree-aware enrichment failed for %s: %s", doc_id, exc)
+
+    return evidence
+
+
+def _build_chat_response(
+    prompt: str,
+    query_id: str,
+    evidence_items: List[Dict[str, Any]],
+    memory_hits: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not evidence_items:
+        return {
+            "status": "no_corpus",
+            "query_id": query_id,
+            "answer_human": "No evidence found for the query.",
+            "answer_machine": {
+                "schema_version": "1.0.0",
+                "query_id": query_id,
+                "answer": "",
+                "evidence": [],
+            },
+            "integrity": {
+                "schema_version": "1.0.0",
+                "status": "rejected",
+                "checks": [],
+                "violations": ["No evidence items in answer"],
+                "approved_answer_ref": "",
+            },
+            "retrieval_debug": {
+                "backend": "kernel_tantivy",
+                "memory_hits": len(memory_hits),
+                "returned": 0,
+            },
+        }
+
+    answer_parts = []
+    human_parts = [f"## Query: {prompt}\n"]
+
+    if memory_hits:
+        human_parts.append("### Related Memory\n")
+        for item in memory_hits[:3]:
+            snippet = item["content"][:240].strip()
+            if len(item["content"]) > 240:
+                snippet += "..."
+            human_parts.append(f"- {item['title'] or item['memory_id']}: {snippet}")
+        human_parts.append("")
+
+    for item in evidence_items:
+        text = str(item.get("text") or "")
+        citation = str(item.get("citation_rendered") or item.get("citation_key") or "")
+        node_id = str(item.get("node_id") or item.get("source_id") or "")
+        answer_parts.append(text)
+        human_parts.append(f"> {text}\n> — [{citation}] (node: `{node_id}`)\n")
+
+    human_parts.append("\n---\n### Evidence Appendix\n")
+    for index, item in enumerate(evidence_items, start=1):
+        human_parts.append(
+            f"{index}. **{item['node_id']}** ({item.get('section_path', '')}) — [{item['citation_rendered']}]"
+        )
+
+    return {
+        "status": "ok",
+        "query_id": query_id,
+        "answer_human": "\n".join(human_parts),
+        "answer_machine": {
+            "schema_version": "1.0.0",
+            "query_id": query_id,
+            "answer": "\n\n".join(answer_parts),
+            "evidence": evidence_items,
+        },
+        "integrity": {
+            "schema_version": "1.0.0",
+            "status": "approved",
+            "checks": [],
+            "violations": [],
+            "approved_answer_ref": "",
+        },
+        "retrieval_debug": {
+            "backend": "kernel_tantivy",
+            "memory_hits": len(memory_hits),
+            "returned": len(evidence_items),
+        },
+    }
+
+
+def _save_chat_memory(
+    prompt: str,
+    thread_id: str,
+    response: Dict[str, Any],
+    call_tool: ToolCaller,
+) -> Dict[str, Any]:
+    answer_human = str(response.get("answer_human") or "")
+    memory_id = hashlib.sha256(
+        f"{thread_id}|{prompt}|{answer_human}".encode("utf-8")
+    ).hexdigest()[:16]
+    evidence_ids = [
+        item.get("node_id", "")
+        for item in response.get("answer_machine", {}).get("evidence", [])
+        if isinstance(item, dict)
+    ]
+    return call_tool(
+        "memory_save",
+        {
+            "memory_id": memory_id,
+            "session_id": thread_id,
+            "title": prompt,
+            "description": f"Chat response for {thread_id}",
+            "content": answer_human,
+            "merkle_hash": _hash_output({"thread_id": thread_id, "prompt": prompt, "evidence": evidence_ids}),
+            "language": _detect_language(f"{prompt} {answer_human}"),
+        },
+    )
+
+
+def _chat_via_tools(inputs: Dict[str, Any], call_tool: ToolCaller) -> Dict[str, Any]:
+    from .query_planner import QueryPlanner
+
+    prompt = _extract_query(inputs)
+    thread_id = str(inputs.get("thread_id") or "default")
+    planner = QueryPlanner()
+    plan = planner.plan(prompt)
+
+    if plan.clarification_required:
+        return {
+            "status": "needs_clarification",
+            "query_id": plan.query_id,
+            "questions": plan.clarification_questions,
+            "thread": thread_id,
+        }
+
+    language = _detect_language(prompt)
+    memory_tool_result = call_tool(
+        "search_memory",
+        {"query": prompt, "limit": 3, "language": language},
+    )
+    document_tool_result = call_tool(
+        "tantivy_search",
+        {
+            "query": prompt,
+            "index": "documents",
+            "limit": int(inputs.get("top_k", 5)),
+            "language": language,
+        },
+    )
+
+    memory_hits = _normalize_memory_hits(memory_tool_result)
+    doc_hits = (
+        document_tool_result.get("hits")
+        if isinstance(document_tool_result.get("hits"), list)
+        else []
+    )
+    evidence_items = [
+        _enrich_chat_hit(hit, prompt, call_tool)
+        for hit in doc_hits[: int(inputs.get("top_k", 5))]
+        if isinstance(hit, dict)
+    ]
+    response = _build_chat_response(prompt, plan.query_id, evidence_items, memory_hits)
+    response["thread"] = thread_id
+
+    try:
+        response["kernel_memory_save"] = _save_chat_memory(prompt, thread_id, response, call_tool)
+    except Exception as exc:
+        logging.warning("kernel memory save after chat failed: %s", exc)
+        response["kernel_memory_warning"] = str(exc)
+
+    return response
+
+
 def handle_coordinator(inputs: Dict[str, Any], _call_tool: Optional[ToolCaller] = None) -> Dict[str, Any]:
     if inputs.get("operation") == "chat":
-        from .chat import ChatPipeline
+        if _call_tool is not None:
+            result = _chat_via_tools(inputs, _call_tool)
+        else:
+            from .chat import ChatPipeline
 
-        prompt = _extract_query(inputs)
-        pipeline = ChatPipeline(
-            corpus_root=_get_corpus_root(inputs),
-            llm_model=str(inputs.get("llm_model") or "ollama/qwen3"),
-        )
-        result = pipeline.chat(prompt, thread_id=str(inputs.get("thread_id") or "default"))
+            prompt = _extract_query(inputs)
+            pipeline = ChatPipeline(
+                corpus_root=_get_corpus_root(inputs),
+                llm_model=str(inputs.get("llm_model") or "ollama/qwen3"),
+            )
+            result = pipeline.chat(prompt, thread_id=str(inputs.get("thread_id") or "default"))
         return {"agent": "CoordinatorAgent", **result}
 
     from .query_planner import QueryPlanner
