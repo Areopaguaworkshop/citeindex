@@ -6,6 +6,7 @@
 use crate::merkle::{build_merkle_tree, sha256_hex, MerkleTree};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -49,13 +50,15 @@ impl MemoryEntry {
 /// File-based JSONL memory store with Merkle DAG support.
 pub struct MemoryStore {
     memory_dir: PathBuf,
+    legacy_memory_dir: Option<PathBuf>,
 }
 
 impl MemoryStore {
-    pub fn new(memory_dir: &Path) -> Self {
+    pub fn new(memory_dir: &Path, legacy_memory_dir: Option<&Path>) -> Self {
         fs::create_dir_all(memory_dir).ok();
         Self {
             memory_dir: memory_dir.to_path_buf(),
+            legacy_memory_dir: legacy_memory_dir.map(Path::to_path_buf),
         }
     }
 
@@ -75,22 +78,20 @@ impl MemoryStore {
 
     /// Load all entries for a thread.
     pub fn load_thread(&self, thread_id: &str) -> Vec<MemoryEntry> {
-        let path = self.thread_path(thread_id);
-        if !path.exists() {
-            return Vec::new();
+        let mut by_id = HashMap::new();
+
+        if let Some(legacy_dir) = self.legacy_memory_dir.as_ref() {
+            for entry in self.load_thread_from_dir(legacy_dir, thread_id) {
+                by_id.insert(entry.entry_id.clone(), entry);
+            }
+        }
+        for entry in self.load_thread_from_dir(&self.memory_dir, thread_id) {
+            by_id.insert(entry.entry_id.clone(), entry);
         }
 
-        let file = match fs::File::open(&path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-
-        BufReader::new(file)
-            .lines()
-            .filter_map(|line| line.ok())
-            .filter(|line| !line.trim().is_empty())
-            .filter_map(|line| serde_json::from_str::<MemoryEntry>(&line).ok())
-            .collect()
+        let mut entries = by_id.into_values().collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        entries
     }
 
     /// Simple keyword search across all threads (or a specific thread).
@@ -130,21 +131,53 @@ impl MemoryStore {
 
     /// List all thread IDs.
     pub fn list_threads(&self) -> Vec<String> {
-        let mut threads = Vec::new();
-        if let Ok(entries) = fs::read_dir(&self.memory_dir) {
+        let mut threads = HashSet::new();
+        if let Some(legacy_dir) = self.legacy_memory_dir.as_ref() {
+            self.collect_thread_names(legacy_dir, &mut threads);
+        }
+        self.collect_thread_names(&self.memory_dir, &mut threads);
+
+        let mut sorted = threads.into_iter().collect::<Vec<_>>();
+        sorted.sort();
+        sorted
+    }
+
+    fn load_thread_from_dir(&self, dir: &Path, thread_id: &str) -> Vec<MemoryEntry> {
+        let path = self.thread_path_in_dir(dir, thread_id);
+        if !path.exists() {
+            return Vec::new();
+        }
+
+        let file = match fs::File::open(&path) {
+            Ok(file) => file,
+            Err(_) => return Vec::new(),
+        };
+
+        BufReader::new(file)
+            .lines()
+            .filter_map(|line| line.ok())
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| serde_json::from_str::<MemoryEntry>(&line).ok())
+            .collect()
+    }
+
+    fn collect_thread_names(&self, dir: &Path, threads: &mut HashSet<String>) {
+        if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
                     if name.ends_with(".jsonl") {
-                        threads.push(name.trim_end_matches(".jsonl").to_string());
+                        threads.insert(name.trim_end_matches(".jsonl").to_string());
                     }
                 }
             }
         }
-        threads.sort();
-        threads
     }
 
     fn thread_path(&self, thread_id: &str) -> PathBuf {
+        self.thread_path_in_dir(&self.memory_dir, thread_id)
+    }
+
+    fn thread_path_in_dir(&self, dir: &Path, thread_id: &str) -> PathBuf {
         let safe: String = thread_id
             .chars()
             .map(|c| {
@@ -155,6 +188,61 @@ impl MemoryStore {
                 }
             })
             .collect();
-        self.memory_dir.join(format!("{}.jsonl", safe))
+        dir.join(format!("{}.jsonl", safe))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use super::*;
+
+    #[test]
+    fn test_memory_store_merges_primary_and_legacy_entries_by_entry_id() {
+        let root = env::temp_dir().join(format!("citeindex-memory-store-{}", uuid::Uuid::new_v4()));
+        let primary = root.join("primary");
+        let legacy = root.join("legacy");
+        fs::create_dir_all(&primary).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+
+        let legacy_entry = MemoryEntry {
+            entry_id: "mem-1".into(),
+            timestamp: "2026-04-03T10:00:00+00:00".into(),
+            thread_id: "thread-1".into(),
+            query: "Old query".into(),
+            response: "Old response".into(),
+            evidence_node_ids: vec![],
+            sha256: "old-hash".into(),
+        };
+        let primary_entry = MemoryEntry {
+            entry_id: "mem-1".into(),
+            timestamp: "2026-04-03T11:00:00+00:00".into(),
+            thread_id: "thread-1".into(),
+            query: "New query".into(),
+            response: "New response".into(),
+            evidence_node_ids: vec!["doc-1:node-1".into()],
+            sha256: "new-hash".into(),
+        };
+
+        fs::write(
+            legacy.join("thread-1.jsonl"),
+            format!("{}\n", serde_json::to_string(&legacy_entry).unwrap()),
+        )
+        .unwrap();
+        fs::write(
+            primary.join("thread-1.jsonl"),
+            format!("{}\n", serde_json::to_string(&primary_entry).unwrap()),
+        )
+        .unwrap();
+
+        let store = MemoryStore::new(&primary, Some(&legacy));
+        let entries = store.load_thread("thread-1");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].query, "New query");
+        assert_eq!(entries[0].sha256, "new-hash");
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

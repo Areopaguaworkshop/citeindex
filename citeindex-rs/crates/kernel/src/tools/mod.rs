@@ -21,12 +21,14 @@ pub mod tree_load;
 pub mod tree_traverse;
 
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::argument_graph;
 use crate::indexes;
 use crate::scoring::ScoreFusionWeights;
+use crate::storage::StorageLayout;
 use crate::types::ids::AgentName;
 
 /// Tool call from an agent.
@@ -129,6 +131,7 @@ pub struct ToolContext {
     // ── Paths ────────────────────────────────────────────
     pub documents_dir: PathBuf,
     pub sources_dir: PathBuf,
+    pub memory_sessions_dir: Option<PathBuf>,
 
     // ── Scoring ──────────────────────────────────────────
     pub score_fusion_weights: ScoreFusionWeights,
@@ -144,6 +147,37 @@ pub struct MemoryAccessEntry {
     pub last_accessed: String,
 }
 
+fn build_tool_context(
+    document_index: tantivy::Index,
+    claim_index: tantivy::Index,
+    memory_index: tantivy::Index,
+    argument_graph_db: rusqlite::Connection,
+    documents_dir: PathBuf,
+    sources_dir: PathBuf,
+    memory_sessions_dir: Option<PathBuf>,
+) -> anyhow::Result<ToolContext> {
+    let document_writer = Arc::new(Mutex::new(document_index.writer(50_000_000)?));
+    let claim_writer = Arc::new(Mutex::new(claim_index.writer(50_000_000)?));
+    let memory_writer = Arc::new(Mutex::new(memory_index.writer(50_000_000)?));
+
+    argument_graph::init_db(&argument_graph_db)?;
+
+    Ok(ToolContext {
+        document_index,
+        claim_index,
+        memory_index,
+        document_writer,
+        claim_writer,
+        memory_writer,
+        argument_graph_db: Arc::new(Mutex::new(argument_graph_db)),
+        documents_dir,
+        sources_dir,
+        memory_sessions_dir,
+        score_fusion_weights: ScoreFusionWeights::default(),
+        memory_access_cache: HashMap::new(),
+    })
+}
+
 /// Build a lightweight in-memory tool context backed by the kernel schemas.
 ///
 /// This is useful for transitional runtimes that want to exercise the kernel
@@ -156,26 +190,59 @@ pub fn in_memory_context(documents_dir: PathBuf) -> anyhow::Result<ToolContext> 
     let memory_index = tantivy::Index::create_in_ram(indexes::build_memory_index_schema());
     indexes::register_tokenizers(&memory_index);
 
-    let document_writer = Arc::new(Mutex::new(document_index.writer(50_000_000)?));
-    let claim_writer = Arc::new(Mutex::new(claim_index.writer(50_000_000)?));
-    let memory_writer = Arc::new(Mutex::new(memory_index.writer(50_000_000)?));
-
     let conn = rusqlite::Connection::open_in_memory()?;
-    argument_graph::init_db(&conn)?;
-
-    Ok(ToolContext {
+    build_tool_context(
         document_index,
         claim_index,
         memory_index,
-        document_writer,
-        claim_writer,
-        memory_writer,
-        argument_graph_db: Arc::new(Mutex::new(conn)),
-        documents_dir: documents_dir.clone(),
-        sources_dir: documents_dir,
-        score_fusion_weights: ScoreFusionWeights::default(),
-        memory_access_cache: HashMap::new(),
-    })
+        conn,
+        documents_dir.clone(),
+        documents_dir,
+        None,
+    )
+}
+
+/// Build a persistent tool context rooted in the canonical storage layout.
+pub fn persistent_context(layout: &StorageLayout) -> anyhow::Result<ToolContext> {
+    for dir in [
+        &layout.root,
+        &layout.indexes_dir,
+        &layout.document_index_dir,
+        &layout.memory_index_dir,
+        &layout.claim_index_dir,
+        &layout.documents_dir,
+        &layout.sources_dir,
+        &layout.structured_dir,
+        &layout.citations_dir,
+        &layout.memory_dir,
+        &layout.sessions_dir,
+    ] {
+        fs::create_dir_all(dir)?;
+    }
+
+    let document_index = indexes::open_or_create_index(
+        &layout.document_index_dir,
+        indexes::build_document_index_schema(),
+    )?;
+    let claim_index = indexes::open_or_create_index(
+        &layout.claim_index_dir,
+        indexes::build_claim_index_schema(),
+    )?;
+    let memory_index = indexes::open_or_create_index(
+        &layout.memory_index_dir,
+        indexes::build_memory_index_schema(),
+    )?;
+
+    let conn = rusqlite::Connection::open(&layout.argument_graph_db)?;
+    build_tool_context(
+        document_index,
+        claim_index,
+        memory_index,
+        conn,
+        layout.documents_dir.clone(),
+        layout.sources_dir.clone(),
+        Some(layout.sessions_dir.clone()),
+    )
 }
 
 fn legacy_search_target(params: &serde_json::Value) -> &str {

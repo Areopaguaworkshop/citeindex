@@ -91,6 +91,9 @@ def test_index_ingested_document_builds_tantivy_index_payload() -> None:
     assert seen["params"]["title"] == "从新英格兰到英格兰"
     assert seen["params"]["abstract_text"] == "正文内容"
     assert seen["params"]["language"] == "zh"
+    assert seen["params"]["standardized_csl_json"]["id"] == "doc-1"
+    assert seen["params"]["document_json"]["nodes"][0]["text"] == "正文内容"
+    assert seen["params"]["merkle_tree"]["root"] == "root-hash"
     assert result["status"] == "ok"
 
 
@@ -145,6 +148,9 @@ def test_chat_via_tools_uses_search_and_memory_tools() -> None:
                                         "node_id": "doc-1:node-1",
                                         "paragraph_number": 3,
                                         "text": "A survey of church history with specific passages.",
+                                        "sha256": "leaf-hash-1",
+                                        "document_merkle_root": "root-hash-1",
+                                        "merkle_proof": [{"position": "right", "hash": "sibling-hash"}],
                                     }
                                 ],
                             }
@@ -181,6 +187,10 @@ def test_chat_via_tools_uses_search_and_memory_tools() -> None:
     assert result["thread"] == "thread-1"
     assert result["answer_machine"]["evidence"][0]["node_id"] == "doc-1:node-1"
     assert result["answer_machine"]["evidence"][0]["section_path"] == "Section 1 / Overview"
+    assert result["answer_machine"]["evidence"][0]["sha256"] == "leaf-hash-1"
+    assert result["answer_machine"]["evidence"][0]["document_merkle_root"] == "root-hash-1"
+    assert result["answer_machine"]["evidence"][0]["merkle_proof"][0]["hash"] == "sibling-hash"
     assert "Related Memory" in result["answer_human"]
     assert "para. 3" in result["answer_human"]
     assert result["kernel_memory_save"]["status"] == "ok"
+    assert calls[-1][1]["evidence_node_ids"] == ["doc-1:node-1"]

@@ -14,6 +14,7 @@ use citeindex_kernel::agent_runtime::{
     AgentProcess, AgentSection, AgentState, InnerLoopSection, LlmContractSection, ResourcesSection,
     ToolCallPayload, ToolsAllowedSection,
 };
+use citeindex_kernel::storage::StorageLayout;
 use citeindex_kernel::tools::{self, ToolContext};
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -21,22 +22,46 @@ use uuid::Uuid;
 
 struct KernelToolState {
     corpus_root: PathBuf,
+    bootstrap_marker: PathBuf,
+    legacy_bootstrap_complete: bool,
     ctx: ToolContext,
     indexed_corpus_dirs: HashSet<String>,
     indexed_memory_entries: HashSet<String>,
 }
 
 impl KernelToolState {
-    fn new(corpus_root: PathBuf) -> anyhow::Result<Self> {
-        let runtime_documents_dir = corpus_root.join(".v12_runtime").join("documents");
-        fs::create_dir_all(runtime_documents_dir.join("structured"))?;
-        let ctx = tools::in_memory_context(runtime_documents_dir)?;
+    fn new(corpus_root: PathBuf, storage_root: PathBuf) -> anyhow::Result<Self> {
+        let layout = StorageLayout::new(storage_root);
+        let bootstrap_marker = layout.root.join("legacy_bootstrap_complete.json");
+        let legacy_bootstrap_complete = bootstrap_marker.exists();
+        let ctx = tools::persistent_context(&layout)?;
         Ok(Self {
             corpus_root,
+            bootstrap_marker,
+            legacy_bootstrap_complete,
             ctx,
             indexed_corpus_dirs: HashSet::new(),
             indexed_memory_entries: HashSet::new(),
         })
+    }
+
+    fn bootstrap_legacy_data_if_needed(&mut self) -> anyhow::Result<()> {
+        if self.legacy_bootstrap_complete {
+            return Ok(());
+        }
+
+        self.sync_corpus()?;
+        self.sync_memory()?;
+
+        let marker = serde_json::json!({
+            "status": "ok",
+            "corpus_root": self.corpus_root.to_string_lossy(),
+            "documents_imported": self.indexed_corpus_dirs.len(),
+            "memory_entries_imported": self.indexed_memory_entries.len(),
+        });
+        fs::write(&self.bootstrap_marker, serde_json::to_vec_pretty(&marker)?)?;
+        self.legacy_bootstrap_complete = true;
+        Ok(())
     }
 
     fn sync_corpus(&mut self) -> anyhow::Result<()> {
@@ -109,6 +134,9 @@ impl KernelToolState {
                     "title": query,
                     "description": query,
                     "content": response,
+                    "timestamp": value.get("timestamp").and_then(|field| field.as_str()).unwrap_or(""),
+                    "sha256": value.get("sha256").and_then(|field| field.as_str()).unwrap_or(""),
+                    "evidence_node_ids": value.get("evidence_node_ids").cloned().unwrap_or_else(|| serde_json::json!([])),
                     "merkle_hash": value.get("sha256").and_then(|field| field.as_str()).unwrap_or(""),
                     "language": detect_language(&format!("{query} {response}")),
                 });
@@ -167,7 +195,7 @@ impl KernelToolState {
             "language": language,
         });
 
-        write_compat_tree(
+        self.write_document_tree(
             &self.ctx.documents_dir,
             params
                 .get("doc_id")
@@ -182,11 +210,46 @@ impl KernelToolState {
             .map_err(anyhow::Error::from)?;
         Ok(())
     }
+
+    fn persist_indexed_document_artifacts(&mut self, params: &Value) -> anyhow::Result<()> {
+        let Some(csl) = params
+            .get("standardized_csl_json")
+            .or_else(|| params.get("csl_json"))
+        else {
+            return Ok(());
+        };
+
+        let doc_id = params
+            .get("doc_id")
+            .and_then(|value| value.as_str())
+            .or_else(|| preferred_str(csl, &["id", "content_hash"]))
+            .context("missing doc_id for persistent tree write")?;
+
+        self.write_document_tree(
+            &self.ctx.documents_dir,
+            doc_id,
+            csl,
+            params.get("document_json"),
+            params.get("merkle_tree"),
+        )
+    }
+
+    fn write_document_tree(
+        &self,
+        documents_dir: &Path,
+        doc_id: &str,
+        csl: &Value,
+        document: Option<&Value>,
+        merkle: Option<&Value>,
+    ) -> anyhow::Result<()> {
+        write_page_index_tree(documents_dir, doc_id, csl, document, merkle)
+    }
 }
 
 /// v12 agent runtime bridge used by the legacy core engine.
 pub struct AgentRuntime {
-    data_dir: String,
+    corpus_root: String,
+    storage_dir: String,
     default_model: String,
     coordinator: Mutex<AgentProcess>,
     librarian: Mutex<AgentProcess>,
@@ -196,9 +259,15 @@ pub struct AgentRuntime {
 
 impl AgentRuntime {
     /// Build a new bridge backed by the thin v12 Python adapters.
-    pub fn new(python_bin: &str, data_dir: &str, default_model: &str) -> Self {
+    pub fn new(
+        python_bin: &str,
+        corpus_root: &str,
+        storage_dir: &str,
+        default_model: &str,
+    ) -> Self {
         Self {
-            data_dir: data_dir.to_string(),
+            corpus_root: corpus_root.to_string(),
+            storage_dir: storage_dir.to_string(),
             default_model: default_model.to_string(),
             coordinator: Mutex::new(agent_process(
                 python_bin,
@@ -326,7 +395,7 @@ impl AgentRuntime {
         model: &str,
         inputs: Value,
     ) -> anyhow::Result<Value> {
-        ensure_spawned(agent, &self.data_dir, model).await?;
+        ensure_spawned(agent, &self.storage_dir, model).await?;
 
         let task_id = Uuid::new_v4().to_string();
         let request = serde_json::json!({
@@ -410,14 +479,16 @@ impl AgentRuntime {
     ) -> anyhow::Result<()> {
         let mut tool_state = self.tool_state.lock().await;
         if tool_state.is_none() {
-            *tool_state = Some(KernelToolState::new(PathBuf::from(&self.data_dir))?);
+            *tool_state = Some(KernelToolState::new(
+                PathBuf::from(&self.corpus_root),
+                PathBuf::from(&self.storage_dir),
+            )?);
         }
 
         let state = tool_state
             .as_mut()
             .context("kernel tool runtime not initialized")?;
-        state.sync_corpus()?;
-        state.sync_memory()?;
+        state.bootstrap_legacy_data_if_needed()?;
 
         let tool_manifest = tools::AgentManifest {
             name: agent.name.0.clone(),
@@ -428,9 +499,16 @@ impl AgentRuntime {
             call_id: payload.call_id,
             params: payload.params,
         };
-        let response =
+        let mut response =
             tools::dispatch_tool_call(&call, &agent.name, &tool_manifest, &mut state.ctx)
                 .map_err(anyhow::Error::from)?;
+
+        if call.tool == "tantivy_index" && response.error.is_none() {
+            if let Err(error) = state.persist_indexed_document_artifacts(&call.params) {
+                response.result = None;
+                response.error = Some(tools::ToolError::IoError(error.to_string()).to_payload());
+            }
+        }
 
         if call.tool == "memory_save" {
             if let Some(memory_id) = response
@@ -615,7 +693,61 @@ fn detect_language(text: &str) -> String {
     "en".to_string()
 }
 
-fn write_compat_tree(
+fn merkle_proof_for_hash(merkle: Option<&Value>, node_hash: &str) -> Vec<Value> {
+    if node_hash.is_empty() {
+        return Vec::new();
+    }
+
+    let levels = match merkle
+        .and_then(|value| value.get("levels"))
+        .and_then(|value| value.as_array())
+    {
+        Some(levels) if !levels.is_empty() => levels,
+        _ => return Vec::new(),
+    };
+
+    let leaves = match levels.first().and_then(|value| value.as_array()) {
+        Some(leaves) => leaves,
+        None => return Vec::new(),
+    };
+
+    let mut idx = match leaves
+        .iter()
+        .position(|value| value.as_str() == Some(node_hash))
+    {
+        Some(index) => index,
+        None => return Vec::new(),
+    };
+
+    let mut proof = Vec::new();
+    for level in levels.iter().take(levels.len().saturating_sub(1)) {
+        let Some(level_hashes) = level.as_array() else {
+            return Vec::new();
+        };
+
+        let mut sibling_idx = idx ^ 1;
+        if sibling_idx >= level_hashes.len() {
+            sibling_idx = idx;
+        }
+
+        let Some(sibling_hash) = level_hashes
+            .get(sibling_idx)
+            .and_then(|value| value.as_str())
+        else {
+            return Vec::new();
+        };
+
+        proof.push(serde_json::json!({
+            "position": if sibling_idx > idx { "right" } else { "left" },
+            "hash": sibling_hash,
+        }));
+        idx /= 2;
+    }
+
+    proof
+}
+
+fn write_page_index_tree(
     documents_dir: &Path,
     doc_id: &str,
     csl: &Value,
@@ -694,6 +826,10 @@ fn write_compat_tree(
                             .and_then(|value| value.as_str())
                             .map(str::to_string)
                             .unwrap_or_else(|| format!("{doc_id}:{section_path}:{index}"));
+                        let node_hash = node
+                            .get("sha256")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
                         serde_json::json!({
                             "node_id": node_id,
                             "locator_type": "paragraph",
@@ -709,6 +845,9 @@ fn write_compat_tree(
                             "end_time": serde_json::Value::Null,
                             "speaker": serde_json::Value::Null,
                             "transcript_text": serde_json::Value::Null,
+                            "sha256": node_hash,
+                            "document_merkle_root": merkle.and_then(|value| preferred_str(value, &["root"])).unwrap_or(""),
+                            "merkle_proof": merkle_proof_for_hash(merkle, node_hash),
                             "children": [],
                         })
                     })
@@ -808,5 +947,24 @@ mod tests {
         assert_eq!(detect_language("教会历史"), "zh");
         assert_eq!(detect_language("ギリシャ教父"), "ja");
         assert_eq!(detect_language("church history"), "en");
+    }
+
+    #[test]
+    fn test_merkle_proof_for_hash_matches_legacy_shape() {
+        let merkle = serde_json::json!({
+            "levels": [
+                ["a", "b", "c"],
+                ["ab", "cc"],
+                ["root"]
+            ]
+        });
+
+        let proof = merkle_proof_for_hash(Some(&merkle), "c");
+
+        assert_eq!(proof.len(), 2);
+        assert_eq!(proof[0]["position"], "left");
+        assert_eq!(proof[0]["hash"], "c");
+        assert_eq!(proof[1]["position"], "left");
+        assert_eq!(proof[1]["hash"], "ab");
     }
 }

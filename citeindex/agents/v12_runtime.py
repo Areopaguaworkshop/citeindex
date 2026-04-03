@@ -198,6 +198,9 @@ def _index_ingested_document(result: Dict[str, Any], call_tool: ToolCaller) -> D
         "hierarchy_path": str(csl.get("ci_hierarchy_path") or ""),
         "merkle_hash": str(merkle_tree.get("root") or csl.get("merkle_root") or ""),
         "language": language,
+        "standardized_csl_json": csl,
+        "document_json": document_json,
+        "merkle_tree": merkle_tree,
     }
 
     return call_tool("tantivy_index", params)
@@ -329,6 +332,9 @@ def _tree_candidates(tree: Dict[str, Any]) -> List[Dict[str, Any]]:
                         "text": text,
                         "section_path": section_path,
                         "locator": _locator_string(locator),
+                        "sha256": str(locator.get("sha256") or ""),
+                        "document_merkle_root": str(locator.get("document_merkle_root") or ""),
+                        "merkle_proof": locator.get("merkle_proof") if isinstance(locator.get("merkle_proof"), list) else [],
                     }
                 )
     return candidates
@@ -374,6 +380,15 @@ def _enrich_chat_hit(hit: Dict[str, Any], prompt: str, call_tool: ToolCaller) ->
             evidence["node_id"] = candidate.get("node_id") or doc_id
             evidence["section_path"] = candidate.get("section_path") or ""
             evidence["text"] = candidate.get("text") or fallback_text
+            evidence["sha256"] = str(candidate.get("sha256") or evidence["sha256"])
+            evidence["document_merkle_root"] = str(
+                candidate.get("document_merkle_root") or evidence["document_merkle_root"]
+            )
+            evidence["merkle_proof"] = (
+                candidate.get("merkle_proof")
+                if isinstance(candidate.get("merkle_proof"), list)
+                else evidence["merkle_proof"]
+            )
 
             traversed = call_tool(
                 "tree_traverse",
@@ -500,6 +515,7 @@ def _save_chat_memory(
             "title": prompt,
             "description": f"Chat response for {thread_id}",
             "content": answer_human,
+            "evidence_node_ids": evidence_ids,
             "merkle_hash": _hash_output({"thread_id": thread_id, "prompt": prompt, "evidence": evidence_ids}),
             "language": _detect_language(f"{prompt} {answer_human}"),
         },
