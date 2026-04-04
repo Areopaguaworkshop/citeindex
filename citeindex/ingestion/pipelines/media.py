@@ -291,13 +291,18 @@ def run(media_ref: str) -> PipelineResult:
         "nodes": nodes,
     }
 
+    extra: Dict[str, Any] = {}
+    if input_type == "url" and media_file_path and os.path.exists(media_file_path):
+        extra["source_snapshot_path"] = media_file_path
+        extra["cleanup_source_snapshot"] = True
+
     # Cleanup temp files
     if audio_path and os.path.exists(audio_path):
         try:
             os.remove(audio_path)
         except OSError:
             pass
-    if downloaded and media_file_path and os.path.exists(media_file_path):
+    if downloaded and media_file_path and os.path.exists(media_file_path) and not extra.get("source_snapshot_path"):
         try:
             os.remove(media_file_path)
         except OSError:
@@ -312,4 +317,5 @@ def run(media_ref: str) -> PipelineResult:
         merkle_tree=merkle_tree,
         media_metadata=media_metadata,
         retrieval_index=retrieval_index,
+        extra=extra,
     )

@@ -177,7 +177,11 @@ def _index_ingested_document(result: Dict[str, Any], call_tool: ToolCaller) -> D
     csl = result.get("standardized_csl_json") if isinstance(result.get("standardized_csl_json"), dict) else {}
     sub_outputs = result.get("sub_pipeline_outputs") if isinstance(result.get("sub_pipeline_outputs"), dict) else {}
     document_json = sub_outputs.get("document_json") if isinstance(sub_outputs.get("document_json"), dict) else {}
+    transcript_json = sub_outputs.get("transcript_json") if isinstance(sub_outputs.get("transcript_json"), dict) else {}
     merkle_tree = sub_outputs.get("merkle_tree") if isinstance(sub_outputs.get("merkle_tree"), dict) else {}
+    ingestion_log_entry = result.get("ingestion_log_entry") if isinstance(result.get("ingestion_log_entry"), dict) else {}
+    source_snapshot_path = str(sub_outputs.get("source_snapshot_path") or "")
+    cleanup_source_snapshot = bool(sub_outputs.get("cleanup_source_snapshot"))
 
     doc_id = str(csl.get("id") or csl.get("content_hash") or "")
     title = str(csl.get("title") or document_json.get("metadata", {}).get("title") or doc_id)
@@ -200,7 +204,12 @@ def _index_ingested_document(result: Dict[str, Any], call_tool: ToolCaller) -> D
         "language": language,
         "standardized_csl_json": csl,
         "document_json": document_json,
+        "transcript_json": transcript_json,
         "merkle_tree": merkle_tree,
+        "input_ref": str(ingestion_log_entry.get("input_ref") or ""),
+        "resource_type": str(ingestion_log_entry.get("resource_type") or sub_outputs.get("resource_type") or ""),
+        "source_snapshot_path": source_snapshot_path,
+        "cleanup_source_snapshot": cleanup_source_snapshot,
     }
 
     return call_tool("tantivy_index", params)

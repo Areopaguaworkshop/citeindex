@@ -69,6 +69,10 @@ def test_index_ingested_document_builds_tantivy_index_payload() -> None:
     result = _index_ingested_document(
         {
             "status": "ok",
+            "ingestion_log_entry": {
+                "input_ref": "/tmp/document.pdf",
+                "resource_type": "digital_pdf",
+            },
             "standardized_csl_json": {
                 "id": "doc-1",
                 "title": "从新英格兰到英格兰",
@@ -80,7 +84,10 @@ def test_index_ingested_document_builds_tantivy_index_payload() -> None:
                 "document_json": {
                     "nodes": [{"text": "正文内容"}],
                 },
+                "transcript_json": {"segments": [{"text": "音频转写"}]},
                 "merkle_tree": {"root": "root-hash"},
+                "source_snapshot_path": "/tmp/url-article.html",
+                "cleanup_source_snapshot": True,
             },
         },
         fake_tool,
@@ -93,7 +100,12 @@ def test_index_ingested_document_builds_tantivy_index_payload() -> None:
     assert seen["params"]["language"] == "zh"
     assert seen["params"]["standardized_csl_json"]["id"] == "doc-1"
     assert seen["params"]["document_json"]["nodes"][0]["text"] == "正文内容"
+    assert seen["params"]["transcript_json"]["segments"][0]["text"] == "音频转写"
     assert seen["params"]["merkle_tree"]["root"] == "root-hash"
+    assert seen["params"]["input_ref"] == "/tmp/document.pdf"
+    assert seen["params"]["resource_type"] == "digital_pdf"
+    assert seen["params"]["source_snapshot_path"] == "/tmp/url-article.html"
+    assert seen["params"]["cleanup_source_snapshot"] is True
     assert result["status"] == "ok"
 
 

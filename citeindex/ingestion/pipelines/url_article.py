@@ -12,7 +12,9 @@ Workflow:
 """
 
 import logging
+import os
 import re
+import tempfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -29,6 +31,13 @@ from .common import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _write_html_snapshot(html: str) -> str:
+    fd, path = tempfile.mkstemp(prefix="citeindex_url_", suffix=".html")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(html)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -608,4 +617,8 @@ def run(
         csl_json=csl_json,
         document_json=document_json,
         merkle_tree=merkle_tree,
+        extra={
+            "source_snapshot_path": _write_html_snapshot(html),
+            "cleanup_source_snapshot": True,
+        },
     )

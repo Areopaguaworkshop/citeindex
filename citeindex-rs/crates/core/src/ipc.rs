@@ -231,6 +231,19 @@ impl KernelToolState {
             csl,
             params.get("document_json"),
             params.get("merkle_tree"),
+        )?;
+
+        persist_transcript_artifact(
+            &self.ctx.documents_dir,
+            doc_id,
+            params.get("transcript_json"),
+        )?;
+        persist_source_artifact(
+            &self.ctx.sources_dir,
+            doc_id,
+            params.get("input_ref"),
+            params.get("source_snapshot_path"),
+            params.get("cleanup_source_snapshot"),
         )
     }
 
@@ -693,6 +706,76 @@ fn detect_language(text: &str) -> String {
     "en".to_string()
 }
 
+fn persist_source_artifact(
+    sources_dir: &Path,
+    doc_id: &str,
+    input_ref: Option<&Value>,
+    source_snapshot_path: Option<&Value>,
+    cleanup_source_snapshot: Option<&Value>,
+) -> anyhow::Result<()> {
+    let snapshot_path = source_snapshot_path
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let input_path = input_ref
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.starts_with("http://") && !value.starts_with("https://"))
+        .map(PathBuf::from);
+
+    let Some(source_path) = snapshot_path.as_ref().or(input_path.as_ref()) else {
+        return Ok(());
+    };
+    if !source_path.is_file() {
+        return Ok(());
+    }
+
+    let extension = source_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("bin");
+    fs::create_dir_all(sources_dir)?;
+
+    let destination = sources_dir.join(format!("{doc_id}.{extension}"));
+    if source_path == &destination {
+        return Ok(());
+    }
+
+    fs::copy(&source_path, &destination).with_context(|| {
+        format!(
+            "failed to copy source artifact from {} to {}",
+            source_path.display(),
+            destination.display()
+        )
+    })?;
+
+    if cleanup_source_snapshot
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+        && snapshot_path.is_some()
+    {
+        let _ = fs::remove_file(source_path);
+    }
+
+    Ok(())
+}
+
+fn persist_transcript_artifact(
+    documents_dir: &Path,
+    doc_id: &str,
+    transcript_json: Option<&Value>,
+) -> anyhow::Result<()> {
+    let Some(transcript_json) = transcript_json else {
+        return Ok(());
+    };
+
+    let transcripts_dir = documents_dir.join("transcripts");
+    fs::create_dir_all(&transcripts_dir)?;
+    let transcript_path = transcripts_dir.join(format!("{doc_id}.transcript.json"));
+    fs::write(transcript_path, serde_json::to_vec_pretty(transcript_json)?)?;
+    Ok(())
+}
+
 fn merkle_proof_for_hash(merkle: Option<&Value>, node_hash: &str) -> Vec<Value> {
     if node_hash.is_empty() {
         return Vec::new();
@@ -923,6 +1006,7 @@ fn extract_doc_type_override(extra_args: &[&str]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     #[test]
     fn test_extract_doc_type_override_from_legacy_args() {
@@ -966,5 +1050,88 @@ mod tests {
         assert_eq!(proof[0]["hash"], "c");
         assert_eq!(proof[1]["position"], "left");
         assert_eq!(proof[1]["hash"], "ab");
+    }
+
+    #[test]
+    fn test_persist_source_artifact_copies_local_file_into_v12_sources() {
+        let root = env::temp_dir().join(format!(
+            "citeindex-source-artifact-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let source = root.join("paper.pdf");
+        let sources_dir = root.join("documents").join("sources");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&source, b"pdf-bytes").unwrap();
+
+        persist_source_artifact(
+            &sources_dir,
+            "doc-1",
+            Some(&serde_json::json!(source.to_string_lossy())),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(sources_dir.join("doc-1.pdf")).unwrap(),
+            b"pdf-bytes"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_persist_source_artifact_uses_snapshot_path_and_cleans_up_temp_file() {
+        let root = env::temp_dir().join(format!(
+            "citeindex-source-snapshot-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let snapshot = root.join("downloaded.html");
+        let sources_dir = root.join("documents").join("sources");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&snapshot, "<html>snapshot</html>").unwrap();
+
+        persist_source_artifact(
+            &sources_dir,
+            "doc-url",
+            Some(&serde_json::json!("https://example.com/article")),
+            Some(&serde_json::json!(snapshot.to_string_lossy())),
+            Some(&serde_json::json!(true)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(sources_dir.join("doc-url.html")).unwrap(),
+            "<html>snapshot</html>"
+        );
+        assert!(!snapshot.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_persist_transcript_artifact_writes_v12_transcript_file() {
+        let root = env::temp_dir().join(format!(
+            "citeindex-transcript-artifact-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let documents_dir = root.join("documents");
+        let transcript = serde_json::json!({
+            "source_id": "doc-2",
+            "segments": [{"text": "hello world"}],
+        });
+
+        persist_transcript_artifact(&documents_dir, "doc-2", Some(&transcript)).unwrap();
+
+        let written: Value = serde_json::from_str(
+            &fs::read_to_string(
+                documents_dir
+                    .join("transcripts")
+                    .join("doc-2.transcript.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(written["segments"][0]["text"], "hello world");
+
+        fs::remove_dir_all(root).unwrap();
     }
 }
