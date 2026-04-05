@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="#why-this-exists">Why</a> •
+  <a href="#current-status">Current Status</a> •
   <a href="#how-it-works">How It Works</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#usage">Usage</a> •
@@ -39,6 +40,19 @@ Large Language Models write fluently but **cannot cite their sources**. When an 
 - **Eliminates hallucination** by design: BM25 deterministic retrieval (no embeddings), mandatory evidence-to-claim mapping, and fail-closed integrity verification.
 - **Handles CJK vertical text**, multi-column layouts, footnote isolation, and scanned documents with automatic OCR language detection.
 - **Provides a terminal UI** (ratatui) for interactive research sessions: chat, search, ingest, and browse your citation graph — all from the terminal.
+
+---
+
+## Current Status
+
+The live execution path has been migrated onto the v12 NDJSON agent runtime.
+
+- The Rust core/TUI now talks to long-lived Python agents over the v12 protocol instead of spawning legacy one-shot CLI subprocesses for each action.
+- The runtime now persists its working state under `corpus/.citeindex/`, including Tantivy indexes, structured document trees, session logs, copied source artifacts, and transcript artifacts.
+- Legacy `corpus/*/csl.json`, `document.json`, `merkle.json`, and `corpus/.memory/*.jsonl` are still supported as a compatibility source and are migrated into `corpus/.citeindex/` on startup.
+- After that one-time preparation, chat/search/tool execution uses the persistent v12 store rather than rescanning legacy files during each request.
+
+Migration report: [docs/v12-runtime-migration.md](./docs/v12-runtime-migration.md)
 
 ---
 
@@ -176,6 +190,22 @@ cd citeindex-rs && cargo run
 #   /quit   — exit
 ```
 
+### First run and migration behavior
+
+```bash
+# from the repository root
+cd citeindex-rs
+cargo run
+```
+
+On first startup against an existing legacy `corpus/`, CiteIndex will:
+
+1. Create `corpus/.citeindex/`.
+2. Import legacy corpus artifacts and legacy memory logs into the v12 store.
+3. Mark that bootstrap as complete so later requests run directly from `.citeindex`.
+
+For new work, use normal ingest commands or the TUI `/ingest` mode. Do not add new documents manually into the old legacy `corpus/{folder}/` layout if you expect them to appear automatically after migration.
+
 ---
 
 ## Architecture
@@ -184,9 +214,9 @@ CiteIndex is a **hybrid Rust + Python** system:
 
 | Layer | Language | Role |
 |-------|----------|------|
-| **TUI & Orchestrator** | Rust | Terminal UI (ratatui), plugin system, memory DAG, Python IPC |
-| **AI Engine** | Python | 7-agent pipeline, LLM integration, document parsing, OCR |
-| **Storage** | Files | `corpus/{hash}/` with `csl.json`, `document.json`, `merkle.json` |
+| **TUI & Orchestrator** | Rust | Terminal UI (ratatui), runtime bridge, storage preparation, memory view, Python NDJSON IPC |
+| **AI Engine** | Python | Agent adapters, ingestion pipelines, chat/search logic, OCR/document parsing |
+| **Storage** | Files + indexes | Persistent v12 store under `corpus/.citeindex/`, with legacy `corpus/` compatibility import |
 
 ### Key design rules
 
@@ -199,12 +229,24 @@ CiteIndex is a **hybrid Rust + Python** system:
 
 ```
 corpus/
-└── {sha256-hash}/
-    ├── csl.json          # CSL-JSON citation metadata
-    ├── document.json     # Structural nodes (pages → columns → paragraphs → lines)
-    ├── merkle.json       # Hierarchical Merkle tree
-    └── retrieval.json    # Inverted index for BM25
+├── .citeindex/
+│   ├── indexes/
+│   │   ├── document_index/
+│   │   ├── memory_index/
+│   │   └── claim_index/
+│   ├── documents/
+│   │   ├── sources/
+│   │   ├── structured/
+│   │   └── transcripts/
+│   └── memory/
+│       └── sessions/
+└── {legacy-folder}/
+    ├── csl.json
+    ├── document.json
+    └── merkle.json
 ```
+
+The `.citeindex/` tree is now the runtime source of truth. The legacy folders remain supported for migration and compatibility.
 
 ---
 

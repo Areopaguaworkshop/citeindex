@@ -4,7 +4,7 @@
 //! Matches `rust_core_orchestration.yaml`.
 
 use crate::config::CiteIndexConfig;
-use crate::ipc::AgentRuntime;
+use crate::ipc::{prepare_runtime_storage, AgentRuntime};
 use crate::memory::{MemoryEntry, MemoryStore};
 use citeindex_kernel::storage::StorageLayout;
 use serde_json::Value;
@@ -23,10 +23,14 @@ impl Engine {
         let storage_layout = StorageLayout::new(config.corpus_root.join(".citeindex"));
         let legacy_memory_dir = config.corpus_root.join(".memory");
         let memory = MemoryStore::new(&storage_layout.sessions_dir, Some(&legacy_memory_dir));
-        let corpus_root = config.corpus_root.to_string_lossy().to_string();
+        if let Err(error) = prepare_runtime_storage(&config.corpus_root, &storage_layout.root) {
+            tracing::warn!(
+                "Failed to prepare runtime storage from legacy corpus: {}",
+                error
+            );
+        }
         let runtime = AgentRuntime::new(
             &config.python_bin,
-            &corpus_root,
             &storage_layout.root.to_string_lossy(),
             &config.llm.model,
         );

@@ -21,24 +21,69 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 struct KernelToolState {
+    ctx: ToolContext,
+}
+
+impl KernelToolState {
+    fn new(storage_root: PathBuf) -> anyhow::Result<Self> {
+        let layout = StorageLayout::new(storage_root);
+        let ctx = tools::persistent_context(&layout)?;
+        Ok(Self { ctx })
+    }
+
+    fn persist_indexed_document_artifacts(&mut self, params: &Value) -> anyhow::Result<()> {
+        let Some(csl) = params
+            .get("standardized_csl_json")
+            .or_else(|| params.get("csl_json"))
+        else {
+            return Ok(());
+        };
+
+        let doc_id = params
+            .get("doc_id")
+            .and_then(|value| value.as_str())
+            .or_else(|| preferred_str(csl, &["id", "content_hash"]))
+            .context("missing doc_id for persistent tree write")?;
+
+        write_page_index_tree(
+            &self.ctx.documents_dir,
+            doc_id,
+            csl,
+            params.get("document_json"),
+            params.get("merkle_tree"),
+        )?;
+
+        persist_transcript_artifact(
+            &self.ctx.documents_dir,
+            doc_id,
+            params.get("transcript_json"),
+        )?;
+        persist_source_artifact(
+            &self.ctx.sources_dir,
+            doc_id,
+            params.get("input_ref"),
+            params.get("source_snapshot_path"),
+            params.get("cleanup_source_snapshot"),
+        )
+    }
+}
+
+struct RuntimeStorageBootstrap {
     corpus_root: PathBuf,
     bootstrap_marker: PathBuf,
-    legacy_bootstrap_complete: bool,
     ctx: ToolContext,
     indexed_corpus_dirs: HashSet<String>,
     indexed_memory_entries: HashSet<String>,
 }
 
-impl KernelToolState {
+impl RuntimeStorageBootstrap {
     fn new(corpus_root: PathBuf, storage_root: PathBuf) -> anyhow::Result<Self> {
         let layout = StorageLayout::new(storage_root);
         let bootstrap_marker = layout.root.join("legacy_bootstrap_complete.json");
-        let legacy_bootstrap_complete = bootstrap_marker.exists();
         let ctx = tools::persistent_context(&layout)?;
         Ok(Self {
             corpus_root,
             bootstrap_marker,
-            legacy_bootstrap_complete,
             ctx,
             indexed_corpus_dirs: HashSet::new(),
             indexed_memory_entries: HashSet::new(),
@@ -46,7 +91,7 @@ impl KernelToolState {
     }
 
     fn bootstrap_legacy_data_if_needed(&mut self) -> anyhow::Result<()> {
-        if self.legacy_bootstrap_complete {
+        if self.bootstrap_marker.exists() {
             return Ok(());
         }
 
@@ -60,7 +105,6 @@ impl KernelToolState {
             "memory_entries_imported": self.indexed_memory_entries.len(),
         });
         fs::write(&self.bootstrap_marker, serde_json::to_vec_pretty(&marker)?)?;
-        self.legacy_bootstrap_complete = true;
         Ok(())
     }
 
@@ -195,7 +239,7 @@ impl KernelToolState {
             "language": language,
         });
 
-        self.write_document_tree(
+        write_page_index_tree(
             &self.ctx.documents_dir,
             params
                 .get("doc_id")
@@ -210,58 +254,16 @@ impl KernelToolState {
             .map_err(anyhow::Error::from)?;
         Ok(())
     }
+}
 
-    fn persist_indexed_document_artifacts(&mut self, params: &Value) -> anyhow::Result<()> {
-        let Some(csl) = params
-            .get("standardized_csl_json")
-            .or_else(|| params.get("csl_json"))
-        else {
-            return Ok(());
-        };
-
-        let doc_id = params
-            .get("doc_id")
-            .and_then(|value| value.as_str())
-            .or_else(|| preferred_str(csl, &["id", "content_hash"]))
-            .context("missing doc_id for persistent tree write")?;
-
-        self.write_document_tree(
-            &self.ctx.documents_dir,
-            doc_id,
-            csl,
-            params.get("document_json"),
-            params.get("merkle_tree"),
-        )?;
-
-        persist_transcript_artifact(
-            &self.ctx.documents_dir,
-            doc_id,
-            params.get("transcript_json"),
-        )?;
-        persist_source_artifact(
-            &self.ctx.sources_dir,
-            doc_id,
-            params.get("input_ref"),
-            params.get("source_snapshot_path"),
-            params.get("cleanup_source_snapshot"),
-        )
-    }
-
-    fn write_document_tree(
-        &self,
-        documents_dir: &Path,
-        doc_id: &str,
-        csl: &Value,
-        document: Option<&Value>,
-        merkle: Option<&Value>,
-    ) -> anyhow::Result<()> {
-        write_page_index_tree(documents_dir, doc_id, csl, document, merkle)
-    }
+pub fn prepare_runtime_storage(corpus_root: &Path, storage_root: &Path) -> anyhow::Result<()> {
+    let mut bootstrap =
+        RuntimeStorageBootstrap::new(corpus_root.to_path_buf(), storage_root.to_path_buf())?;
+    bootstrap.bootstrap_legacy_data_if_needed()
 }
 
 /// v12 agent runtime bridge used by the legacy core engine.
 pub struct AgentRuntime {
-    corpus_root: String,
     storage_dir: String,
     default_model: String,
     coordinator: Mutex<AgentProcess>,
@@ -272,14 +274,8 @@ pub struct AgentRuntime {
 
 impl AgentRuntime {
     /// Build a new bridge backed by the thin v12 Python adapters.
-    pub fn new(
-        python_bin: &str,
-        corpus_root: &str,
-        storage_dir: &str,
-        default_model: &str,
-    ) -> Self {
+    pub fn new(python_bin: &str, storage_dir: &str, default_model: &str) -> Self {
         Self {
-            corpus_root: corpus_root.to_string(),
             storage_dir: storage_dir.to_string(),
             default_model: default_model.to_string(),
             coordinator: Mutex::new(agent_process(
@@ -492,16 +488,12 @@ impl AgentRuntime {
     ) -> anyhow::Result<()> {
         let mut tool_state = self.tool_state.lock().await;
         if tool_state.is_none() {
-            *tool_state = Some(KernelToolState::new(
-                PathBuf::from(&self.corpus_root),
-                PathBuf::from(&self.storage_dir),
-            )?);
+            *tool_state = Some(KernelToolState::new(PathBuf::from(&self.storage_dir))?);
         }
 
         let state = tool_state
             .as_mut()
             .context("kernel tool runtime not initialized")?;
-        state.bootstrap_legacy_data_if_needed()?;
 
         let tool_manifest = tools::AgentManifest {
             name: agent.name.0.clone(),
@@ -520,17 +512,6 @@ impl AgentRuntime {
             if let Err(error) = state.persist_indexed_document_artifacts(&call.params) {
                 response.result = None;
                 response.error = Some(tools::ToolError::IoError(error.to_string()).to_payload());
-            }
-        }
-
-        if call.tool == "memory_save" {
-            if let Some(memory_id) = response
-                .result
-                .as_ref()
-                .and_then(|value| value.get("memory_id"))
-                .and_then(|value| value.as_str())
-            {
-                state.indexed_memory_entries.insert(memory_id.to_string());
             }
         }
 
@@ -1104,6 +1085,90 @@ mod tests {
             "<html>snapshot</html>"
         );
         assert!(!snapshot.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_prepare_runtime_storage_migrates_legacy_corpus_once() {
+        let root = env::temp_dir().join(format!(
+            "citeindex-runtime-storage-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let corpus_root = root.join("corpus");
+        let storage_root = corpus_root.join(".citeindex");
+        let legacy_doc = corpus_root.join("legacy-doc");
+        let legacy_memory = corpus_root.join(".memory");
+        fs::create_dir_all(&legacy_doc).unwrap();
+        fs::create_dir_all(&legacy_memory).unwrap();
+
+        fs::write(
+            legacy_doc.join("csl.json"),
+            serde_json::to_string(&serde_json::json!({
+                "id": "doc-legacy",
+                "title": "Legacy Document",
+                "issued": {"date-parts": [[2024]]},
+                "type": "article-journal",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            legacy_doc.join("document.json"),
+            serde_json::to_string(&serde_json::json!({
+                "nodes": [{
+                    "node_id": "doc-legacy:p1:para1:abcd1234",
+                    "section_path": "p1",
+                    "text": "Legacy paragraph",
+                    "sha256": "leaf-hash",
+                    "page": 1,
+                    "paragraph": 1,
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            legacy_doc.join("merkle.json"),
+            serde_json::to_string(&serde_json::json!({
+                "root": "root-hash",
+                "levels": [["leaf-hash"]],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            legacy_memory.join("thread-1.jsonl"),
+            format!(
+                "{}\n",
+                serde_json::to_string(&serde_json::json!({
+                    "entry_id": "mem-legacy",
+                    "timestamp": "2026-04-05T12:00:00+00:00",
+                    "thread_id": "thread-1",
+                    "query": "Legacy query",
+                    "response": "Legacy response",
+                    "evidence_node_ids": ["doc-legacy:p1:para1:abcd1234"],
+                    "sha256": "legacy-memory-hash",
+                }))
+                .unwrap()
+            ),
+        )
+        .unwrap();
+
+        prepare_runtime_storage(&corpus_root, &storage_root).unwrap();
+        prepare_runtime_storage(&corpus_root, &storage_root).unwrap();
+
+        assert!(storage_root.join("legacy_bootstrap_complete.json").exists());
+        assert!(storage_root
+            .join("documents")
+            .join("structured")
+            .join("doc-legacy.citeindex.json")
+            .exists());
+        assert!(storage_root
+            .join("memory")
+            .join("sessions")
+            .join("thread-1.jsonl")
+            .exists());
+
         fs::remove_dir_all(root).unwrap();
     }
 
