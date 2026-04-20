@@ -24,6 +24,8 @@ def _run_ingest(args: argparse.Namespace) -> int:
         doc_type_override=args.type,
         use_layout_analysis=not args.no_layout,
         is_primary=args.is_primary,
+        use_pageindex=args.use_pageindex,
+        pageindex_model=args.pageindex_model,
     )
     orchestrator = CiteIndexIngestionOrchestrator(
         corpus_root=args.corpus_root,
@@ -161,6 +163,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--is-primary",
         action="store_true",
         help="Mark source as primary (line-level granularity). Default: secondary (paragraph-level)",
+    )
+    ingest_parser.add_argument(
+        "--use-pageindex",
+        action="store_true",
+        help="Use PageIndex LLM-driven tree building for section hierarchy (requires Ollama)",
+    )
+    ingest_parser.add_argument(
+        "--pageindex-model",
+        default="ollama/qwen3.5:cloud",
+        help="LLM model for PageIndex tree building (default: ollama/qwen3.5:cloud)",
     )
     ingest_parser.add_argument(
         "--citation-style",

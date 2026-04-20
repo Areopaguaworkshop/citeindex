@@ -178,6 +178,8 @@ def run(
     else:
         doc_type = determine_doc_type(pdf_path, num_pages)
 
+    pageindex_tree_json = None  # populated if cfg.use_pageindex and MinerU path
+
     # ── Step 1: GROBID ─────────────────────────────────────────────
     grobid_metadata, grobid_references = _run_grobid(pdf_path)
 
@@ -198,6 +200,17 @@ def run(
 
         # Build section-hierarchical document structure
         document_structure = content_list_to_document_structure(content_list, page_number_map)
+
+        # ── PageIndex enhancement (optional) ───────────────────────
+        pageindex_tree_json = None
+        if cfg.use_pageindex:
+            from .pageindex_tree import run_pageindex_tree, pageindex_to_citeindex_tree
+            pi_result = run_pageindex_tree(pdf_path, model=cfg.pageindex_model)
+            if pi_result and pi_result.get("structure"):
+                logger.info("PageIndex tree available, will use for .citeindex.json")
+                pageindex_tree_json = pi_result
+            else:
+                logger.info("PageIndex tree-building failed or empty, using MinerU structure")
 
         # Build paragraphs for nodes/merkle (using actual page numbers)
         page_paragraphs = content_list_to_paragraphs(content_list, page_number_map)
@@ -288,6 +301,21 @@ def run(
         "nodes": nodes,
     }
 
+    # ── Build PageIndex-enhanced CiteIndex tree if available ────────
+    extra: Dict[str, Any] = {}
+    if pageindex_tree_json is not None:
+        from .pageindex_tree import pageindex_to_citeindex_tree
+        ci_tree = pageindex_to_citeindex_tree(
+            pi_result=pageindex_tree_json,
+            doc_id=source_id,
+            csl_data=csl,
+            page_number_map=page_number_map,
+            merkle_root=merkle_tree.get("root"),
+        )
+        extra["pageindex_tree"] = ci_tree
+        logger.info("PageIndex → CiteIndex tree converted: %d sections",
+                     len(ci_tree.get("level_1", [])))
+
     return PipelineResult(
         status="ok",
         source_id=source_id,
@@ -295,6 +323,7 @@ def run(
         csl_json=csl,
         document_json=document_json,
         merkle_tree=merkle_tree,
+        extra=extra,
     )
 
 
