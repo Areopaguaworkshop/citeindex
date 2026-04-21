@@ -141,7 +141,14 @@ class SearchPipeline:
         self.corpus_root = corpus_root
         self.schema_version = schema_version
 
-    def search(self, query: str, top_k: int = 20, cite_style: str = "chicago-author-date") -> Dict[str, Any]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 20,
+        cite_style: str = "chicago-author-date",
+        retrieval: str = "auto",
+        pageindex_model: str = "ollama/qwen3.5:cloud",
+    ) -> Dict[str, Any]:
         from .corpus_loader import CorpusLoader
         from .indexing import IndexingAgent
         from .query_planner import QueryPlanner
@@ -158,10 +165,6 @@ class SearchPipeline:
                 "query": query,
             }
 
-        # Build indexes
-        indexer = IndexingAgent(self.schema_version)
-        index_output = indexer.run(loader.all_nodes)
-
         # Plan query
         planner = QueryPlanner(self.schema_version)
         query_plan = planner.plan(query, csl_registry=loader.csl_registry)
@@ -174,14 +177,26 @@ class SearchPipeline:
                 "query": query,
             }
 
-        # Retrieve
-        retriever = RetrievalAgent(self.schema_version, top_k=top_k)
-        result = retriever.run(
-            query_plan.to_dict(),
-            loader.all_nodes,
-            index_output.inverted_index,
-            loader.csl_registry,
+        # Decide retrieval method
+        use_pageindex = (
+            retrieval == "pageindex"
+            or (retrieval == "auto" and "pageindex_tree_search" in query_plan.retrieval_policy)
         )
+
+        if use_pageindex:
+            result = self._pageindex_search(query, top_k, pageindex_model)
+        else:
+            # Build indexes and use BM25
+            indexer = IndexingAgent(self.schema_version)
+            index_output = indexer.run(loader.all_nodes)
+
+            retriever = RetrievalAgent(self.schema_version, top_k=top_k)
+            result = retriever.run(
+                query_plan.to_dict(),
+                loader.all_nodes,
+                index_output.inverted_index,
+                loader.csl_registry,
+            )
 
         # Enrich results with citation info
         csl_by_source: Dict[str, Dict[str, Any]] = {}
@@ -215,7 +230,22 @@ class SearchPipeline:
             "status": "ok",
             "query_id": query_plan.query_id,
             "intent_type": query_plan.intent_type,
+            "retrieval_method": "pageindex" if use_pageindex else "bm25",
             "total_results": len(enriched_nodes),
             "results": enriched_nodes,
             "retrieval_debug": result.retrieval_debug,
         }
+
+    def _pageindex_search(
+        self, query: str, top_k: int, model: str
+    ) -> "RetrievalResult":
+        """Run PageIndex reasoning-based retrieval."""
+        from .pageindex_retrieval import PageIndexRetrievalAgent
+        from .models import RetrievalResult
+
+        agent = PageIndexRetrievalAgent(
+            corpus_root=self.corpus_root,
+            model=model,
+            top_k=top_k,
+        )
+        return agent.run(query=query)

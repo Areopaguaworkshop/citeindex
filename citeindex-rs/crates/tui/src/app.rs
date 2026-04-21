@@ -618,17 +618,56 @@ impl App {
                     }
                 }
             }
-            _ => {
+            Mode::PageIndex => {
                 self.chat_window.push(ChatMessage {
                     role: MessageRole::System,
-                    content: format!(
-                        "{} mode: processing '{}' not yet implemented in TUI",
-                        self.mode.label(),
-                        text
-                    ),
+                    content: format!("PageIndex reasoning search: {} ...", text),
                     citations: Vec::new(),
                 });
+
+                match self.engine.search(text).await {
+                    Ok(response) => {
+                        let results = response.get("results").and_then(|r| r.as_array());
+
+                        if let Some(results) = results {
+                            let count = results.len();
+                            self.chat_window.push(ChatMessage {
+                                role: MessageRole::System,
+                                content: format!("PageIndex found {} relevant sections.", count),
+                                citations: Vec::new(),
+                            });
+                            for r in results.iter().take(5) {
+                                let heading = r.get("section_path")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("(unknown section)");
+                                let text_preview = r.get("text")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let preview = truncate(text_preview, 120);
+                                self.chat_window.push(ChatMessage {
+                                    role: MessageRole::Assistant,
+                                    content: format!("§ {}\n{}", heading, preview),
+                                    citations: Vec::new(),
+                                });
+                            }
+                        } else {
+                            self.chat_window.push(ChatMessage {
+                                role: MessageRole::System,
+                                content: "No relevant sections found.".into(),
+                                citations: Vec::new(),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        self.chat_window.push(ChatMessage {
+                            role: MessageRole::System,
+                            content: format!("PageIndex search error: {}", e),
+                            citations: Vec::new(),
+                        });
+                    }
+                }
             }
+            _ => {
         }
 
         self.busy = false;

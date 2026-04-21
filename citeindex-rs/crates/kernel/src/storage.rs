@@ -696,4 +696,33 @@ steps = [
 ]
 "#,
     ),
+    (
+        "pageindex_retrieval_agent.toml",
+        r#"[agent]
+name = "PageIndexRetrievalAgent"
+entry_point = "python -m citeindex.agents.pageindex_retrieval"
+
+[llm_contract]
+model_tier = "cloud_standard"
+grounding = "required"
+temperature = 0.0
+max_tokens = 4096
+output_schema = "retrieval_result_v1"
+
+[activation]
+skill_bind = ["pageindex_search", "reasoning_retrieval"]
+trigger = "reasoning_query"
+priority = "foreground"
+
+[tools_allowed]
+tools = ["tree_load", "tantivy_search"]
+
+[inner_loop]
+steps = [
+    "PLAN: Load PageIndex tree structure for target documents",
+    "THINK: LLM reasons over tree hierarchy to identify relevant sections",
+    "ACT: Fetch page content for identified sections, return ranked evidence",
+]
+"#,
+    ),
 ];

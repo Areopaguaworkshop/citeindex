@@ -53,7 +53,13 @@ def _run_search(args: argparse.Namespace) -> int:
     pipeline = SearchPipeline(
         corpus_root=args.corpus_root,
     )
-    result = pipeline.search(args.query, top_k=args.top_k, cite_style=args.cite_style)
+    result = pipeline.search(
+        args.query,
+        top_k=args.top_k,
+        cite_style=args.cite_style,
+        retrieval=args.retrieval,
+        pageindex_model=args.pageindex_model,
+    )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result.get("status") == "ok" else 1
 
@@ -206,7 +212,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     search_parser = subparsers.add_parser(
-        "search", help="Deterministic BM25 search over ingested corpus"
+        "search", help="Search over ingested corpus (BM25 or PageIndex reasoning)"
     )
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument(
@@ -219,6 +225,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--cite-style",
         default="chicago-author-date",
         help="Citation style for formatted output (default: chicago-author-date)",
+    )
+    search_parser.add_argument(
+        "--retrieval",
+        choices=["bm25", "pageindex", "auto"],
+        default="auto",
+        help="Retrieval method: bm25 (keyword), pageindex (LLM reasoning), auto (query planner decides). Default: auto",
+    )
+    search_parser.add_argument(
+        "--pageindex-model",
+        default="ollama/qwen3.5:cloud",
+        help="LLM model for PageIndex retrieval (default: ollama/qwen3.5:cloud)",
     )
     search_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Verbose logs"

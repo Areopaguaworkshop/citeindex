@@ -58,7 +58,9 @@ It uses **litellm** for LLM calls (supports Ollama natively) and **PyPDF2** for 
 
 ## Implementation Plan
 
-### Phase 1: Vendor PageIndex + Wire Ollama (`glm-5.1:cloud`)
+> **Status: Phases 1–3 complete.** Phase 4 (CLI search flag + TUI) is pending.
+
+### Phase 1: Vendor PageIndex + Wire Ollama (`glm-5.1:cloud`) ✅
 
 **Goal:** Get PageIndex running locally with `ollama/glm-5.1:cloud`, no external API.
 
@@ -82,7 +84,7 @@ citeindex/ingestion/pipelines/pageindex/
 └── config.yaml        (model: ollama/glm-5.1:cloud)
 ```
 
-### Phase 2: Tree-Building Pipeline (Ingestion)
+### Phase 2: Tree-Building Pipeline (Ingestion) ✅
 
 **Goal:** After MinerU parses a PDF, use PageIndex's LLM to build a better section hierarchy, then convert to CiteIndex's `PageIndexTree` format.
 
@@ -127,7 +129,7 @@ citeindex/ingestion/pipelines/pageindex/
    - If PageIndex fails (LLM timeout, bad JSON) → fall back to current `content_list_to_document_structure()`
    - Add `--use-pageindex` flag to CLI / `IngestionConfig.use_pageindex: bool = False`
 
-### Phase 3: Reasoning-Based Retrieval Agent
+### Phase 3: Reasoning-Based Retrieval Agent ✅
 
 **Goal:** Add LLM-driven tree-search retrieval as an alternative to BM25.
 

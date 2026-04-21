@@ -95,7 +95,7 @@ class QueryPlanner:
             search_terms=search_terms,
             exact_phrases=exact_phrases,
             section_targets=section_targets,
-            retrieval_policy="metadata_filter -> bm25 -> trace_filter",
+            retrieval_policy=self._select_retrieval_policy(intent_type),
             clarification_required=clarification_required,
             clarification_questions=clarification_questions,
         )
@@ -191,3 +191,16 @@ class QueryPlanner:
         for ref in page_refs:
             targets.append(f"p{ref}")
         return targets
+
+    @staticmethod
+    def _select_retrieval_policy(intent_type: str) -> str:
+        """Select retrieval policy based on query intent.
+
+        - Keyword-centric intents (fact, definition, citation_lookup):
+          Use BM25 deterministic pipeline.
+        - Reasoning-centric intents (comparison, timeline):
+          Use PageIndex tree-search (LLM reasoning), fall back to BM25.
+        """
+        if intent_type in ("comparison", "timeline"):
+            return "pageindex_tree_search -> bm25_fallback"
+        return "metadata_filter -> bm25 -> trace_filter"

@@ -805,6 +805,13 @@ def handle_structure(
     }
 
 
+def _handle_pageindex_retrieval(
+    inputs: Dict[str, Any], _call_tool: Optional[ToolCaller] = None
+) -> Dict[str, Any]:
+    from .pageindex_retrieval import handle_pageindex_retrieval
+    return handle_pageindex_retrieval(inputs, _call_tool)
+
+
 HANDLERS: Dict[str, Callable[[Dict[str, Any], Optional[ToolCaller]], Dict[str, Any]]] = {
     "CoordinatorAgent": handle_coordinator,
     "LibrarianAgent": handle_librarian,
@@ -815,6 +822,7 @@ HANDLERS: Dict[str, Callable[[Dict[str, Any], Optional[ToolCaller]], Dict[str, A
     "LiteratureReviewAgent": handle_literature_review,
     "HierarchyClassificationAgent": handle_hierarchy_classification,
     "StructureAgent": handle_structure,
+    "PageIndexRetrievalAgent": _handle_pageindex_retrieval,
 }
 
 
