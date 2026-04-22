@@ -668,6 +668,16 @@ impl App {
                 }
             }
             _ => {
+                self.chat_window.push(ChatMessage {
+                    role: MessageRole::System,
+                    content: format!(
+                        "{} mode: processing '{}' not yet implemented in TUI",
+                        self.mode.label(),
+                        text
+                    ),
+                    citations: Vec::new(),
+                });
+            }
         }
 
         self.busy = false;

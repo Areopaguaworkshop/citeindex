@@ -39,7 +39,7 @@ class IngestionConfig:
     doc_type_override: Optional[str] = None
     use_layout_analysis: bool = True
     is_primary: bool = False
-    use_pageindex: bool = False
+    use_pageindex: bool = True
     pageindex_model: str = "ollama/qwen3.5:cloud"
 
 

@@ -58,7 +58,7 @@ It uses **litellm** for LLM calls (supports Ollama natively) and **PyPDF2** for 
 
 ## Implementation Plan
 
-> **Status: Phases 1–3 complete.** Phase 4 (CLI search flag + TUI) is pending.
+> **Status: All 4 phases complete.**
 
 ### Phase 1: Vendor PageIndex + Wire Ollama (`glm-5.1:cloud`) ✅
 
@@ -152,7 +152,7 @@ citeindex/ingestion/pipelines/pageindex/
    - **Reasoning-heavy queries** (multi-step, cross-section, "compare X and Y") → PageIndex tree-search
    - **Hybrid** → BM25 first for candidate docs, then PageIndex for section-level reasoning
 
-### Phase 4: CLI & TUI Integration
+### Phase 4: CLI & TUI Integration ✅
 
 1. CLI: `citeindex ingest "paper.pdf" --use-pageindex` enables PageIndex tree-building
 2. CLI: `citeindex search "query" --retrieval pageindex` uses reasoning-based retrieval
