@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from .deterministic import hash_payload
 from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, PipelineResult
 from .pipelines import digital_pdf, media, scanned_pdf, url_article
+from .markdown_export import write_library_markdown
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,20 @@ class CiteIndexIngestionOrchestrator:
                 pass
 
             write_json(os.path.join(document_path, "ingestion_output.json"), output)
+
+            # Generate human-readable library markdown
+            try:
+                library_md_path = write_library_markdown(
+                    corpus_root=self.corpus_root,
+                    csl_json=standardized_csl,
+                    document_json=sub_result.document_json,
+                    transcript_json=sub_result.transcript_json,
+                    resource_type=resource_type,
+                )
+                output["library_md_path"] = library_md_path
+            except Exception:
+                logger.warning("Library markdown generation failed", exc_info=True)
+
             return output
         except Exception as e:
             return self._failure(
