@@ -1,10 +1,10 @@
 """PageIndex tree-building pipeline and schema converter.
 
 Uses VectifyAI/PageIndex (vendored) to build an LLM-driven hierarchical
-section tree from a PDF, then converts the result to CiteIndex's
-PageIndexTree JSON format.
+section tree from a PDF or Markdown document, then converts the result to
+CiteIndex's PageIndexTree JSON format.
 
-Data flow:
+Data flow (PDF):
   PDF ─→ PageIndex page_index_main() ─→ PageIndex tree
   MinerU middle.json ─→ page_extractor.py ─→ page_number_map
   GROBID ─→ csl.json ─→ level_0
@@ -12,23 +12,30 @@ Data flow:
          pageindex_to_citeindex_tree()
                          ↓
          {doc_id}.citeindex.json
+
+Data flow (URL/Markdown):
+  HTML ─→ trafilatura ─→ markdown text
+                         ↓
+  PageIndex md_to_tree() ─→ PageIndex tree
+                         ↓
+         pageindex_to_citeindex_tree()
 """
 
+import json
 import logging
+import os
+import tempfile
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 # Default model for PageIndex operations (local Ollama)
-DEFAULT_PAGEINDEX_MODEL = "ollama/glm-5.1:cloud"
+PAGEINDEX_MODEL = "ollama/qwen3.5:cloud"
 
 
 def run_pageindex_tree(
     pdf_path: str,
-    model: str = DEFAULT_PAGEINDEX_MODEL,
-    toc_check_page_num: int = 20,
-    max_page_num_each_node: int = 10,
-    max_token_num_each_node: int = 20000,
+    model: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Run PageIndex tree-building on a PDF.
 
@@ -36,19 +43,19 @@ def run_pageindex_tree(
     or *None* on failure.
     """
     try:
-        from .pageindex import page_index
+        from .pageindex import page_index_main
+        from .pageindex.utils import ConfigLoader
 
-        result = page_index(
-            doc=pdf_path,
-            model=model,
-            toc_check_page_num=toc_check_page_num,
-            max_page_num_each_node=max_page_num_each_node,
-            max_token_num_each_node=max_token_num_each_node,
-            if_add_node_id="yes",
-            if_add_node_summary="yes",
-            if_add_node_text="no",
-            if_add_doc_description="no",
-        )
+        opt = ConfigLoader().load({
+            "model": model or PAGEINDEX_MODEL,
+            "if_add_node_id": "yes",
+            "if_add_node_summary": "yes",
+            "if_add_node_text": "no",
+            "if_add_doc_description": "no",
+        })
+
+        logger.info("Running PageIndex tree-building on %s (model=%s)", pdf_path, opt.model)
+        result = page_index_main(pdf_path, opt)
 
         structure = result.get("structure", [])
         if not structure:
@@ -65,6 +72,58 @@ def run_pageindex_tree(
     except Exception:
         logger.warning("PageIndex tree-building failed for %s", pdf_path, exc_info=True)
         return None
+
+
+def run_pageindex_md_tree(
+    markdown_text: str,
+    model: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Run PageIndex tree-building on markdown text (e.g. from URL articles).
+
+    Writes markdown to a temp file, runs ``md_to_tree()``, returns the raw
+    PageIndex result dict or *None* on failure.
+    """
+    import asyncio
+
+    fd = None
+    tmp_path = None
+    try:
+        from .pageindex.page_index_md import md_to_tree
+
+        use_model = model or PAGEINDEX_MODEL
+
+        # Write markdown to temp file (PageIndex expects a file path)
+        fd, tmp_path = tempfile.mkstemp(prefix="citeindex_pi_", suffix=".md")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(markdown_text)
+        fd = None  # os.fdopen closes the fd
+
+        logger.info("Running PageIndex md_to_tree (model=%s, %d chars)", use_model, len(markdown_text))
+        result = asyncio.run(md_to_tree(
+            md_path=tmp_path,
+            if_thinning=False,
+            if_add_node_summary="yes",
+            summary_token_threshold=200,
+            model=use_model,
+            if_add_doc_description="no",
+            if_add_node_text="no",
+            if_add_node_id="yes",
+        ))
+
+        structure = result.get("structure", [])
+        if not structure:
+            logger.warning("PageIndex md_to_tree returned empty structure")
+            return None
+
+        logger.info("PageIndex md_to_tree built: %d top-level sections", len(structure))
+        return result
+
+    except Exception:
+        logger.warning("PageIndex md_to_tree failed", exc_info=True)
+        return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 # ---------------------------------------------------------------------------

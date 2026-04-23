@@ -594,6 +594,26 @@ def run(
     # ── Step 8: Merkle tree (no retrieval index) ──────────────────
     merkle_tree = build_merkle_for_nodes(nodes)
 
+    # ── PageIndex enhancement (optional) ──────────────────────────
+    extra: Dict[str, Any] = {
+        "source_snapshot_path": _write_html_snapshot(html),
+        "cleanup_source_snapshot": True,
+    }
+    if cfg.use_pageindex and markdown_text.strip():
+        from .pageindex_tree import run_pageindex_md_tree, pageindex_to_citeindex_tree
+        pi_result = run_pageindex_md_tree(markdown_text, model=cfg.pageindex_model)
+        if pi_result and pi_result.get("structure"):
+            ci_tree = pageindex_to_citeindex_tree(
+                pi_result=pi_result,
+                doc_id=source_id,
+                csl_data=csl_json,
+                page_number_map={},  # URLs have no physical page numbers
+                merkle_root=merkle_tree.get("root"),
+            )
+            extra["pageindex_tree"] = ci_tree
+            logger.info("PageIndex tree built for URL: %d sections",
+                        len(ci_tree.get("level_1", [])))
+
     document_json: Dict[str, Any] = {
         "source_id": source_id,
         "source_type": "url_article",
@@ -617,8 +637,5 @@ def run(
         csl_json=csl_json,
         document_json=document_json,
         merkle_tree=merkle_tree,
-        extra={
-            "source_snapshot_path": _write_html_snapshot(html),
-            "cleanup_source_snapshot": True,
-        },
+        extra=extra,
     )
