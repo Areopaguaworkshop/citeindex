@@ -1,6 +1,6 @@
 [project]
 name = "citeindex"
-version = "0.11.0"
+version = "0.12.0"
 description = "AI research knowledge infrastructure with citation indexing and Merkle-verified retrieval."
 authors = [{ name = "ajia", email = "yyjfwoaini@gmail.com" }]
 dependencies = [
