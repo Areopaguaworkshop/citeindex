@@ -35,12 +35,13 @@ citeindex paper.pdf --llm ollama/qwen3 --type thesis --is-primary
 citeindex paper.pdf --text-direction vertical --vertical-lang ch
 citeindex scanned.pdf --lang auto --page-range "1-10"
 citeindex paper.pdf --no-layout  # disable column/footnote detection
+citeindex -v paper.pdf           # verbose/debug logging
 ```
 
 ## Python API
 
 ```python
-from citeindex import ingest, IngestionConfig
+from citeindex import ingest, IngestionConfig, IngestionFailure, PipelineResult
 
 # Simple
 result = ingest("paper.pdf")
@@ -64,6 +65,7 @@ CiteIndex automatically detects the input type and routes to the correct pipelin
 ```
 PDF → GROBID (metadata) → MinerU (layout) → DSPy reconciliation
     → document structure (pages/columns/paragraphs/lines)
+    → PageIndex tree (optional, LLM-driven)
     → Merkle tree → store to corpus/
 ```
 
@@ -71,6 +73,7 @@ PDF → GROBID (metadata) → MinerU (layout) → DSPy reconciliation
 - **MinerU** performs layout analysis (columns, footnotes, tables)
 - **DSPy** reconciles GROBID output with pattern extraction as fallback
 - Builds section-hierarchical document structure with actual page numbers
+- **PageIndex** builds LLM-driven section hierarchy (enabled by default)
 
 ### Scanned PDF
 
@@ -88,15 +91,18 @@ PDF → OCRmyPDF (normalize) → PaddleOCR (vertical detect) → MinerU (layout)
 ### URL Article
 
 ```
-URL → Playwright/requests (fetch) → trafilatura (content)
-    → Zotero (metadata) → CSL JSON → deterministic chunking
+URL → Playwright/requests (fetch) → trafilatura/readability (content)
+    → Zotero (metadata) → in-page citation guidance (regex → DSPy fallback)
+    → section-hierarchical paragraphs → PageIndex tree (optional)
     → hashes → Merkle tree → store to corpus/
 ```
 
 - **Playwright** renders JavaScript-heavy pages (fallback to **requests**)
-- **trafilatura** extracts clean text with heading structure
-- **Zotero** extracts citation metadata (title, authors, date, DOI)
-- Discovers in-page citation guidance (若要引用 / Cite this / etc.)
+- **trafilatura** extracts clean markdown with heading structure (fallback to **readability-lxml**)
+- **Zotero** extracts citation metadata via translation-server (title, authors, date, DOI)
+- Discovers in-page citation guidance: 若要引用 / 引用格式 / Cite this / Zitierweise / Pour citer
+- Parses citation strings with regex first, DSPy fallback for unparseable formats
+- Citation guidance overrides Zotero/trafilatura metadata (more authoritative)
 - Supports batch crawling with `--all-url-article` and `--update-url-article`
 
 ### Media
@@ -114,13 +120,23 @@ URL/File → yt-dlp (download) → ffmpeg (audio) → WhisperX (transcription)
 
 ### Office & DJVU
 
-Office documents (`.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp`) and DJVU (`.djvu`) are converted to PDF via LibreOffice/ddjvu, then routed to the digital or scanned PDF pipeline.
+Office documents (`.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp`) are converted to PDF via **LibreOffice**, and DJVU (`.djvu`) via **ddjvu**, then routed to the digital or scanned PDF pipeline.
+
+### Citation Enrichment Cascade
+
+For PDF inputs, CiteIndex enriches metadata through a priority cascade:
+
+1. **GROBID** — deterministic metadata + references (primary)
+2. **LLM extraction** — DSPy-based citation parsing (fallback)
+3. **PDF metadata** — basic file metadata only (last resort)
+
+For web pages with ambiguous metadata, a local Perplexica search API can fill missing citation fields (title, author, publisher).
 
 ## Configuration Reference
 
 | Option | CLI Flag | Default | Description |
 |--------|----------|---------|-------------|
-| `llm_model` | `--llm` | `ollama/qwen3` | LLM model for citation extraction |
+| `llm_model` | `--llm` | `ollama/qwen3` | LLM model (`ollama/name` or `gemini/name`) |
 | `text_direction` | `--text-direction`, `-td` | `horizontal` | `horizontal`, `auto`, or `vertical` |
 | `vertical_lang` | `--vertical-lang` | `ch` | CJK language: `ch` (Chinese) or `japan` |
 | `lang` | `--lang`, `-l` | `auto` | OCR language (auto-detect or Tesseract code) |
@@ -128,23 +144,41 @@ Office documents (`.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp`) and 
 | `doc_type_override` | `--type`, `-t` | auto | `book`, `thesis`, `journal`, or `bookchapter` |
 | `use_layout_analysis` | `--no-layout` | `True` | Disable column/footnote detection |
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
-| `use_pageindex` | `--use-pageindex` | `False` | LLM-driven section hierarchy (requires Ollama) |
+| `use_pageindex` | `--use-pageindex` | `True` | LLM-driven section hierarchy (requires Ollama) |
 | `pageindex_model` | `--pageindex-model` | `ollama/qwen3.5:cloud` | LLM for PageIndex tree building |
 | `citation_style` | (API only) | `chicago-author-date` | CSL citation style for output |
 | `corpus_root` | `--corpus-root` | `corpus` | Output directory for ingested artifacts |
 | `schema_version` | `--schema-version` | `1.0.0` | Output schema version tag |
+| (CLI only) | `--crawl-depth` | `2` | Max BFS crawl depth for `--all-url-article` |
+| (CLI only) | `--crawl-max-pages` | `100` | Max pages for `--all-url-article` |
+| (CLI only) | `--verbose`, `-v` | off | Enable verbose/debug logging |
 
 ## Output
 
-Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) containing:
+Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) and a companion library markdown file:
+
+### Corpus artifacts (`corpus/Author_2024_Title/`)
 
 | File | Description |
 |------|-------------|
 | `csl.json` | Citation metadata (CSL-JSON with `ci_*` extensions: `content_hash`, `merkle_root`, `source_type`, `ingestion_timestamp`) |
-| `document.json` | Structured document tree (PageIndex) — sections, pages, paragraphs, lines |
+| `document.json` | Structured document tree — sections, pages, paragraphs, lines |
 | `merkle.json` | SHA-256 Merkle tree for integrity verification |
+| `transcript.json` | Timestamped transcript with speaker segments (media only) |
+| `media_metadata.json` | Source media metadata (media only) |
 | `ingestion_output.json` | Full ingestion result with all pipeline outputs |
-| `library.md` | Human-readable citation with extracted text and footnotes |
+
+### Library markdown (`library/Author_2024_Title.md`)
+
+Human-readable markdown with YAML front-matter, inline citation, page/section/timestamp headers with CSL-level detail, full extracted text, and footnotes. Written to `library/` (sibling of `corpus/`).
+
+### Ingestion log (`corpus/ingestion_log.jsonl`)
+
+Appended on every ingestion with `input_ref`, `resource_type`, `csl_id`, `merkle_root`, and `ingestion_timestamp`.
+
+### URL content hashes (`corpus/_url_content_hashes.json`)
+
+Persisted URL → content-hash mapping used by `--update-url-article` for change detection.
 
 ### Return Value
 
@@ -152,20 +186,44 @@ The `ingest()` function returns a dict:
 
 ```python
 {
+    "schema_version": "1.0.0",
     "status": "ok",                    # "ok" or "blocked"
     "document_path": "corpus/Author_2024_Title",
     "standardized_csl_json": { ... },  # Full CSL-JSON with ci_ extensions
     "sub_pipeline_outputs": { ... },   # Raw pipeline results
     "ingestion_log_entry": { ... },     # Log entry with merkle_root
+    "library_md_path": "library/Author_2024_Title.md",
 }
 
 # On failure:
 {
     "status": "blocked",
+    "source_id": "unknown",
     "stage": "detect_resource_type",
     "error_code": "unsupported_input",
     "error_message": "Unsupported input: ...",
     "next_action": "Provide PDF, URL, or media file",
+}
+```
+
+### Batch URL Ingestion Return
+
+The `ingest_all_urls()` method (triggered by `--all-url-article` / `--update-url-article`) returns:
+
+```python
+{
+    "status": "ok",
+    "root_url": "https://example.com/articles",
+    "discovered": 25,      # total article URLs found
+    "ingested": 20,        # newly ingested
+    "updated": 2,           # re-ingested (content changed)
+    "skipped": 3,           # unchanged (--update-url-article only)
+    "failed": 0,            # errors
+    "results": [            # per-URL status list
+        {"url": "...", "status": "ok"},
+        {"url": "...", "status": "unchanged"},
+        ...
+    ]
 }
 ```
 
