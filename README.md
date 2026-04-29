@@ -238,6 +238,27 @@ The `ingest_all_urls()` method (triggered by `--all-url-article` / `--update-url
 | Office | `.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp` |
 | DJVU | `.djvu` |
 
+## Citation
+
+If you use CiteIndex in your work, please cite it:
+
+**APA:**
+
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.12.0). MIT. https://github.com/ajia/citeindex
+
+**BibTeX:**
+
+```bibtex
+@software{citeindex2025,
+  author  = {ajia},
+  title   = {CiteIndex: Ingest sources with proper citation},
+  version = {0.12.0},
+  year    = {2025},
+  license = {MIT},
+  url     = {https://github.com/ajia/citeindex},
+}
+```
+
 ## License
 
 MIT
