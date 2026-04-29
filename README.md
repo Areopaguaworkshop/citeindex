@@ -8,11 +8,11 @@ Every claim is traced, verified, and cited — no hallucinations.
 ## Install
 
 ```bash
-# Using rye (recommended)
-rye sync
+# Using uv (recommended)
+uv pip install citeindex
 
 # Or pip
-pip install -e .
+pip install citeindex
 ```
 
 ## CLI
