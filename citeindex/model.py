@@ -769,7 +769,7 @@ class RefineWebCitation(dspy.Signature):
 class CitationLLM:
     """LLM handler for citation extraction using DSPy."""
 
-    def __init__(self, llm_model="ollama/qwen3"):
+    def __init__(self, llm_model="ollama/deepseek-v4-flash:cloud"):
         """Initialize the LLM."""
         self.llm = get_llm_model(llm_model, temperature=0.1)
         dspy.settings.configure(lm=self.llm)

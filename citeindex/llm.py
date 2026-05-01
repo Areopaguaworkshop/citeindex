@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Optional
 
 
-def get_llm_model(model_name: str = "ollama/qwen3", temperature: float = 0.1) -> dspy.LM:
+def get_llm_model(model_name: str = "ollama/deepseek-v4-flash:cloud", temperature: float = 0.1) -> dspy.LM:
     """
     Get a configured LLM model based on the model name.
     

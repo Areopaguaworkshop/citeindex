@@ -19,6 +19,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import fitz  # PyMuPDF — for image extraction
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -222,6 +224,7 @@ def _extract_footnote_marker(text: str) -> str:
 def content_list_to_document_structure(
     content_list: Any,
     page_number_map: Dict[int, int],
+    images: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build a section-hierarchical document structure from content_list.json.
 
@@ -337,13 +340,38 @@ def content_list_to_document_structure(
 
             para_n = len(page["paragraphs"]) + 1
             caption = text if text else ""
-            page["paragraphs"].append({
+            
+            # Look for a matching extracted image
+            image_path = None
+            if images:
+                img_bbox = item.get("bbox", [])
+                img_page_idx = page_idx
+                for img in images:
+                    if img.get("page_idx") == img_page_idx:
+                        # Match by bbox overlap if available
+                        ibbox = img.get("bbox", [])
+                        if ibbox and img_bbox:
+                            # Check if bounding boxes overlap significantly
+                            overlap_x = max(0, min(img_bbox[2], ibbox[2]) - max(img_bbox[0], ibbox[0]))
+                            overlap_y = max(0, min(img_bbox[3], ibbox[3]) - max(img_bbox[1], ibbox[1]))
+                            area_item = (img_bbox[2] - img_bbox[0]) * (img_bbox[3] - img_bbox[1])
+                            if area_item > 0 and (overlap_x * overlap_y) / area_item > 0.5:
+                                image_path = img.get("relative_path")
+                                break
+                        elif not image_path:
+                            # Fallback: assign first unmatched image on this page
+                            image_path = img.get("relative_path")
+            
+            para_data = {
                 "paragraph_id": f"p{actual_page}_para{para_n}",
                 "text": caption,
                 "type": "image_caption",
                 "section": current_section,
                 "bbox": bbox,
-            })
+            }
+            if image_path:
+                para_data["image_path"] = image_path
+            page["paragraphs"].append(para_data)
             continue
 
         # ── Discarded items ────────────────────────────────────────
@@ -418,6 +446,95 @@ def content_list_to_paragraphs(
         result.append((actual_page, page_texts[page_idx]))
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# PDF image extraction via PyMuPDF
+# ---------------------------------------------------------------------------
+
+def extract_pdf_images(
+    pdf_path: str,
+    output_dir: str,
+    source_id: str,
+    min_width: int = 100,
+    min_height: int = 100,
+) -> List[Dict[str, Any]]:
+    """Extract images from a PDF and save them to output_dir/images/.
+
+    Parameters
+    ----------
+    pdf_path : str
+        Path to the input PDF.
+    output_dir : str
+        Corpus artifact directory for this document (e.g. corpus/<slug>/).
+    source_id : str
+        Source identifier used for image filenames.
+    min_width, min_height : int
+        Minimum pixel dimensions to keep (filters out tiny icons/logos).
+
+    Returns
+    -------
+    list of dicts with keys: page_idx, bbox, relative_path, width, height.
+    """
+    images_dir = os.path.join(output_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
+    doc = fitz.open(pdf_path)
+    extracted: List[Dict[str, Any]] = []
+
+    for page_idx in range(doc.page_count):
+        page = doc[page_idx]
+        image_list = page.get_images(full=True)
+
+        for img_index, img_info in enumerate(image_list):
+            xref = img_info[0]
+            try:
+                base_image = doc.extract_image(xref)
+            except Exception:
+                logger.debug("Failed to extract image xref=%s on page %d", xref, page_idx)
+                continue
+
+            if not base_image:
+                continue
+
+            width = base_image.get("width", 0)
+            height = base_image.get("height", 0)
+
+            # Filter out tiny images (decorative lines, icons, etc.)
+            if width < min_width and height < min_height:
+                continue
+
+            ext = base_image.get("ext", "png")
+            image_bytes = base_image.get("image")
+            if not image_bytes:
+                continue
+
+            # Get the image bbox on the page for matching with content_list
+            bbox = (0, 0, 0, 0)
+            for item in page.get_text("dict")["blocks"]:
+                if item.get("type") == 1 and item.get("image") == xref:
+                    bbox = tuple(item.get("bbox", (0, 0, 0, 0)))
+                    break
+
+            filename = f"{source_id}_p{page_idx + 1}_img{img_index + 1}.{ext}"
+            filepath = os.path.join(images_dir, filename)
+
+            with open(filepath, "wb") as f:
+                f.write(image_bytes)
+
+            relative_path = f"images/{filename}"
+            extracted.append({
+                "page_idx": page_idx,
+                "bbox": list(bbox),
+                "relative_path": relative_path,
+                "width": width,
+                "height": height,
+                "filename": filename,
+            })
+
+    doc.close()
+    logger.info("Extracted %d images from %s into %s", len(extracted), pdf_path, images_dir)
+    return extracted
 
 
 # ---------------------------------------------------------------------------

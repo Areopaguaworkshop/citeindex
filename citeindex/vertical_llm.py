@@ -56,7 +56,7 @@ class VerticalCitationExtraction(dspy.Signature):
 class VerticalCitationLLM(CitationLLM):
     """Specialized LLM for vertical Traditional Chinese/Japanese citations"""
 
-    def __init__(self, model_name="ollama/qwen3"):
+    def __init__(self, model_name="ollama/deepseek-v4-flash:cloud"):
         super().__init__(model_name)
         self.vertical_extractor = dspy.Predict(VerticalCitationExtraction)
 

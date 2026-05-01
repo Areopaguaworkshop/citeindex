@@ -43,8 +43,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--llm",
-        default="ollama/qwen3",
-        help="LLM model for citation extraction (default: ollama/qwen3)",
+        default="ollama/deepseek-v4-flash:cloud",
+        help="LLM model for citation extraction (default: ollama/deepseek-v4-flash:cloud)",
     )
     parser.add_argument(
         "--text-direction",
@@ -88,14 +88,14 @@ def main() -> None:
         help="Mark source as primary (line-level granularity). Default: secondary (paragraph-level)",
     )
     parser.add_argument(
-        "--use-pageindex",
+        "--no-pageindex",
         action="store_true",
-        help="Use PageIndex LLM-driven tree building for section hierarchy (requires Ollama)",
+        help="Disable PageIndex LLM-driven tree building for section hierarchy",
     )
     parser.add_argument(
         "--pageindex-model",
-        default="ollama/qwen3.5:cloud",
-        help="LLM model for PageIndex tree building (default: ollama/qwen3.5:cloud)",
+        default="ollama/deepseek-v4-flash:cloud",
+        help="LLM model for PageIndex tree building (default: ollama/deepseek-v4-flash:cloud)",
     )
     parser.add_argument(
         "--all-url-article",
@@ -140,7 +140,7 @@ def main() -> None:
         doc_type_override=args.type,
         use_layout_analysis=not args.no_layout,
         is_primary=args.is_primary,
-        use_pageindex=args.use_pageindex,
+        use_pageindex=not args.no_pageindex,
         pageindex_model=args.pageindex_model,
     )
 

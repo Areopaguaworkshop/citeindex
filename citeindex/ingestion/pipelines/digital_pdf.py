@@ -12,6 +12,7 @@ Falls back to legacy fitz-based layout when MinerU is unavailable.
 
 import logging
 import os
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 import fitz
@@ -179,6 +180,8 @@ def run(
         doc_type = determine_doc_type(pdf_path, num_pages)
 
     pageindex_tree_json = None  # populated if cfg.use_pageindex and MinerU path
+    pdf_images: List[Dict[str, Any]] = []  # populated if layout analysis runs
+    _images_tmpdir: Optional[str] = None
 
     # ── Step 1: GROBID ─────────────────────────────────────────────
     grobid_metadata, grobid_references = _run_grobid(pdf_path)
@@ -190,7 +193,7 @@ def run(
         # === MinerU path (new) ===
         logger.info("Using MinerU content_list pipeline")
         from .dspy_extract import extract_page_numbers_from_content_list
-        from .mineru import content_list_to_document_structure, content_list_to_paragraphs
+        from .mineru import content_list_to_document_structure, content_list_to_paragraphs, extract_pdf_images
 
         content_list = mineru_output["content_list"]
         mineru_markdown = mineru_output.get("markdown", "")
@@ -198,8 +201,19 @@ def run(
         # Build actual page number map from discarded blocks
         page_number_map = extract_page_numbers_from_content_list(content_list)
 
+        # ── Extract images from PDF (will be moved to corpus dir later) ──
+        if cfg.use_layout_analysis:
+            try:
+                # Extract to a temp dir; master.py will move them to corpus/<slug>/images/
+                _images_tmpdir = tempfile.mkdtemp(prefix="citeindex_imgs_")
+                pdf_images = extract_pdf_images(pdf_path, _images_tmpdir, source_id)
+            except Exception:
+                logger.warning("Image extraction failed, continuing without images", exc_info=True)
+
         # Build section-hierarchical document structure
-        document_structure = content_list_to_document_structure(content_list, page_number_map)
+        document_structure = content_list_to_document_structure(
+            content_list, page_number_map, images=pdf_images
+        )
 
         # ── PageIndex enhancement (optional) ───────────────────────
         pageindex_tree_json = None
@@ -315,6 +329,11 @@ def run(
         extra["pageindex_tree"] = ci_tree
         logger.info("PageIndex → CiteIndex tree converted: %d sections",
                      len(ci_tree.get("level_1", [])))
+
+    # ── Store image extraction info for master.py to copy ───────────
+    if pdf_images and _images_tmpdir:
+        extra["_images_tmpdir"] = _images_tmpdir
+        extra["_images_list"] = pdf_images
 
     return PipelineResult(
         status="ok",

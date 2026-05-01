@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, Pipeli
 from .pipelines import digital_pdf, media, scanned_pdf, url_article
 from .markdown_export import write_library_markdown
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
+from .pipelines.common import parse_author_from_filename, prompt_author_interactively
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +86,51 @@ class CiteIndexIngestionOrchestrator:
                 resource_type,
             )
 
+            # ── Author enrichment fallback ────────────────────────────
+            # If LLM/GROBID couldn't extract an author, try filename then prompt
+            if not standardized_csl.get("author"):
+                # 1. Try parsing from filename
+                author_from_filename = parse_author_from_filename(input_ref)
+                if author_from_filename:
+                    standardized_csl["author"] = [author_from_filename]
+                    logger.info("Author extracted from filename: %s", author_from_filename)
+                else:
+                    # 2. Interactive prompt
+                    author_from_prompt = prompt_author_interactively()
+                    if author_from_prompt:
+                        standardized_csl["author"] = author_from_prompt
+                        logger.info("Author provided interactively: %s", author_from_prompt)
+
             artifacts = sub_result.to_dict()
             artifacts["csl_json"] = standardized_csl
 
             folder_name = csl_folder_name(standardized_csl)
             document_path = store_corpus_artifacts(self.corpus_root, folder_name, artifacts)
             log_entry = self.log_ingestion(input_ref, resource_type, standardized_csl, sub_result)
+
+            # ── Copy extracted images to corpus dir ─────────────────
+            images_tmpdir = sub_result.extra.get("_images_tmpdir")
+            images_list = sub_result.extra.get("_images_list", [])
+            if images_tmpdir and images_list:
+                try:
+                    dest_images_dir = os.path.join(document_path, "images")
+                    if os.path.isdir(images_tmpdir):
+                        for img_info in images_list:
+                            src = os.path.join(images_tmpdir, img_info["filename"])
+                            if os.path.isfile(src):
+                                os.makedirs(dest_images_dir, exist_ok=True)
+                                shutil.copy2(src, os.path.join(dest_images_dir, img_info["filename"]))
+                        logger.info("Copied %d images to %s", len(images_list), dest_images_dir)
+                    # Clean up temp dir
+                    shutil.rmtree(images_tmpdir, ignore_errors=True)
+                except Exception:
+                    logger.warning("Failed to copy extracted images", exc_info=True)
+            elif images_tmpdir:
+                shutil.rmtree(images_tmpdir, ignore_errors=True)
+
+            # Remove internal keys from extra before serializing
+            for key in ("_images_tmpdir", "_images_list"):
+                sub_result.extra.pop(key, None)
 
             output = {
                 "schema_version": self.schema_version,

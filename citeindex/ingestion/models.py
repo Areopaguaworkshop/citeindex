@@ -30,7 +30,7 @@ class IngestionLogEntry:
 @dataclass
 class IngestionConfig:
     """Configuration parameters passed through the ingestion pipeline."""
-    llm_model: str = "ollama/qwen3"
+    llm_model: str = "ollama/deepseek-v4-flash:cloud"
     text_direction: str = "horizontal"
     vertical_lang: str = "ch"
     lang: str = "auto"
@@ -39,8 +39,8 @@ class IngestionConfig:
     doc_type_override: Optional[str] = None
     use_layout_analysis: bool = True
     is_primary: bool = False
-    use_pageindex: bool = True
-    pageindex_model: str = "ollama/qwen3.5:cloud"
+    use_pageindex: bool = True  # default changed to True
+    pageindex_model: str = "ollama/deepseek-v4-flash:cloud"
 
 
 @dataclass

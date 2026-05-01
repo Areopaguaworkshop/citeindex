@@ -313,3 +313,77 @@ def enrich_csl_with_citation_cascade(
 
 # Backward-compatible alias
 enrich_csl_with_llm = enrich_csl_with_citation_cascade
+
+
+# ---------------------------------------------------------------------------
+# Author fallback: filename parsing → interactive prompt
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+
+def parse_author_from_filename(filename: str) -> Optional[Dict[str, Any]]:
+    """Try to extract author from a structured PDF filename.
+
+    Supports patterns like:
+      - "Chatonnet-2023-Syriac-World-Search-…-1-24.pdf"  (Author-Year-Title)
+      - "Smith-2024-Title-Here.pdf"
+      - "张三-2023-书名.pdf"  (Chinese Author-Year-Title)
+
+    Returns a CSL author dict (e.g. {"family": "Chatonnet"}) or None.
+    """
+    stem = os.path.splitext(os.path.basename(filename))[0]
+
+    # Pattern: Author-Year-TitleWords  (e.g. "Chatonnet-2023-Syriac-World-...")
+    # Author is the first segment before a 4-digit year
+    m = _re.match(r"^(?:\d+-)?([A-Z][a-zA-Z]+)-(\d{4})-", stem)
+    if m:
+        author_name = m.group(1)
+        return {"family": author_name, "literal": author_name}
+
+    # Pattern: Chinese Author-Year (e.g. "张三-2023-书名")
+    m = _re.match(r"^(?:\d+-)?([\u4e00-\u9fff]{1,6})-(\d{4})-", stem)
+    if m:
+        author_name = m.group(1)
+        return {"family": author_name, "literal": author_name}
+
+    # Pattern: Author_Year_Title or Author-Year-Title without 4-digit year
+    m = _re.match(r"^(?:\d+-)?([A-Z][a-zA-Z]{1,30})[_-]", stem)
+    if m:
+        # Only accept if the first segment looks like a proper name (capitalized)
+        author_name = m.group(1)
+        return {"family": author_name, "literal": author_name}
+
+    return None
+
+
+def prompt_author_interactively() -> Optional[Dict[str, Any]]:
+    """Prompt the user on the terminal for author info when extraction fails.
+
+    Returns a CSL author dict or None if the user skips.
+    """
+    import sys
+
+    print("\n⚠️  Could not determine the author(s) of this document.")
+    print("   You can provide author info now, or press Enter to skip.")
+    try:
+        raw = input("   Author (e.g. 'Chatonnet, Françoise Briquel' or '张三'): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+    if not raw:
+        return None
+
+    authors: List[Dict[str, Any]] = []
+    for part in raw.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        # "Family, Given" format
+        if "," in part:
+            family, given = part.split(",", 1)
+            authors.append({"family": family.strip(), "given": given.strip()})
+        else:
+            authors.append({"literal": part.strip()})
+
+    return authors if authors else None

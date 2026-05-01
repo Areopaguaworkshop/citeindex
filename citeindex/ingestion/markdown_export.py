@@ -119,6 +119,25 @@ def _build_front_matter(csl: Dict[str, Any]) -> str:
 # Per-resource-type body builders
 # ---------------------------------------------------------------------------
 
+def _index_section_levels(
+    sections: List[Dict[str, Any]],
+    levels: Dict[str, int],
+    base_level: int = 2,
+) -> None:
+    """Walk a section_tree and record each heading → markdown level.
+
+    Top-level sections get ``base_level`` (default ##), their children
+    get ``base_level + 1`` (default ###), etc.
+    """
+    for section in sections:
+        heading = section.get("heading") or section.get("title")
+        if heading and heading not in levels:
+            levels[heading] = base_level
+        children = section.get("children", [])
+        if children:
+            _index_section_levels(children, levels, base_level=base_level + 1)
+
+
 def _format_timestamp(seconds: float) -> str:
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
@@ -133,10 +152,17 @@ def _build_body_document(
     document_json: Dict[str, Any],
     resource_type: str,
 ) -> str:
-    """Build MD body for PDF and URL article documents."""
+    """Build MD body for PDF and URL article documents.
+
+    When the document structure contains heading paragraphs (from MinerU
+    layout analysis), renders them with proper heading levels (##, ###, etc.)
+    instead of flat page-number headers. Images with ``image_path`` are
+    rendered as ``![caption](path)``.
+    """
     lines: List[str] = []
     structure = document_json.get("structure", {})
     pages = structure.get("pages", [])
+    section_tree = structure.get("section_tree", [])
     footnotes_all: List[Dict[str, Any]] = []
 
     author = _format_authors(csl)
@@ -146,38 +172,61 @@ def _build_body_document(
 
     is_url = resource_type == "url_article"
 
+    # ── Build section-tree index for heading-rich rendering ──────────
+    # If section_tree has entries, build a lookup: section title → level
+    section_levels: Dict[str, int] = {}
+    if section_tree:
+        _index_section_levels(section_tree, section_levels, base_level=2)
+
+    # ── Render pages ─────────────────────────────────────────────────
+    has_headings = any(
+        para.get("type") == "heading"
+        for page in pages
+        for para in page.get("paragraphs", [])
+    )
+
     for page in pages:
         page_num = page.get("page_number", "?")
-        section_title = page.get("section_title", "")
-        section_level = page.get("section_level", 2)
-
-        # Build the header with CSL-level citation detail
-        if is_url:
-            # URL: sections as pages
-            if section_title and section_title != "(intro)":
-                header_label = f"Section {page_num}: {section_title}"
-            else:
-                header_label = f"Section {page_num}"
-            cite_suffix = f"{author}, 「{title}」, §{page_num}"
-        else:
-            # PDF: physical pages
-            if section_title and section_title != "(intro)":
-                header_label = f"Page {page_num}: {section_title}"
-            else:
-                header_label = f"Page {page_num}"
-            cite_suffix = f"{author}, 《{title}》, p.{page_num}"
-            if publisher:
-                cite_suffix += f", {publisher}"
-            cite_suffix += f", {year}"
-
-        # Use ## for all page/section headers
-        lines.append(f"## [{header_label}] {{{cite_suffix}}}")
-        lines.append("")
-
-        # Paragraphs
         paragraphs = page.get("paragraphs", [])
+
+        if not paragraphs:
+            continue
+
+        # ── Page anchor comment (invisible but useful for cross-ref) ──
+        lines.append(f"<!-- page:{page_num} -->")
+
         for para in paragraphs:
             text = para.get("text", "").strip()
+            para_type = para.get("type", "")
+            image_path = para.get("image_path")
+
+            # ── Heading ──────────────────────────────────────────────
+            if para_type == "heading" and text:
+                # Determine heading level from section_tree or fallback
+                level = section_levels.get(text, 2)
+                heading_marker = "#" * level
+                cite_suffix = f"{author}, 《{title}》, p.{page_num}"
+                if publisher:
+                    cite_suffix += f", {publisher}"
+                cite_suffix += f", {year}"
+                lines.append(f"{heading_marker} {text} {{{cite_suffix}}}")
+                lines.append("")
+                continue
+
+            # ── Image with caption ───────────────────────────────────
+            if para_type == "image_caption" and image_path:
+                alt_text = text if text else "image"
+                lines.append(f"![{alt_text}]({image_path})")
+                lines.append("")
+                continue
+
+            # ── Image caption without image path (caption only) ──────
+            if para_type == "image_caption" and text and not image_path:
+                lines.append(f"*{text}*")
+                lines.append("")
+                continue
+
+            # ── Regular text ──────────────────────────────────────────
             if text:
                 lines.append(text)
                 lines.append("")
@@ -185,6 +234,44 @@ def _build_body_document(
         # Collect footnotes
         for fn in page.get("footnotes", []):
             footnotes_all.append(fn)
+
+    # ── If no headings were found, fall back to page-number headers ───
+    if not has_headings and not section_tree:
+        fallback_lines: List[str] = []
+        for page in pages:
+            page_num = page.get("page_number", "?")
+            section_title = page.get("section_title", "")
+
+            if is_url:
+                header_label = f"Section {page_num}: {section_title}" if section_title and section_title != "(intro)" else f"Section {page_num}"
+                cite_suffix = f"{author}, 「{title}」, §{page_num}"
+            else:
+                header_label = f"Page {page_num}: {section_title}" if section_title and section_title != "(intro)" else f"Page {page_num}"
+                cite_suffix = f"{author}, 《{title}》, p.{page_num}"
+                if publisher:
+                    cite_suffix += f", {publisher}"
+                cite_suffix += f", {year}"
+
+            fallback_lines.append(f"## [{header_label}] {{{cite_suffix}}}")
+            fallback_lines.append("")
+
+            for para in page.get("paragraphs", []):
+                text = para.get("text", "").strip()
+                para_type = para.get("type", "")
+                image_path = para.get("image_path")
+
+                if para_type == "image_caption" and image_path:
+                    alt_text = text if text else "image"
+                    fallback_lines.append(f"![{alt_text}]({image_path})")
+                    fallback_lines.append("")
+                elif text:
+                    fallback_lines.append(text)
+                    fallback_lines.append("")
+
+            for fn in page.get("footnotes", []):
+                footnotes_all.append(fn)
+
+        lines = fallback_lines
 
     return "\n".join(lines), footnotes_all
 
@@ -337,6 +424,13 @@ def write_library_markdown(
     md_filename = f"{folder_name}.md"
     md_path = os.path.join(library_root, md_filename)
 
+    # ── Rewrite image paths to be relative from library/ to corpus/<slug>/images/ ──
+    # markdown is at library/<slug>.md, images at corpus/<slug>/images/<file>
+    # relative path: ../corpus/<slug>/images/<file>
+    if document_json:
+        image_prefix = f"../corpus/{folder_name}/"
+        _rewrite_image_paths(document_json, image_prefix)
+
     content = generate_library_markdown(
         csl_json=csl_json,
         document_json=document_json,
@@ -349,3 +443,18 @@ def write_library_markdown(
 
     logger.info("Library markdown written: %s", md_path)
     return md_path
+
+
+def _rewrite_image_paths(document_json: Dict[str, Any], prefix: str) -> None:
+    """Rewrite image_path fields in document_json paragraphs to use relative paths.
+
+    The image paths stored by the pipeline are like ``images/filename.jpeg``
+    (relative to the corpus/<slug>/ directory).  We need them relative to
+    the library/ directory instead, so we prepend ``../corpus/<slug>/``.
+    """
+    structure = document_json.get("structure", {})
+    for page in structure.get("pages", []):
+        for para in page.get("paragraphs", []):
+            img_path = para.get("image_path")
+            if img_path and not img_path.startswith(("http://", "https://", "/")):
+                para["image_path"] = prefix + img_path
