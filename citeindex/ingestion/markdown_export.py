@@ -147,6 +147,29 @@ def _format_timestamp(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _normalize_heading_line(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip()).casefold()
+
+
+def _strip_duplicate_heading_lines(text: str, headings: List[str]) -> str:
+    """Remove standalone heading lines already emitted as markdown headings."""
+    if not text or not headings:
+        return text
+
+    heading_set = {_normalize_heading_line(heading) for heading in headings if heading.strip()}
+    if not heading_set:
+        return text
+
+    kept_lines: List[str] = []
+    for line in text.splitlines():
+        if _normalize_heading_line(line) in heading_set:
+            continue
+        kept_lines.append(line)
+
+    cleaned = "\n".join(kept_lines).strip()
+    return cleaned or text
+
+
 def _build_body_document(
     csl: Dict[str, Any],
     document_json: Dict[str, Any],
@@ -194,13 +217,9 @@ def _build_body_document(
         page_num = page.get("page_number", "?")
 
         # ── Clear page separator with citation ────────────────────────
-        # Skip separator for the first page (title block already has ---)
-        if page_idx > 0:
-            lines.append("")
-            lines.append("---")
-            lines.append("")
-        else:
-            lines.append("")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
         lines.append(f"<!-- page:{page_num} | {cite_prefix}, p.{page_num} -->")
         lines.append("")
 
@@ -208,6 +227,11 @@ def _build_body_document(
             # MinerU path: page.paragraphs[] with types
             paragraphs = page.get("paragraphs", [])
             has_mineru_headings = any(p.get("type") == "heading" for p in paragraphs)
+            page_heading_texts = [
+                p.get("text", "").strip()
+                for p in paragraphs
+                if p.get("type") == "heading" and p.get("text", "").strip()
+            ]
 
             if not has_mineru_headings:
                 # No headings: fallback page label
@@ -244,6 +268,8 @@ def _build_body_document(
                     continue
 
                 # ── Text ─────────────────────────────────────────
+                if text:
+                    text = _strip_duplicate_heading_lines(text, page_heading_texts)
                 if text:
                     lines.append(text)
                     lines.append("")
@@ -393,16 +419,18 @@ def generate_library_markdown(
     parts.append("")
     parts.append(_format_inline_citation(csl_json))
     parts.append("")
-    parts.append("---")
-    parts.append("")
 
     # 3. Body (per resource type)
     footnotes: List[Dict[str, Any]] = []
     if resource_type == "media" and transcript_json:
+        parts.append("---")
+        parts.append("")
         body, footnotes = _build_body_media(csl_json, transcript_json)
     elif document_json:
         body, footnotes = _build_body_document(csl_json, document_json, resource_type)
     else:
+        parts.append("---")
+        parts.append("")
         body = "*No content available.*"
 
     parts.append(body)

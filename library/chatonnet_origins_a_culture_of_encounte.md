@@ -10,8 +10,8 @@ content_hash: 4e6149c82c520a53
 
 Chatonnet. 《Origins: A Culture of Encounter and Contact》. n.d..
 
----
 
+---
 
 <!-- page:1 | Chatonnet, 《Origins: A Culture of Encounter and Contact》, n.d., p.1 -->
 
@@ -23,8 +23,6 @@ Chatonnet. 《Origins: A Culture of Encounter and Contact》. n.d..
 
 1
 o • n • e
-Origins
-A Culture of Encounter and Contact
 S
 yriac is a dialect of Aramaic, a Semitic language that is most no-
 tably related to Hebrew and Arabic but which is more precisely
@@ -35,7 +33,6 @@ as surya¯ya¯ (the adjectival form of “Syrian” in the old sense), ara¯ma¯
 (formed from “Aramean”), or urha¯ya¯ (formed from the Aramaic name
 of Edessa, Urhay) shows the complexity of identity and self-deﬁ nition
 within this culture.
-Aramaic Origins
 The ﬁ rst known mention of the Arameans dates from 1111 BC and is
 found in the annals of the Assyrian king Tiglath-Pileser I. The record
 mentions a campaign led in that year by the Assyrian army against the
@@ -59,7 +56,6 @@ but no fortiﬁ cations or sieges. This suggests that at the end of the second
 millennium, the Aramaic population was living in a tribal society and
 leading the kind of semi-nomadic life that had become widespread in
 the area since the end of the Bronze Age empires around 1200 BC.
-THE ARAMAIC KINGDOMS
 At the beginning of the ﬁ rst millennium, Aramaic tribes organized
 themselves into small kingdoms along the arc of the Fertile Crescent,
 from the southwest of Syria (the kingdom of Damascus), to the north-
@@ -283,7 +279,6 @@ its notches. Khalili Collection.
 
 8
 origins
-ARAMAIC AND GREEK
 If the Near East was already in contact with Greek merchants and Greek
 culture very early on, the Greco-Macedonian conquest (333–331 BC)
 truly made it part of the Greek world. Greek gradually replaced Aramaic
@@ -345,7 +340,6 @@ its own alphabet.
 Among these local forms of Aramaic, the one that would be des-
 tined for an extraordinary future is Edessan Aramaic, the dialect spoken
 in Edessa and in the kingdom of Osrhoene.
-Edessa and Osrhoene
 We know very little of the ancient history of Edessa, but it is most likely
 the same place as the town of Adma mentioned in cuneiform Assyrian
 sources in the 7th century BC. The Aramaic and Syriac documents that
@@ -626,7 +620,6 @@ Sorbonne, P.Euphr.Inv.19, P Euphrate 18. © Adam Bülow-Jacobsen.
 
 18
 origins
-ARCHIVAL PRACTICES
 Most likely, the archival practices of the small kingdom of Osrhoene
 are the reason behind the development of the Edessan Aramaic al-
 phabet. Administrative record-keeping had a prominent role in Edes-
