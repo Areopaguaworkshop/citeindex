@@ -190,15 +190,41 @@ def _pageindex_sections_to_document_tree(
             continue
 
         children = _pageindex_sections_to_document_tree(node.get("children", []))
+        start_page, end_page = _section_bounds(node)
         section: Dict[str, Any] = {
             "heading": heading,
-            "page_range": node.get("page_range") or node.get("page_label"),
+            "page_range": _bounds_to_page_range(start_page, end_page),
             "children": children,
         }
         if node.get("node_id"):
             section["node_id"] = node["node_id"]
         sections.append(section)
     return sections
+
+
+def _bounds_to_page_range(
+    start_page: Optional[int],
+    end_page: Optional[int],
+) -> Optional[str]:
+    if start_page is None or end_page is None:
+        return None
+    if start_page == end_page:
+        return str(start_page)
+    return f"{start_page}-{end_page}"
+
+
+def _section_bounds(node: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+    """Derive a node's page span from its own range plus descendant locators."""
+    start_page, end_page = _page_range_bounds(node.get("page_range") or node.get("page_label"))
+
+    for child in node.get("children", []):
+        child_start, child_end = _section_bounds(child)
+        if child_start is None or child_end is None:
+            continue
+        start_page = child_start if start_page is None else min(start_page, child_start)
+        end_page = child_end if end_page is None else max(end_page, child_end)
+
+    return start_page, end_page
 
 
 def _collect_pageindex_headings(
@@ -256,6 +282,10 @@ def _annotate_document_with_pageindex(
         if not isinstance(page_num, int):
             continue
 
+        body_paragraphs = [
+            para for para in page.get("paragraphs", [])
+            if para.get("type") != "heading"
+        ]
         page_headings = headings_by_page.get(page_num, [])
         if page_headings:
             heading_paragraphs = [
@@ -267,7 +297,9 @@ def _annotate_document_with_pageindex(
                 }
                 for idx, item in enumerate(page_headings)
             ]
-            page["paragraphs"] = heading_paragraphs + page.get("paragraphs", [])
+            page["paragraphs"] = heading_paragraphs + body_paragraphs
+        else:
+            page["paragraphs"] = body_paragraphs
 
         active_sections = [
             span for span in spans
