@@ -118,8 +118,8 @@ def toc_detector_single_page(content, model=None):
 
     response = llm_completion(model=model, prompt=prompt)
     # print('response', response)
-    json_content = extract_json(response)    
-    return json_content['toc_detected']
+    json_content = extract_json(response)
+    return json_content.get('toc_detected', 'no')
 
 
 def check_if_toc_extraction_is_complete(content, toc, model=None):
@@ -137,25 +137,7 @@ def check_if_toc_extraction_is_complete(content, toc, model=None):
     prompt = prompt + '\n Document:\n' + content + '\n Table of contents:\n' + toc
     response = llm_completion(model=model, prompt=prompt)
     json_content = extract_json(response)
-    return json_content['completed']
-
-
-def check_if_toc_transformation_is_complete(content, toc, model=None):
-    prompt = f"""
-    You are given a raw table of contents and a  table of contents.
-    Your job is to check if the  table of contents is complete.
-
-    Reply format:
-    {{
-        "thinking": <why do you think the cleaned table of contents is complete or not>
-        "completed": "yes" or "no"
-    }}
-    Directly return the final JSON structure. Do not output anything else."""
-
-    prompt = prompt + '\n Raw Table of contents:\n' + content + '\n Cleaned Table of contents:\n' + toc
-    response = llm_completion(model=model, prompt=prompt)
-    json_content = extract_json(response)
-    return json_content['completed']
+    return json_content.get('completed', 'no')
 
 def extract_toc_content(content, model=None):
     prompt = f"""
@@ -217,7 +199,7 @@ def detect_page_index(toc_content, model=None):
 
     response = llm_completion(model=model, prompt=prompt)
     json_content = extract_json(response)
-    return json_content['page_index_given_in_toc']
+    return json_content.get('page_index_given_in_toc', 'no')
 
 def toc_extractor(page_list, toc_page_list, model):
     def transform_dots_to_colon(text):
@@ -752,8 +734,12 @@ async def single_toc_item_index_fixer(section_title, content, model=None):
 
     prompt = toc_extractor_prompt + '\nSection Title:\n' + str(section_title) + '\nDocument pages:\n' + content
     response = await llm_acompletion(model=model, prompt=prompt)
-    json_content = extract_json(response)    
-    return convert_physical_index_to_int(json_content['physical_index'])
+    json_content = extract_json(response)
+    physical_index = json_content.get('physical_index')
+    if physical_index is None:
+        logger.warning("LLM did not return physical_index, treating as None")
+        return None
+    return convert_physical_index_to_int(physical_index)
 
 
 

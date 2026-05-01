@@ -63,17 +63,18 @@ CiteIndex automatically detects the input type and routes to the correct pipelin
 ### Digital PDF
 
 ```
-PDF → GROBID (metadata) → MinerU (layout) → DSPy reconciliation
-    → document structure (pages/columns/paragraphs/lines)
+PDF → PyMuPDF (text + images) → GROBID / DSPy citation enrichment
+    → page-paragraph document structure
     → PageIndex tree (optional, LLM-driven)
+    → section_tree + heading injection for document.json / library markdown
     → Merkle tree → store to corpus/
 ```
 
 - **GROBID** extracts metadata and references deterministically
-- **MinerU** performs layout analysis (columns, footnotes, tables)
+- **PyMuPDF** extracts page text directly from digital PDFs and pulls embedded images
 - **DSPy** reconciles GROBID output with pattern extraction as fallback
-- Builds section-hierarchical document structure with actual page numbers
-- **PageIndex** builds LLM-driven section hierarchy (enabled by default)
+- Builds page-based document structure and augments it with PageIndex section headings
+- **PageIndex** builds LLM-driven section hierarchy, persists it to corpus, and feeds library markdown headings
 
 ### Scanned PDF
 
@@ -136,7 +137,7 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 
 | Option | CLI Flag | Default | Description |
 |--------|----------|---------|-------------|
-| `llm_model` | `--llm` | `ollama/qwen3` | LLM model (`ollama/name` or `gemini/name`) |
+| `llm_model` | `--llm` | `ollama/deepseek-v4-flash:cloud` | LLM model (`ollama/name` or `gemini/name`) |
 | `text_direction` | `--text-direction`, `-td` | `horizontal` | `horizontal`, `auto`, or `vertical` |
 | `vertical_lang` | `--vertical-lang` | `ch` | CJK language: `ch` (Chinese) or `japan` |
 | `lang` | `--lang`, `-l` | `auto` | OCR language (auto-detect or Tesseract code) |
@@ -144,8 +145,8 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 | `doc_type_override` | `--type`, `-t` | auto | `book`, `thesis`, `journal`, or `bookchapter` |
 | `use_layout_analysis` | `--no-layout` | `True` | Disable column/footnote detection |
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
-| `use_pageindex` | `--use-pageindex` | `True` | LLM-driven section hierarchy (requires Ollama) |
-| `pageindex_model` | `--pageindex-model` | `ollama/qwen3.5:cloud` | LLM for PageIndex tree building |
+| `use_pageindex` | `--no-pageindex` | `True` | PageIndex hierarchy is enabled by default; pass `--no-pageindex` to disable it |
+| `pageindex_model` | `--pageindex-model` | `ollama/deepseek-v4-flash:cloud` | LLM for PageIndex tree building |
 | `citation_style` | (API only) | `chicago-author-date` | CSL citation style for output |
 | `corpus_root` | `--corpus-root` | `corpus` | Output directory for ingested artifacts |
 | `schema_version` | `--schema-version` | `1.0.0` | Output schema version tag |
@@ -162,7 +163,8 @@ Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) and 
 | File | Description |
 |------|-------------|
 | `csl.json` | Citation metadata (CSL-JSON with `ci_*` extensions: `content_hash`, `merkle_root`, `source_type`, `ingestion_timestamp`) |
-| `document.json` | Structured document tree — sections, pages, paragraphs, lines |
+| `document.json` | Structured document tree — pages, paragraphs, and `section_tree` for URL articles and PageIndex-augmented PDFs |
+| `pageindex_tree.json` | Persisted CiteIndex/PageIndex hierarchy with page ranges and summaries when PageIndex runs |
 | `merkle.json` | SHA-256 Merkle tree for integrity verification |
 | `transcript.json` | Timestamped transcript with speaker segments (media only) |
 | `media_metadata.json` | Source media metadata (media only) |
@@ -170,7 +172,7 @@ Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) and 
 
 ### Library markdown (`library/Author_2024_Title.md`)
 
-Human-readable markdown with YAML front-matter, inline citation, page/section/timestamp headers with CSL-level detail, full extracted text, and footnotes. Written to `library/` (sibling of `corpus/`).
+Human-readable markdown with YAML front-matter, inline citation, page/section/timestamp headers with CSL-level detail, full extracted text, and footnotes. When PageIndex is available, digital PDFs emit section headings into the markdown instead of only flat page labels. Written to `library/` (sibling of `corpus/`).
 
 ### Ingestion log (`corpus/ingestion_log.jsonl`)
 

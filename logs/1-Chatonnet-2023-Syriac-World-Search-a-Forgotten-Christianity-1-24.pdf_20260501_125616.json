@@ -1,0 +1,133 @@
+[
+  {
+    "total_page_number": 24
+  },
+  {
+    "total_token": 10247
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': 'Origins', 'physical_index': '<physical_index_1>'}, {'structure': '1.1', 'title': 'Aramaic Origins', 'physical_index': '<physical_index_1>'}, {'structure': '1.2', 'title': 'THE ARAMAIC KINGDOMS', 'physical_index': '<physical_index_2>'}, {'structure': '1.2.1', 'title': 'inscription of zakkur', 'physical_index': '<physical_index_2>'}, {'structure': '1.2.2', 'title': 'inscription of tell fekheriye', 'physical_index': '<physical_index_2>'}, {'structure': '1.3', 'title': 'THE SPREAD OF THE ARAMAIC LANGUAGE', 'physical_index': '<physical_index_4>'}, {'structure': '1.3.1', 'title': 'the story of ah .iqar, according to the aramaic version', 'physical_index': '<physical_index_6>'}, {'structure': '1.3.2', 'title': 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom', 'physical_index': '<physical_index_6>'}, {'structure': '1.4', 'title': 'ARAMAIC AND GREEK', 'physical_index': '<physical_index_8>'}, {'structure': '1.5', 'title': 'Edessa and Osrhoene', 'physical_index': '<physical_index_10>'}, {'structure': '1.5.1', 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'physical_index': '<physical_index_10>'}, {'structure': '1.5.2', 'title': 'the chronicle of michael the great', 'physical_index': '<physical_index_12>'}, {'structure': '1.5.3', 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': '<physical_index_13>'}, {'structure': '1.5.4', 'title': 'excerpt from the anonymous chronicle of edessa up to 540: the flood of ad 202', 'physical_index': '<physical_index_14>'}, {'structure': '1.5.5', 'title': 'Edessan Culture: A Culture of Contact', 'physical_index': '<physical_index_15>'}, {'structure': '1.5.6', 'title': 'beginning of the text on the parchment found in dura-europos (ad 243)', 'physical_index': '<physical_index_16>'}, {'structure': '1.5.7', 'title': 'history of abgar and jesus (teaching of addai)', 'physical_index': '<physical_index_16>'}, {'structure': '1.5.8', 'title': 'ARCHIVAL PRACTICES', 'physical_index': '<physical_index_18>'}, {'structure': '1.5.9', 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': '<physical_index_18>'}, {'structure': '1.5.10', 'title': 'cults in edessa (teaching of addai)', 'physical_index': '<physical_index_19>'}, {'structure': '1.5.11', 'title': 'ORNAMENTAL AND FUNERARY MOSAICS: A MIRROR OF EDESSAN SOCIETY', 'physical_index': '<physical_index_21>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': 'Origins', 'physical_index': 1}, {'structure': '1.1', 'title': 'Aramaic Origins', 'physical_index': 1}, {'structure': '1.2', 'title': 'THE ARAMAIC KINGDOMS', 'physical_index': 2}, {'structure': '1.2.1', 'title': 'inscription of zakkur', 'physical_index': 2}, {'structure': '1.2.2', 'title': 'inscription of tell fekheriye', 'physical_index': 2}, {'structure': '1.3', 'title': 'THE SPREAD OF THE ARAMAIC LANGUAGE', 'physical_index': 4}, {'structure': '1.3.1', 'title': 'the story of ah .iqar, according to the aramaic version', 'physical_index': 6}, {'structure': '1.3.2', 'title': 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom', 'physical_index': 6}, {'structure': '1.4', 'title': 'ARAMAIC AND GREEK', 'physical_index': 8}, {'structure': '1.5', 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'structure': '1.5.1', 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'physical_index': 10}, {'structure': '1.5.2', 'title': 'the chronicle of michael the great', 'physical_index': 12}, {'structure': '1.5.3', 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}, {'structure': '1.5.4', 'title': 'excerpt from the anonymous chronicle of edessa up to 540: the flood of ad 202', 'physical_index': 14}, {'structure': '1.5.5', 'title': 'Edessan Culture: A Culture of Contact', 'physical_index': 15}, {'structure': '1.5.6', 'title': 'beginning of the text on the parchment found in dura-europos (ad 243)', 'physical_index': 16}, {'structure': '1.5.7', 'title': 'history of abgar and jesus (teaching of addai)', 'physical_index': 16}, {'structure': '1.5.8', 'title': 'ARCHIVAL PRACTICES', 'physical_index': 18}, {'structure': '1.5.9', 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': 18}, {'structure': '1.5.10', 'title': 'cults in edessa (teaching of addai)', 'physical_index': 19}, {'structure': '1.5.11', 'title': 'ORNAMENTAL AND FUNERARY MOSAICS: A MIRROR OF EDESSAN SOCIETY', 'physical_index': 21}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 0.8571428571428571,
+    "incorrect_results": [
+      {
+        "list_index": 9,
+        "answer": "no",
+        "title": "Edessa and Osrhoene",
+        "page_number": 10
+      },
+      {
+        "list_index": 10,
+        "answer": "no",
+        "title": "GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY",
+        "page_number": 10
+      },
+      {
+        "list_index": 12,
+        "answer": "no",
+        "title": "THE CITY AND ITS TERRITORIES",
+        "page_number": 13
+      }
+    ]
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'prev_correct': 8, 'next_correct': 12}, {'list_index': 10, 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'prev_correct': 8, 'next_correct': 12}, {'list_index': 12, 'title': 'THE CITY AND ITS TERRITORIES', 'prev_correct': 12, 'next_correct': 14}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'list_index': 10, 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'physical_index': 10}, {'list_index': 12, 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}]"
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'prev_correct': 8, 'next_correct': 12}, {'list_index': 10, 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'prev_correct': 8, 'next_correct': 12}, {'list_index': 12, 'title': 'THE CITY AND ITS TERRITORIES', 'prev_correct': 12, 'next_correct': 14}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'list_index': 12, 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}]"
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'prev_correct': 8, 'next_correct': 10}, {'list_index': 12, 'title': 'THE CITY AND ITS TERRITORIES', 'prev_correct': 12, 'next_correct': 14}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'list_index': 12, 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}]"
+  },
+  {
+    "message": "Maximum fix attempts reached"
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '2 origins' and other content before the section title 'inscription of zakkur' appears. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '1o\u2022n\u2022e' before the section title 'Origins'. Therefore, the section does not begin at the start of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '1o\u2022n\u2022e\\nOrigins\\nA Culture of Encounter and Contact\\n...' and later contains 'Aramaic Origins'. Since there is content before the section title, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '4 origins inscriptions...' and later contains the section title 'THE SPREAD OF THE ARAMAIC LANGUAGE'. Since there is content before the title, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '2 origins' and other content before the section title 'inscription of tell fekheriye' appears later. Therefore, the current section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '8 origins' before the section title 'ARAMAIC AND GREEK', so the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '10 origins' and other content before the section title 'Edessa and Osrhoene' appears later. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '2 origins' and other text before the title 'THE ARAMAIC KINGDOMS' appears. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '6 origins' and other content before the section title appears. The section title 'the story of ah .iqar, according to the aramaic version' is found later in the text, not at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '10 origins' and other text before the section title 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY' appears. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '6 origins community of Edessa...' and contains other content before the section title 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom' appears later. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '16 origins richness of its cosmopolitan character...' and later contains the section title 'beginning of the text on the parchment found in dura-europos (ad 243)'. Since there is content before the section title, it does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '12 origins' and other content before the section title 'the chronicle of michael the great' appears. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '14 origins base of the hill...' which is content before the section title 'excerpt from the anonymous chronicle of edessa up to 540: the flood of ad 202'. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with ' origins 15 a Persian word...' and contains other content before the section title 'Edessan Culture: A Culture of Contact' appears later. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'origins 13' and other content before the section title 'THE CITY AND ITS TERRITORIES' appears later. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '18 origins' before the section title 'ARCHIVAL PRACTICES'. Therefore, the section does not begin at the start of the page.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '16 origins richness of its cosmopolitan character...' and contains other content before the section title 'history of abgar and jesus (teaching of addai)' appears later. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '18 origins ARCHIVAL PRACTICES' and other content before the section title 'CULTS AND WORSHIP IN EDESSA' appears later. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with ' origins 19' and other text before the section title 'cults in edessa (teaching of addai)' appears. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with ' origins 21 ing consensus...' which is not the section title. The section title appears later in the text. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  }
+]

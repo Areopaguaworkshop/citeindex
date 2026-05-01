@@ -357,6 +357,82 @@ def parse_author_from_filename(filename: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def validate_authors(
+    authors: Optional[List[Dict[str, Any]]],
+    input_ref: str = "",
+) -> Optional[List[Dict[str, Any]]]:
+    """Validate and clean LLM-extracted author list.
+
+    Heuristics to detect garbage author extraction:
+      - Author names that are overly long (> 80 chars)
+      - Author names containing common non-name words (e.g. "is a", "the", "that")
+      - More than 5 authors (likely extraction artifacts)
+      - Single-word "family" names that are common English words
+
+    Returns cleaned author list, or None if all authors are suspicious.
+    """
+    if not authors:
+        return None
+
+    _GARBAGE_PATTERNS = _re.compile(
+        r'(?:is a |are |that |which |the |from |into |with |this |can be '
+        r'|known as |formed by|formed from|sense\)|dialect|language|culture|semitic'
+        r'|adjectival|\(formed|\"|\))',
+        _re.IGNORECASE,
+    )
+    _GARBAGE_FAMILY_PATTERNS = _re.compile(
+        r'(?:sense\)|formed|adjectival|\)$|\(|^the |^a |^an |^is )',
+        _re.IGNORECASE,
+    )
+    _COMMON_WORDS = {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "need", "dare", "ought",
+        "used", "from", "into", "with", "this", "that", "which", "what",
+    }
+
+    cleaned: List[Dict[str, Any]] = []
+    for author in authors:
+        family = (author.get("family") or "").strip()
+        given = (author.get("given") or "").strip()
+        literal = (author.get("literal") or "").strip()
+
+        # Full name for validation
+        full_name = literal or f"{family} {given}".strip()
+
+        # Skip if name is too long (likely a sentence fragment)
+        if len(full_name) > 80:
+            logger.warning("Skipping suspiciously long author name: %s...", full_name[:50])
+            continue
+
+        # Skip if name matches garbage patterns (sentence fragments)
+        if _GARBAGE_PATTERNS.search(full_name):
+            logger.warning("Skipping author name with non-name content: %s...", full_name[:50])
+            continue
+
+        # Also check the family name alone for garbage patterns
+        if family and _GARBAGE_FAMILY_PATTERNS.search(family):
+            logger.warning("Skipping author with garbage family name: %s", family[:50])
+            continue
+
+        # Skip if the family name alone is a very common English word
+        if family.lower() in _COMMON_WORDS and not given and not literal:
+            logger.warning("Skipping single common-word author: %s", family)
+            continue
+
+        cleaned.append(author)
+
+    if not cleaned:
+        return None
+
+    # If more than 5 authors, likely extraction artifacts
+    if len(cleaned) > 5:
+        logger.warning("Too many authors (%d), keeping first 3", len(cleaned))
+        cleaned = cleaned[:3]
+
+    return cleaned
+
+
 def prompt_author_interactively() -> Optional[Dict[str, Any]]:
     """Prompt the user on the terminal for author info when extraction fails.
 

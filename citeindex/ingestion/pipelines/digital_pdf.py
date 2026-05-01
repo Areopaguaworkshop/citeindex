@@ -1,17 +1,20 @@
-"""Digital PDF ingestion pipeline.
+"""Digital PDF ingestion pipeline (v0.3).
 
-Workflow (v0.2):
-  1. GROBID  — deterministic metadata + references from raw PDF
-  2. MinerU  — layout analysis (content_list + markdown + middle JSON)
-  3. Pattern extraction from content_list, DSPy fallback, reconcile with GROBID
-  4. Build section-hierarchical document structure with actual page numbers
-  5. Merkle tree (no retrieval index)
+Uses PyMuPDF as the primary tool — no MinerU dependency in this pipeline:
+  1. PyMuPDF      — extract text per page + images to corpus/<slug>/images/
+  2. PageIndex    — LLM-driven section tree building (optional, no MinerU needed)
+  3. Citation     — GROBID (if available) or LLM on raw text
+  4. Document     — page-paragraph structure augmented with PageIndex headings
+  5. Merkle tree  — deterministic hash chain
 
-Falls back to legacy fitz-based layout when MinerU is unavailable.
+Upstream PageIndex (VectifyAI/PageIndex) follows the same approach:
+it opens PDFs with pymupdf (fitz) and reads page.get_text() for tree building.
 """
 
 import logging
 import os
+import re
+import shutil
 import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -33,25 +36,39 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Legacy fitz-based extraction (kept as fallback)
+# Step 1: PyMuPDF text extraction
 # ---------------------------------------------------------------------------
 
-def _extract_page_paragraphs(pdf_path: str) -> List[Tuple[int, List[str]]]:
+def _extract_pages(pdf_path: str) -> Tuple[fitz.Document, List[Dict[str, Any]]]:
+    """Open PDF and return (doc, list of page texts for PageIndex)."""
     doc = fitz.open(pdf_path)
-    page_paragraphs: List[Tuple[int, List[str]]] = []
+    pages: List[Dict[str, Any]] = []
+    for idx in range(doc.page_count):
+        page = doc[idx]
+        text = page.get_text()
+        pages.append({
+            "page_number": idx + 1,
+            "text": text,
+            "blocks": page.get_text("blocks"),
+        })
+    return doc, pages
+
+
+def _extract_page_paragraphs(pdf_path: str) -> List[Tuple[int, List[str]]]:
+    """Return list of (page_num, [paragraph_texts])."""
+    doc = fitz.open(pdf_path)
+    result: List[Tuple[int, List[str]]] = []
     for page_idx in range(doc.page_count):
-        text = page_paragraphs_from_page(doc[page_idx])
-        page_paragraphs.append((page_idx + 1, text))
+        page = doc[page_idx]
+        text = page.get_text("text")
+        paragraphs = split_paragraphs(text) or _fallback_paragraphs(page)
+        result.append((page_idx + 1, paragraphs))
     doc.close()
-    return page_paragraphs
+    return result
 
 
-def page_paragraphs_from_page(page: fitz.Page) -> List[str]:
-    text = page.get_text("text")
-    paragraphs = split_paragraphs(text)
-    if paragraphs:
-        return paragraphs
-
+def _fallback_paragraphs(page: fitz.Page) -> List[str]:
+    """Split text from block bboxes as fallback."""
     blocks = page.get_text("blocks")
     fallback: List[str] = []
     for block in sorted(blocks, key=lambda b: (b[1], b[0])):
@@ -62,7 +79,207 @@ def page_paragraphs_from_page(page: fitz.Page) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Step 1: GROBID extraction
+# Step 2: Image extraction via PyMuPDF
+# ---------------------------------------------------------------------------
+
+def extract_pdf_images(
+    pdf_path: str,
+    output_dir: str,
+    source_id: str,
+    min_width: int = 100,
+    min_height: int = 100,
+) -> List[Dict[str, Any]]:
+    """Extract images from a PDF and save them to output_dir/images/."""
+    images_dir = os.path.join(output_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
+    doc = fitz.open(pdf_path)
+    extracted: List[Dict[str, Any]] = []
+
+    for page_idx in range(doc.page_count):
+        page = doc[page_idx]
+        image_list = page.get_images(full=True)
+
+        for img_index, img_info in enumerate(image_list):
+            xref = img_info[0]
+            try:
+                base_image = doc.extract_image(xref)
+            except Exception:
+                continue
+            if not base_image:
+                continue
+
+            width = base_image.get("width", 0)
+            height = base_image.get("height", 0)
+            if width < min_width and height < min_height:
+                continue
+
+            ext = base_image.get("ext", "png")
+            image_bytes = base_image.get("image")
+            if not image_bytes:
+                continue
+
+            bbox = _get_image_bbox(page, xref)
+            filename = f"{source_id}_p{page_idx + 1}_img{img_index + 1}.{ext}"
+            filepath = os.path.join(images_dir, filename)
+            with open(filepath, "wb") as f:
+                f.write(image_bytes)
+
+            rel_path = f"images/{filename}"
+            extracted.append({
+                "page_idx": page_idx,
+                "bbox": list(bbox),
+                "relative_path": rel_path,
+                "width": width,
+                "height": height,
+                "filename": filename,
+            })
+
+    doc.close()
+    logger.info("Extracted %d images from %s", len(extracted), pdf_path)
+    return extracted
+
+
+def _get_image_bbox(page: fitz.Page, xref: int) -> Tuple[float, ...]:
+    """Find image bbox on a page by matching xref in text blocks."""
+    for block in page.get_text("dict")["blocks"]:
+        if block.get("type") == 1 and block.get("image") == xref:
+            return tuple(block.get("bbox", (0, 0, 0, 0)))
+    return (0, 0, 0, 0)
+
+
+def _embed_images_into_pages(
+    document_structure: Dict[str, Any],
+    images: List[Dict[str, Any]],
+) -> None:
+    """Add image_caption paragraphs to document_structure pages."""
+    pages = document_structure.get("pages", [])
+    for img in images:
+        page_idx = img.get("page_idx", 0)
+        if page_idx < len(pages):
+            pages[page_idx].setdefault("paragraphs", []).append({
+                "paragraph_id": f"p{page_idx + 1}_img_{len(pages[page_idx].get('paragraphs', []))}",
+                "text": img.get("caption", "image"),
+                "type": "image_caption",
+                "image_path": img.get("relative_path"),
+            })
+
+
+def _page_range_bounds(page_range: Optional[str]) -> Tuple[Optional[int], Optional[int]]:
+    """Parse a PageIndex page label like ``3`` or ``3-5`` into numeric bounds."""
+    if not page_range:
+        return None, None
+
+    matches = re.findall(r"\d+", str(page_range))
+    if not matches:
+        return None, None
+
+    start = int(matches[0])
+    end = int(matches[-1]) if len(matches) > 1 else start
+    return start, end
+
+
+def _pageindex_sections_to_document_tree(
+    nodes: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Convert CiteIndex PageIndex nodes into document_json section_tree nodes."""
+    sections: List[Dict[str, Any]] = []
+    for node in nodes:
+        heading = node.get("heading") or node.get("title")
+        if not heading:
+            continue
+
+        children = _pageindex_sections_to_document_tree(node.get("children", []))
+        section: Dict[str, Any] = {
+            "heading": heading,
+            "page_range": node.get("page_range") or node.get("page_label"),
+            "children": children,
+        }
+        if node.get("node_id"):
+            section["node_id"] = node["node_id"]
+        sections.append(section)
+    return sections
+
+
+def _collect_pageindex_headings(
+    nodes: List[Dict[str, Any]],
+    level: int = 2,
+    spans: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[Dict[int, List[Dict[str, Any]]], List[Dict[str, Any]]]:
+    """Build page-start heading inserts and page spans from a section tree."""
+    by_page: Dict[int, List[Dict[str, Any]]] = {}
+    collected_spans = spans if spans is not None else []
+
+    for node in nodes:
+        heading = node.get("heading") or node.get("title")
+        if not heading:
+            continue
+
+        start_page, end_page = _page_range_bounds(node.get("page_range") or node.get("page_label"))
+        if start_page is not None:
+            by_page.setdefault(start_page, []).append({
+                "heading": heading,
+                "level": level,
+            })
+            collected_spans.append({
+                "heading": heading,
+                "level": level,
+                "start": start_page,
+                "end": end_page or start_page,
+            })
+
+        child_by_page, _ = _collect_pageindex_headings(
+            node.get("children", []),
+            level=level + 1,
+            spans=collected_spans,
+        )
+        for page_num, headings in child_by_page.items():
+            by_page.setdefault(page_num, []).extend(headings)
+
+    return by_page, collected_spans
+
+
+def _annotate_document_with_pageindex(
+    document_structure: Dict[str, Any],
+    ci_tree: Dict[str, Any],
+) -> None:
+    """Inject PageIndex hierarchy into document structure for downstream export."""
+    section_tree = _pageindex_sections_to_document_tree(ci_tree.get("level_1", []))
+    if not section_tree:
+        return
+
+    document_structure["section_tree"] = section_tree
+    headings_by_page, spans = _collect_pageindex_headings(section_tree)
+
+    for page in document_structure.get("pages", []):
+        page_num = page.get("page_number")
+        if not isinstance(page_num, int):
+            continue
+
+        page_headings = headings_by_page.get(page_num, [])
+        if page_headings:
+            heading_paragraphs = [
+                {
+                    "paragraph_id": f"p{page_num}_heading_{idx + 1}",
+                    "text": item["heading"],
+                    "type": "heading",
+                    "level": item["level"],
+                }
+                for idx, item in enumerate(page_headings)
+            ]
+            page["paragraphs"] = heading_paragraphs + page.get("paragraphs", [])
+
+        active_sections = [
+            span for span in spans
+            if span["start"] <= page_num <= span["end"]
+        ]
+        if active_sections:
+            active_sections.sort(key=lambda span: (span["level"], span["start"]))
+            page["section_title"] = active_sections[-1]["heading"]
+
+
+# ---------------------------------------------------------------------------
+# Step 3: GROBID extraction
 # ---------------------------------------------------------------------------
 
 def _run_grobid(pdf_path: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -73,87 +290,14 @@ def _run_grobid(pdf_path: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             extract_document_metadata_grobid,
             is_grobid_available,
         )
-
         if not is_grobid_available():
-            logger.info("GROBID not available, skipping initial extraction")
             return {}, {}
-
-        logger.info("Step 1: Running GROBID on raw PDF")
         metadata = extract_document_metadata_grobid(pdf_path)
         references = extract_citations_grobid(pdf_path)
-
-        logger.info(
-            "GROBID: metadata=%d fields, references=%d",
-            len(metadata),
-            len(references.get("references", [])),
-        )
         return metadata, references
-
     except Exception:
         logger.warning("GROBID extraction failed", exc_info=True)
         return {}, {}
-
-
-# ---------------------------------------------------------------------------
-# Step 2: MinerU layout analysis
-# ---------------------------------------------------------------------------
-
-def _run_mineru(pdf_path: str) -> Optional[Dict[str, Any]]:
-    """Run MinerU layout analysis. Returns output dict or None on failure."""
-    try:
-        from .mineru import is_mineru_available, run_mineru
-
-        if not is_mineru_available():
-            logger.info("MinerU not available, will fall back to fitz layout")
-            return None
-
-        logger.info("Step 2: Running MinerU layout analysis")
-        result = run_mineru(pdf_path)
-        logger.info("MinerU: output_dir=%s", result.get("output_dir", "?"))
-        return result
-
-    except Exception:
-        logger.warning("MinerU failed, falling back to fitz layout", exc_info=True)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Step 3: Pattern + DSPy extraction from MinerU content_list
-# ---------------------------------------------------------------------------
-
-def _run_extraction(
-    content_list: List[Dict[str, Any]],
-    mineru_markdown: str,
-    grobid_metadata: Dict[str, Any],
-    doc_type: str,
-    config: IngestionConfig,
-) -> Dict[str, Any]:
-    """Pattern extraction from content_list, DSPy fallback, reconcile with GROBID."""
-    from .dspy_extract import (
-        extract_metadata_with_dspy_fallback,
-        extract_page_numbers_from_content_list,
-        reconcile_grobid_and_dspy,
-    )
-
-    # Separate discarded blocks for header/footer analysis
-    discarded = [it for it in content_list if it.get("type") == "discarded"]
-
-    logger.info("Step 3: Pattern extraction from content_list (%d items, %d discarded)",
-                len(content_list), len(discarded))
-
-    pattern_dspy_csl = extract_metadata_with_dspy_fallback(
-        content_list=content_list,
-        mineru_markdown=mineru_markdown,
-        doc_type=doc_type,
-        config=config,
-        discarded_blocks=discarded,
-    )
-
-    # Reconcile with GROBID
-    enriched = reconcile_grobid_and_dspy(grobid_metadata, pattern_dspy_csl, doc_type, config)
-    logger.info("Reconciled CSL: method=%s, fields=%d",
-                enriched.get("_extraction_method", "?"), len(enriched))
-    return enriched
 
 
 # ---------------------------------------------------------------------------
@@ -168,121 +312,67 @@ def run(
     cfg = config or IngestionConfig()
     source_id = make_source_id(pdf_path)
 
-    doc = fitz.open(pdf_path)
-    title = doc.metadata.get("title") or os.path.basename(pdf_path)
-    num_pages = doc.page_count
-    doc.close()
+    # Open PDF once for metadata
+    doc_tmp = fitz.open(pdf_path)
+    title = doc_tmp.metadata.get("title") or os.path.basename(pdf_path)
+    num_pages = doc_tmp.page_count
+    doc_tmp.close()
 
-    # Determine document type early
-    if cfg.doc_type_override:
-        doc_type = cfg.doc_type_override
-    else:
-        doc_type = determine_doc_type(pdf_path, num_pages)
+    doc_type = cfg.doc_type_override or determine_doc_type(pdf_path, num_pages)
+    logger.info("Document type: %s (pages=%d)", doc_type, num_pages)
 
-    pageindex_tree_json = None  # populated if cfg.use_pageindex and MinerU path
-    pdf_images: List[Dict[str, Any]] = []  # populated if layout analysis runs
+    # ── Step 1: PyMuPDF extraction ──────────────────────────────────
+    doc, raw_pages = _extract_pages(pdf_path)
+    page_paragraphs = _extract_page_paragraphs(pdf_path)
+    ordered_text = "\n\n".join(p["text"] for p in raw_pages)
+
+    # ── Step 2: Image extraction ──────────────────────────────────────
+    pdf_images: List[Dict[str, Any]] = []
     _images_tmpdir: Optional[str] = None
+    if cfg.use_layout_analysis:
+        try:
+            _images_tmpdir = tempfile.mkdtemp(prefix="citeindex_imgs_")
+            pdf_images = extract_pdf_images(pdf_path, _images_tmpdir, source_id)
+        except Exception:
+            logger.warning("Image extraction failed", exc_info=True)
 
-    # ── Step 1: GROBID ─────────────────────────────────────────────
+    # ── Step 3: Build flat document structure ───────────────────────
+    document_structure = _build_flat_document_structure(page_paragraphs)
+
+    # Embed images into pages if available
+    if pdf_images:
+        _embed_images_into_pages(document_structure, pdf_images)
+
+    # ── Step 4: GROBID ──────────────────────────────────────────────
     grobid_metadata, grobid_references = _run_grobid(pdf_path)
 
-    # ── Step 2: MinerU layout analysis ─────────────────────────────
-    mineru_output = _run_mineru(pdf_path) if cfg.use_layout_analysis else None
-
-    if mineru_output and mineru_output.get("content_list"):
-        # === MinerU path (new) ===
-        logger.info("Using MinerU content_list pipeline")
-        from .dspy_extract import extract_page_numbers_from_content_list
-        from .mineru import content_list_to_document_structure, content_list_to_paragraphs, extract_pdf_images
-
-        content_list = mineru_output["content_list"]
-        mineru_markdown = mineru_output.get("markdown", "")
-
-        # Build actual page number map from discarded blocks
-        page_number_map = extract_page_numbers_from_content_list(content_list)
-
-        # ── Extract images from PDF (will be moved to corpus dir later) ──
-        if cfg.use_layout_analysis:
-            try:
-                # Extract to a temp dir; master.py will move them to corpus/<slug>/images/
-                _images_tmpdir = tempfile.mkdtemp(prefix="citeindex_imgs_")
-                pdf_images = extract_pdf_images(pdf_path, _images_tmpdir, source_id)
-            except Exception:
-                logger.warning("Image extraction failed, continuing without images", exc_info=True)
-
-        # Build section-hierarchical document structure
-        document_structure = content_list_to_document_structure(
-            content_list, page_number_map, images=pdf_images
-        )
-
-        # ── PageIndex enhancement (optional) ───────────────────────
-        pageindex_tree_json = None
-        if cfg.use_pageindex:
+    # ── Step 5: PageIndex tree (optional, uses PDF directly) ────────
+    pageindex_tree_json = None
+    page_number_map: Dict[int, int] = {i: i + 1 for i in range(num_pages)}
+    if cfg.use_pageindex:
+        try:
             from .pageindex_tree import run_pageindex_tree, pageindex_to_citeindex_tree
             pi_result = run_pageindex_tree(pdf_path, model=cfg.pageindex_model)
             if pi_result and pi_result.get("structure"):
-                logger.info("PageIndex tree available, will use for .citeindex.json")
                 pageindex_tree_json = pi_result
+                logger.info("PageIndex tree built: %d sections", len(pi_result["structure"]))
             else:
-                logger.info("PageIndex tree-building failed or empty, using MinerU structure")
+                logger.info("PageIndex tree empty, using flat structure")
+        except Exception:
+            logger.warning("PageIndex failed, using flat structure", exc_info=True)
 
-        # Build paragraphs for nodes/merkle (using actual page numbers)
-        page_paragraphs = content_list_to_paragraphs(content_list, page_number_map)
+    # ── Step 6: Citation extraction ─────────────────────────────────
+    from .common import enrich_csl_with_citation_cascade
 
-        # ── Step 3: Pattern + DSPy + reconcile ─────────────────────
-        enriched_csl = _run_extraction(
-            content_list=content_list,
-            mineru_markdown=mineru_markdown,
-            grobid_metadata=grobid_metadata,
-            doc_type=doc_type,
-            config=cfg,
-        )
-
-    elif cfg.use_layout_analysis:
-        # === Fitz fallback path (legacy) ===
-        logger.info("MinerU unavailable, falling back to fitz layout analysis")
-        from .layout import analyze_document_layout
-        from .common import build_layout_document_structure
-
-        page_layouts = analyze_document_layout(pdf_path)
-        page_paragraphs = _extract_paragraphs_from_layouts(page_layouts)
-        document_structure = build_layout_document_structure(page_layouts)
-        ordered_text = _collect_ordered_text(page_layouts)
-
-        # Use the old cascade for fitz fallback
-        from .common import enrich_csl_with_llm
-
-        base_csl = make_basic_csl(
-            source_id=source_id, title=title, csl_type="book",
-            extra={"genre": source_type},
-        )
-        enriched_csl = enrich_csl_with_llm(
-            base_csl=base_csl, ordered_text=ordered_text,
-            pdf_path=pdf_path, num_pages=num_pages, config=cfg,
-        )
-
-    else:
-        # === No layout analysis path ===
-        page_paragraphs = _extract_page_paragraphs(pdf_path)
-        document_structure = build_document_structure(page_paragraphs)
-        ordered_text = "\n\n".join("\n".join(paras) for _, paras in page_paragraphs)
-
-        from .common import enrich_csl_with_llm
-
-        base_csl = make_basic_csl(
-            source_id=source_id, title=title, csl_type="book",
-            extra={"genre": source_type},
-        )
-        enriched_csl = enrich_csl_with_llm(
-            base_csl=base_csl, ordered_text=ordered_text,
-            pdf_path=pdf_path, num_pages=num_pages, config=cfg,
-        )
-
-    # ── Build final CSL (merge enriched into base) ─────────────────
     base_csl = make_basic_csl(
         source_id=source_id, title=title, csl_type="book",
         extra={"genre": source_type},
     )
+    enriched_csl = enrich_csl_with_citation_cascade(
+        base_csl=base_csl, ordered_text=ordered_text,
+        pdf_path=pdf_path, num_pages=num_pages, config=cfg,
+    )
+
     csl = dict(base_csl)
     for key, value in enriched_csl.items():
         if key == "id":
@@ -290,18 +380,16 @@ def run(
         if value is not None:
             csl[key] = value
 
-    # Attach GROBID references if available
     if grobid_references.get("references"):
         csl["_cited_references"] = grobid_references["references"]
 
-    # ── Nodes + Merkle tree (no retrieval index) ───────────────────
+    # ── Step 7: Nodes + Merkle ─────────────────────────────────────
     nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
     merkle_tree = build_merkle_for_nodes(nodes)
-
-    if cfg.use_layout_analysis and document_structure.get("pages"):
-        hierarchical_merkle = build_hierarchical_merkle_tree(document_structure)
-        merkle_tree["hierarchical_root"] = hierarchical_merkle["root"]
-        merkle_tree["proof_tree"] = hierarchical_merkle.get("proof_tree")
+    if document_structure.get("pages"):
+        hierarchical = build_hierarchical_merkle_tree(document_structure)
+        merkle_tree["hierarchical_root"] = hierarchical.get("root")
+        merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
 
     document_json: Dict[str, Any] = {
         "source_id": source_id,
@@ -315,7 +403,7 @@ def run(
         "nodes": nodes,
     }
 
-    # ── Build PageIndex-enhanced CiteIndex tree if available ────────
+    # ── Step 8: Extra (PageIndex tree + images) ─────────────────────
     extra: Dict[str, Any] = {}
     if pageindex_tree_json is not None:
         from .pageindex_tree import pageindex_to_citeindex_tree
@@ -326,11 +414,10 @@ def run(
             page_number_map=page_number_map,
             merkle_root=merkle_tree.get("root"),
         )
+        _annotate_document_with_pageindex(document_structure, ci_tree)
         extra["pageindex_tree"] = ci_tree
-        logger.info("PageIndex → CiteIndex tree converted: %d sections",
-                     len(ci_tree.get("level_1", [])))
+        logger.info("PageIndex → CiteIndex tree: %d sections", len(ci_tree.get("level_1", [])))
 
-    # ── Store image extraction info for master.py to copy ───────────
     if pdf_images and _images_tmpdir:
         extra["_images_tmpdir"] = _images_tmpdir
         extra["_images_list"] = pdf_images
@@ -347,32 +434,28 @@ def run(
 
 
 # ---------------------------------------------------------------------------
-# Legacy helpers (used by fitz fallback and scanned_pdf.py)
+# Helpers
 # ---------------------------------------------------------------------------
 
-def _extract_paragraphs_from_layouts(
-    page_layouts: List[Dict[str, Any]],
-) -> List[Tuple[int, List[str]]]:
-    page_paragraphs: List[Tuple[int, List[str]]] = []
-    for pl in page_layouts:
-        paragraphs: List[str] = []
-        for col in pl.get("columns", []):
-            for para in col.get("paragraphs", []):
-                text = para.get("text", "").strip()
-                if text:
-                    paragraphs.append(text)
-        for fn in pl.get("footnotes", []):
-            text = fn.get("text", "").strip()
-            if text:
-                paragraphs.append(text)
-        page_paragraphs.append((pl["page_number"], paragraphs))
-    return page_paragraphs
+def _build_flat_document_structure(
+    page_paragraphs: List[Tuple[int, List[str]]],
+) -> Dict[str, Any]:
+    """Build a minimal page-based document structure (no heading detection)."""
+    pages: List[Dict[str, Any]] = []
+    for page_num, paragraphs in page_paragraphs:
+        page_dict: Dict[str, Any] = {
+            "page_number": page_num,
+            "paragraphs": [
+                {
+                    "paragraph_id": f"p{page_num}_{i + 1}",
+                    "text": p,
+                    "type": "text",
+                }
+                for i, p in enumerate(paragraphs)
+                if p.strip()
+            ],
+            "footnotes": [],
+        }
+        pages.append(page_dict)
 
-
-def _collect_ordered_text(page_layouts: List[Dict[str, Any]]) -> str:
-    parts: List[str] = []
-    for pl in page_layouts:
-        ordered = pl.get("ordered_text", "")
-        if ordered.strip():
-            parts.append(ordered)
-    return "\n\n".join(parts)
+    return {"pages": pages, "section_tree": []}

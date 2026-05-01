@@ -154,10 +154,9 @@ def _build_body_document(
 ) -> str:
     """Build MD body for PDF and URL article documents.
 
-    When the document structure contains heading paragraphs (from MinerU
-    layout analysis), renders them with proper heading levels (##, ###, etc.)
-    instead of flat page-number headers. Images with ``image_path`` are
-    rendered as ``![caption](path)``.
+    Handles both MinerU structure (``page.paragraphs[]`` with ``type`` field)
+    and fitz legacy structure (``page.columns[].paragraphs[]`` with plain text).
+    Images with ``image_path`` render as ``![caption](path)``.
     """
     lines: List[str] = []
     structure = document_json.get("structure", {})
@@ -173,105 +172,113 @@ def _build_body_document(
     is_url = resource_type == "url_article"
 
     # ── Build section-tree index for heading-rich rendering ──────────
-    # If section_tree has entries, build a lookup: section title → level
     section_levels: Dict[str, int] = {}
     if section_tree:
         _index_section_levels(section_tree, section_levels, base_level=2)
 
-    # ── Render pages ─────────────────────────────────────────────────
-    has_headings = any(
-        para.get("type") == "heading"
+    # ── Detect MinerU vs fitz structure ─────────────────────────────
+    is_mineru = any(
+        "paragraphs" in page and page.get("paragraphs", [])
+        or "sections" in page
         for page in pages
-        for para in page.get("paragraphs", [])
     )
 
-    for page in pages:
+    # Build a short citation prefix for page markers
+    cite_prefix = f"{author}, 《{title}》"
+    if publisher:
+        cite_prefix += f", {publisher}"
+    cite_prefix += f", {year}"
+
+    # ── Render pages ─────────────────────────────────────────────────
+    for page_idx, page in enumerate(pages):
         page_num = page.get("page_number", "?")
-        paragraphs = page.get("paragraphs", [])
 
-        if not paragraphs:
-            continue
+        # ── Clear page separator with citation ────────────────────────
+        # Skip separator for the first page (title block already has ---)
+        if page_idx > 0:
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+        else:
+            lines.append("")
+        lines.append(f"<!-- page:{page_num} | {cite_prefix}, p.{page_num} -->")
+        lines.append("")
 
-        # ── Page anchor comment (invisible but useful for cross-ref) ──
-        lines.append(f"<!-- page:{page_num} -->")
+        if is_mineru:
+            # MinerU path: page.paragraphs[] with types
+            paragraphs = page.get("paragraphs", [])
+            has_mineru_headings = any(p.get("type") == "heading" for p in paragraphs)
 
-        for para in paragraphs:
-            text = para.get("text", "").strip()
-            para_type = para.get("type", "")
-            image_path = para.get("image_path")
-
-            # ── Heading ──────────────────────────────────────────────
-            if para_type == "heading" and text:
-                # Determine heading level from section_tree or fallback
-                level = section_levels.get(text, 2)
-                heading_marker = "#" * level
-                cite_suffix = f"{author}, 《{title}》, p.{page_num}"
-                if publisher:
-                    cite_suffix += f", {publisher}"
-                cite_suffix += f", {year}"
-                lines.append(f"{heading_marker} {text} {{{cite_suffix}}}")
-                lines.append("")
-                continue
-
-            # ── Image with caption ───────────────────────────────────
-            if para_type == "image_caption" and image_path:
-                alt_text = text if text else "image"
-                lines.append(f"![{alt_text}]({image_path})")
-                lines.append("")
-                continue
-
-            # ── Image caption without image path (caption only) ──────
-            if para_type == "image_caption" and text and not image_path:
-                lines.append(f"*{text}*")
-                lines.append("")
-                continue
-
-            # ── Regular text ──────────────────────────────────────────
-            if text:
-                lines.append(text)
+            if not has_mineru_headings:
+                # No headings: fallback page label
+                section_title = page.get("section_title", "")
+                if is_url:
+                    label = f"Section {page_num}: {section_title}" if section_title else f"Section {page_num}"
+                else:
+                    label = f"Page {page_num}: {section_title}" if section_title else f"Page {page_num}"
+                lines.append(f"## {label}")
                 lines.append("")
 
-        # Collect footnotes
-        for fn in page.get("footnotes", []):
-            footnotes_all.append(fn)
-
-    # ── If no headings were found, fall back to page-number headers ───
-    if not has_headings and not section_tree:
-        fallback_lines: List[str] = []
-        for page in pages:
-            page_num = page.get("page_number", "?")
-            section_title = page.get("section_title", "")
-
-            if is_url:
-                header_label = f"Section {page_num}: {section_title}" if section_title and section_title != "(intro)" else f"Section {page_num}"
-                cite_suffix = f"{author}, 「{title}」, §{page_num}"
-            else:
-                header_label = f"Page {page_num}: {section_title}" if section_title and section_title != "(intro)" else f"Page {page_num}"
-                cite_suffix = f"{author}, 《{title}》, p.{page_num}"
-                if publisher:
-                    cite_suffix += f", {publisher}"
-                cite_suffix += f", {year}"
-
-            fallback_lines.append(f"## [{header_label}] {{{cite_suffix}}}")
-            fallback_lines.append("")
-
-            for para in page.get("paragraphs", []):
+            for para in paragraphs:
                 text = para.get("text", "").strip()
                 para_type = para.get("type", "")
                 image_path = para.get("image_path")
 
+                # ── Heading ──────────────────────────────────────
+                if para_type == "heading" and text:
+                    level = para.get("level") or section_levels.get(text, 2)
+                    lines.append(f"{'#' * level} {text}")
+                    lines.append("")
+                    continue
+
+                # ── Image ────────────────────────────────────────
                 if para_type == "image_caption" and image_path:
                     alt_text = text if text else "image"
-                    fallback_lines.append(f"![{alt_text}]({image_path})")
-                    fallback_lines.append("")
-                elif text:
-                    fallback_lines.append(text)
-                    fallback_lines.append("")
+                    lines.append(f"![{alt_text}]({image_path})")
+                    lines.append("")
+                    continue
 
-            for fn in page.get("footnotes", []):
-                footnotes_all.append(fn)
+                if para_type == "image_caption" and text and not image_path:
+                    lines.append(f"*{text}*")
+                    lines.append("")
+                    continue
 
-        lines = fallback_lines
+                # ── Text ─────────────────────────────────────────
+                if text:
+                    lines.append(text)
+                    lines.append("")
+
+        else:
+            # Fitz fallback path: page.columns[].paragraphs[]
+            columns = page.get("columns", [])
+            if not columns:
+                # Direct paragraphs list (older format)
+                columns = [{"paragraphs": page.get("paragraphs", [])}]
+
+            # Flatten columns into a single page
+            flat_paras: List[str] = []
+            for col in columns:
+                for para in col.get("paragraphs", []):
+                    if isinstance(para, dict):
+                        flat_paras.append(para.get("text", "").strip())
+                    elif isinstance(para, str):
+                        flat_paras.append(para.strip())
+
+            # Page label
+            if is_url:
+                lines.append(f"## Section {page_num}")
+            else:
+                lines.append(f"## Page {page_num}")
+            lines.append("")
+
+            for text in flat_paras:
+                if text:
+                    lines.append(text)
+                    lines.append("")
+
+        # Collect footnotes
+        for fn in page.get("footnotes", []):
+            footnotes_all.append(fn)
 
     return "\n".join(lines), footnotes_all
 

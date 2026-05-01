@@ -11,7 +11,7 @@ from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, Pipeli
 from .pipelines import digital_pdf, media, scanned_pdf, url_article
 from .markdown_export import write_library_markdown
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
-from .pipelines.common import parse_author_from_filename, prompt_author_interactively
+from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,18 @@ class CiteIndexIngestionOrchestrator:
             )
 
             # ── Author enrichment fallback ────────────────────────────
-            # If LLM/GROBID couldn't extract an author, try filename then prompt
+            # First validate LLM/GROBID authors (detect garbage extraction)
+            existing_authors = standardized_csl.get("author", [])
+            validated_authors = validate_authors(existing_authors, input_ref) if existing_authors else None
+
+            if validated_authors:
+                # Keep the cleaned authors
+                standardized_csl["author"] = validated_authors
+                logger.info("Validated authors: %s", validated_authors)
+            elif not validated_authors and standardized_csl.get("author"):
+                # All authors were garbage — clear them and try fallback
+                standardized_csl.pop("author", None)
+
             if not standardized_csl.get("author"):
                 # 1. Try parsing from filename
                 author_from_filename = parse_author_from_filename(input_ref)
@@ -116,7 +127,8 @@ class CiteIndexIngestionOrchestrator:
                     dest_images_dir = os.path.join(document_path, "images")
                     if os.path.isdir(images_tmpdir):
                         for img_info in images_list:
-                            src = os.path.join(images_tmpdir, img_info["filename"])
+                            # Images are in images_tmpdir/images/, not images_tmpdir/
+                            src = os.path.join(images_tmpdir, "images", img_info["filename"])
                             if os.path.isfile(src):
                                 os.makedirs(dest_images_dir, exist_ok=True)
                                 shutil.copy2(src, os.path.join(dest_images_dir, img_info["filename"]))
