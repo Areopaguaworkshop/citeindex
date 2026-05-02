@@ -11,14 +11,22 @@ def test_digital_pdf_pageindex_headings_flow_into_document_and_library_markdown(
             {
                 "page_number": 1,
                 "paragraphs": [
-                    {"paragraph_id": "p1_1", "text": "Page one body text.", "type": "text"},
+                    {
+                        "paragraph_id": "p1_1",
+                        "text": "Origins\nAramaic Origins\nPage one body text.",
+                        "type": "text",
+                    },
                 ],
                 "footnotes": [],
             },
             {
                 "page_number": 2,
                 "paragraphs": [
-                    {"paragraph_id": "p2_1", "text": "Page two body text.", "type": "text"},
+                    {
+                        "paragraph_id": "p2_1",
+                        "text": "THE ARAMAIC KINGDOMS\nPage two body text.",
+                        "type": "text",
+                    },
                 ],
                 "footnotes": [],
             },
@@ -69,6 +77,13 @@ def test_digital_pdf_pageindex_headings_flow_into_document_and_library_markdown(
     assert "## Origins" in markdown
     assert "### Aramaic Origins" in markdown
     assert "### THE ARAMAIC KINGDOMS" in markdown
+    assert markdown.count("---") >= 2
+    assert "\n\n---\n\n<!-- page:1" in markdown
+    assert "\n\n---\n\n<!-- page:2" in markdown
+    assert "Origins\nAramaic Origins\nPage one body text." not in markdown
+    assert "THE ARAMAIC KINGDOMS\nPage two body text." not in markdown
+    assert "Page one body text." in markdown
+    assert "Page two body text." in markdown
 
 
 def test_store_corpus_artifacts_writes_pageindex_tree_json(tmp_path):
