@@ -21,6 +21,12 @@ pip install citeindex
 # Ingest a PDF
 citeindex paper.pdf
 
+# Ingest a scanned PDF with the default MinerU backend
+citeindex scanned.pdf --ocr-engine mineru
+
+# Use the optional GLM-OCR backend via local Ollama
+citeindex scanned.pdf --ocr-engine glm-ocr --ocr-model glm-ocr:latest
+
 # Ingest a URL
 citeindex https://example.com/article
 
@@ -33,7 +39,7 @@ citeindex https://example.com/articles --update-url-article
 # Options
 citeindex paper.pdf --llm ollama/qwen3 --type thesis --is-primary
 citeindex paper.pdf --text-direction vertical --vertical-lang ch
-citeindex scanned.pdf --lang auto --page-range "1-10"
+citeindex scanned.pdf --ocr-engine mineru --lang auto --page-range "1-10"
 citeindex paper.pdf --no-layout  # disable column/footnote detection
 citeindex -v paper.pdf           # verbose/debug logging
 ```
@@ -79,15 +85,41 @@ PDF → PyMuPDF (text + images) → GROBID / DSPy citation enrichment
 ### Scanned PDF
 
 ```
-PDF → OCRmyPDF (normalize) → PaddleOCR (vertical detect) → MinerU (layout)
-    → Tesseract (text) → GROBID (citations) → document structure
-    → Merkle tree → store to corpus/
+PDF → scanned backend selector
+    → MinerU (default) OR GLM-OCR + PaddleOCR LayoutDetection
+    → normalized content_list / markdown / extracted figures
+    → DSPy-backed metadata extraction
+    → document structure + PageIndex tree (default)
+    → Merkle tree → store only CiteIndex-native artifacts to corpus/
 ```
 
-- **OCRmyPDF** normalizes and adds text layer to scanned pages
-- **PaddleOCR** detects CJK vertical text layouts
-- **Tesseract** provides OCR with auto-detected language
-- Supports `--text-direction vertical` for traditional Chinese/Japanese
+- **MinerU** is the default scanned backend
+- **GLM-OCR** is an optional backend that runs through local **Ollama** using the native `/api/generate` endpoint
+- **PaddleOCR LayoutDetection** (`PP-DocLayoutV3` / `PP-DocLayout_plus-L`) supplies external region proposals for GLM-OCR from the start
+- Scanned PDFs do **not** use GROBID; metadata is extracted from structured backend output via DSPy-backed extraction
+- DSPy is allowed to overwrite pattern-extracted metadata fields for scanned documents
+- **PageIndex** runs by default for scanned PDFs, just like digital PDFs
+- Only extracted figures / illustrations are exported into the corpus `images/` folder; raw backend artifacts are not preserved
+- Supports `--ocr-engine mineru` or `--ocr-engine glm-ocr`
+
+### Scanned PDF Backend Selection
+
+Use the scanned backend flags only for image-based PDFs:
+
+```bash
+# Default scanned backend
+citeindex scanned.pdf --ocr-engine mineru
+
+# Local GLM-OCR through Ollama
+citeindex scanned.pdf --ocr-engine glm-ocr --ocr-model glm-ocr:latest
+
+# Custom Ollama host
+citeindex scanned.pdf --ocr-engine glm-ocr --ollama-host http://localhost:11434
+```
+
+- `mineru` is the default and recommended general-purpose backend
+- `glm-ocr` requires a local Ollama model plus PaddleOCR layout-detection dependencies
+- `--mineru-backend` is forwarded directly to the MinerU CLI backend selector
 
 ### URL Article
 
@@ -138,6 +170,10 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 | Option | CLI Flag | Default | Description |
 |--------|----------|---------|-------------|
 | `llm_model` | `--llm` | `ollama/deepseek-v4-flash:cloud` | LLM model (`ollama/name` or `gemini/name`) |
+| `ocr_engine` | `--ocr-engine` | `mineru` | Scanned PDF OCR backend: `mineru` or `glm-ocr` |
+| `ocr_model` | `--ocr-model` | `glm-ocr:latest` | Ollama model name used by model-backed OCR engines such as GLM-OCR |
+| `ollama_host` | `--ollama-host` | `http://localhost:11434` | Ollama base URL for GLM-OCR requests |
+| `mineru_backend` | `--mineru-backend` | `pipeline` | Backend value forwarded to the MinerU CLI |
 | `text_direction` | `--text-direction`, `-td` | `horizontal` | `horizontal`, `auto`, or `vertical` |
 | `vertical_lang` | `--vertical-lang` | `ch` | CJK language: `ch` (Chinese) or `japan` |
 | `lang` | `--lang`, `-l` | `auto` | OCR language (auto-detect or Tesseract code) |
