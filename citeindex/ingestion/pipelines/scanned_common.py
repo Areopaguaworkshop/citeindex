@@ -42,6 +42,60 @@ def build_page_number_map_from_content_list(content_list: List[Dict[str, Any]]) 
     return {idx: idx + 1 for idx in range(max_page_idx + 1)}
 
 
+def _heading_level_for_item(item: Dict[str, Any], text: str) -> int:
+    explicit_level = item.get("heading_level")
+    if isinstance(explicit_level, int) and explicit_level > 0:
+        return max(1, min(explicit_level, 6))
+
+    text_level = item.get("text_level")
+    if isinstance(text_level, int) and text_level > 0:
+        return max(1, min(text_level, 6))
+
+    return _infer_heading_level(text)
+
+
+def _image_overlap_ratio(item_bbox: List[float], image_bbox: List[float]) -> float:
+    if len(item_bbox) < 4 or len(image_bbox) < 4:
+        return 0.0
+
+    overlap_x = max(0.0, min(item_bbox[2], image_bbox[2]) - max(item_bbox[0], image_bbox[0]))
+    overlap_y = max(0.0, min(item_bbox[3], image_bbox[3]) - max(item_bbox[1], image_bbox[1]))
+    area_item = max(0.0, (item_bbox[2] - item_bbox[0]) * (item_bbox[3] - item_bbox[1]))
+    if area_item <= 0:
+        return 0.0
+
+    return (overlap_x * overlap_y) / area_item
+
+
+def attach_image_paths_to_content_list(
+    content_list: List[Dict[str, Any]],
+    images: Optional[List[Dict[str, Any]]],
+) -> None:
+    if not images:
+        return
+
+    for item in content_list:
+        if item.get("type") != "image" or item.get("image_path"):
+            continue
+
+        page_idx = item.get("page_idx", 0)
+        item_bbox = item.get("bbox", [])
+        fallback_path: Optional[str] = None
+
+        for image in images:
+            if image.get("page_idx") != page_idx:
+                continue
+
+            fallback_path = fallback_path or image.get("relative_path")
+            image_bbox = image.get("bbox", [])
+            if _image_overlap_ratio(item_bbox, image_bbox) > 0.5:
+                item["image_path"] = image.get("relative_path")
+                break
+
+        if not item.get("image_path") and fallback_path:
+            item["image_path"] = fallback_path
+
+
 def content_list_to_markdown(
     content_list: List[Dict[str, Any]],
     page_number_map: Dict[int, int],
@@ -68,7 +122,7 @@ def content_list_to_markdown(
             continue
 
         if item.get("text_level") is not None and text:
-            level = item.get("heading_level") or _infer_heading_level(text)
+            level = _heading_level_for_item(item, text)
             lines.append(f"{'#' * max(1, min(level, 6))} {text}")
             lines.append("")
             continue
@@ -138,18 +192,21 @@ def build_scanned_pipeline_result(
 
     extra: Dict[str, Any] = {}
     if config.use_pageindex and normalized_markdown.strip():
-        pi_result = run_pageindex_md_tree(normalized_markdown, model=config.pageindex_model)
-        if pi_result and pi_result.get("structure"):
-            ci_tree = pageindex_to_citeindex_tree(
-                pi_result=pi_result,
-                doc_id=source_id,
-                csl_data=csl,
-                page_number_map=page_number_map,
-                merkle_root=merkle_tree.get("root"),
-            )
-            extra["pageindex_tree"] = ci_tree
-            if not document_structure.get("section_tree"):
-                _annotate_document_with_pageindex(document_structure, ci_tree)
+        try:
+            pi_result = run_pageindex_md_tree(normalized_markdown, model=config.pageindex_model)
+            if pi_result and pi_result.get("structure"):
+                ci_tree = pageindex_to_citeindex_tree(
+                    pi_result=pi_result,
+                    doc_id=source_id,
+                    csl_data=csl,
+                    page_number_map=page_number_map,
+                    merkle_root=merkle_tree.get("root"),
+                )
+                extra["pageindex_tree"] = ci_tree
+                if not document_structure.get("section_tree"):
+                    _annotate_document_with_pageindex(document_structure, ci_tree)
+        except Exception:
+            logger.warning("PageIndex failed for scanned backend", exc_info=True)
 
     if images_tmpdir and images_list:
         extra["_images_tmpdir"] = images_tmpdir
@@ -162,12 +219,19 @@ def build_scanned_pipeline_result(
             "title": csl.get("title") or initial_title,
             "page_count": num_pages,
             "source_path": os.path.abspath(pdf_path),
+            "ocr_engine": backend_name,
             "ocr_backend": backend_name,
             "document_type": doc_type,
         },
         "structure": document_structure,
         "nodes": nodes,
     }
+
+    if backend_name == "glm-ocr":
+        document_json["metadata"]["ocr_model"] = config.ocr_model
+        document_json["metadata"]["ollama_host"] = config.ollama_host
+    if backend_name == "mineru":
+        document_json["metadata"]["mineru_backend"] = config.mineru_backend
 
     return PipelineResult(
         status="ok",

@@ -47,6 +47,27 @@ def main() -> None:
         help="LLM model for citation extraction (default: ollama/deepseek-v4-flash:cloud)",
     )
     parser.add_argument(
+        "--ocr-engine",
+        choices=["mineru", "glm-ocr"],
+        default="mineru",
+        help="Scanned PDF OCR backend (default: mineru)",
+    )
+    parser.add_argument(
+        "--ocr-model",
+        default="glm-ocr:latest",
+        help="Model name for model-backed OCR engines such as glm-ocr (default: glm-ocr:latest)",
+    )
+    parser.add_argument(
+        "--ollama-host",
+        default="http://localhost:11434",
+        help="Local Ollama host for glm-ocr requests (default: http://localhost:11434)",
+    )
+    parser.add_argument(
+        "--mineru-backend",
+        default="pipeline",
+        help="MinerU execution backend passed to the CLI (default: pipeline)",
+    )
+    parser.add_argument(
         "--text-direction",
         "-td",
         choices=["horizontal", "auto", "vertical"],
@@ -133,6 +154,10 @@ def main() -> None:
 
     config = IngestionConfig(
         llm_model=args.llm,
+        ocr_engine=args.ocr_engine,
+        ocr_model=args.ocr_model,
+        ollama_host=args.ollama_host,
+        mineru_backend=args.mineru_backend,
         text_direction=args.text_direction,
         vertical_lang=args.vertical_lang,
         lang=args.lang,

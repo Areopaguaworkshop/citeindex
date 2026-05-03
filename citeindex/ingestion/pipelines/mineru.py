@@ -21,6 +21,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF — for image extraction
 
+from ..models import IngestionConfig, PipelineResult
+from .common import make_source_id
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -71,6 +74,7 @@ def run_mineru(
     pdf_path: str,
     output_dir: Optional[str] = None,
     parse_method: str = "auto",
+    backend: str = "pipeline",
 ) -> Dict[str, Any]:
     """Run MinerU on a PDF and return parsed outputs.
 
@@ -111,6 +115,8 @@ def run_mineru(
             "-o", output_dir,
             "-m", parse_method,
         ]
+        if backend:
+            cmd.extend(["-b", backend])
         logger.info("Running MinerU: %s", " ".join(cmd))
 
         result = subprocess.run(
@@ -182,6 +188,18 @@ def _infer_heading_level(text: str) -> int:
     if _LEVEL2_RE.match(text):
         return 2
     return 1
+
+
+def _content_item_heading_level(item: Dict[str, Any], text: str) -> int:
+    explicit_level = item.get("heading_level")
+    if isinstance(explicit_level, int) and explicit_level > 0:
+        return max(1, min(explicit_level, 6))
+
+    text_level = item.get("text_level")
+    if isinstance(text_level, int) and text_level > 0:
+        return max(1, min(text_level, 6))
+
+    return _infer_heading_level(text)
 
 
 def _classify_discarded(text: str) -> str:
@@ -276,8 +294,8 @@ def content_list_to_document_structure(
         page = pages_acc[page_idx]
 
         # ── Heading ────────────────────────────────────────────────
-        if text_level is not None and text_level == 1 and text:
-            level = _infer_heading_level(text)
+        if text_level is not None and text:
+            level = _content_item_heading_level(item, text)
             current_section = text
 
             # Record section on this page
@@ -560,3 +578,74 @@ def _load_text(path: Path) -> str:
     except Exception:
         logger.warning("Failed to load text: %s", path)
     return ""
+
+
+def run(
+    pdf_path: str,
+    source_type: str = "scanned_pdf",
+    config: Optional[IngestionConfig] = None,
+) -> PipelineResult:
+    from .scanned_common import (
+        attach_image_paths_to_content_list,
+        build_page_number_map_from_content_list,
+        build_scanned_pipeline_result,
+        make_images_tmpdir,
+    )
+
+    cfg = config or IngestionConfig()
+    source_id = make_source_id(pdf_path)
+    mineru_tmpdir = tempfile.mkdtemp(prefix="citeindex_mineru_raw_")
+    images_tmpdir: Optional[str] = None
+
+    try:
+        mineru_output = run_mineru(
+            pdf_path,
+            output_dir=mineru_tmpdir,
+            parse_method="ocr",
+            backend=cfg.mineru_backend,
+        )
+        content_list = mineru_output.get("content_list")
+        if not isinstance(content_list, list) or not content_list:
+            raise RuntimeError("MinerU did not return a usable content_list")
+
+        images_list: List[Dict[str, Any]] = []
+        images_tmpdir = make_images_tmpdir(prefix="citeindex_mineru_imgs_")
+        try:
+            images_list = extract_pdf_images(pdf_path, images_tmpdir, source_id)
+        except Exception:
+            logger.warning("MinerU image export fallback failed", exc_info=True)
+
+        if not images_list and images_tmpdir:
+            shutil.rmtree(images_tmpdir, ignore_errors=True)
+            images_tmpdir = None
+
+        attach_image_paths_to_content_list(content_list, images_list)
+
+        page_number_map = build_page_number_map_from_content_list(content_list)
+        document_structure = content_list_to_document_structure(
+            content_list,
+            page_number_map,
+            images=images_list,
+        )
+        page_paragraphs = content_list_to_paragraphs(content_list, page_number_map)
+
+        result = build_scanned_pipeline_result(
+            pdf_path=pdf_path,
+            backend_name="mineru",
+            source_type=source_type,
+            config=cfg,
+            content_list=content_list,
+            document_structure=document_structure,
+            page_paragraphs=page_paragraphs,
+            images_tmpdir=images_tmpdir,
+            images_list=images_list,
+        )
+        if result.document_json is not None:
+            result.document_json["metadata"]["original_pdf_path"] = os.path.abspath(pdf_path)
+        return result
+    except Exception:
+        if images_tmpdir:
+            shutil.rmtree(images_tmpdir, ignore_errors=True)
+        raise
+    finally:
+        shutil.rmtree(mineru_tmpdir, ignore_errors=True)

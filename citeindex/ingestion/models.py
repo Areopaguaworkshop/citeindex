@@ -31,6 +31,10 @@ class IngestionLogEntry:
 class IngestionConfig:
     """Configuration parameters passed through the ingestion pipeline."""
     llm_model: str = "ollama/deepseek-v4-flash:cloud"
+    ocr_engine: str = "mineru"
+    ocr_model: str = "glm-ocr:latest"
+    ollama_host: str = "http://localhost:11434"
+    mineru_backend: str = "pipeline"
     text_direction: str = "horizontal"
     vertical_lang: str = "ch"
     lang: str = "auto"
