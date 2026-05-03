@@ -1,6 +1,6 @@
 # CiteIndex
 
-**v0.12.0** — Ingest sources with proper citation. PDF, URL, media, Office, DJVU.
+CiteIndex, ingest sources with proper citation. PDF, URL, media, Office, DJVU.
 
 Deterministic citation extraction, Merkle-verified integrity, CJK-first OCR.
 Every claim is traced, verified, and cited — no hallucinations.
@@ -288,9 +288,9 @@ If you use CiteIndex in your work, please cite it:
 
 ```bibtex
 @software{citeindex2025,
-  author  = {ajia},
+  author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.12.0},
+  version = {0.12.1},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},
