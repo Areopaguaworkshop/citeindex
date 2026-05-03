@@ -72,6 +72,7 @@ class ExtractDocumentMetadata(dspy.Signature):
     title = dspy.OutputField(
         desc="Document title. For journals, the article title (not the journal name)."
     )
+    subtitle = dspy.OutputField(desc="Subtitle if present. Return empty if not found.")
     author = dspy.OutputField(
         desc=(
             "Author(s). CRITICAL for Chinese names: do NOT split multi-character names. "
@@ -79,6 +80,10 @@ class ExtractDocumentMetadata(dspy.Signature):
             "Include dynasty/role indicators (e.g., '【明】王陽明撰')."
         )
     )
+    editor = dspy.OutputField(desc="Editor(s), semicolon-separated. Return empty if not found.")
+    translator = dspy.OutputField(desc="Translator(s), semicolon-separated. Return empty if not found.")
+    series = dspy.OutputField(desc="Series or collection title. Return empty if not found.")
+    edition = dspy.OutputField(desc="Edition information. Return empty if not found.")
     container_title = dspy.OutputField(
         desc="Journal name or book title containing this chapter. Empty if standalone book."
     )
@@ -633,18 +638,25 @@ def _run_dspy_extraction(
 
         csl: Dict[str, Any] = {}
         _set_if_present(csl, "title", result.title)
+        _set_if_present(csl, "subtitle", result.subtitle)
         _set_if_present(csl, "publisher", result.publisher)
         _set_if_present(csl, "volume", result.volume)
         _set_if_present(csl, "issue", result.issue)
         _set_if_present(csl, "page", result.page_numbers)
         _set_if_present(csl, "DOI", result.doi)
         _set_if_present(csl, "abstract", result.abstract)
+        _set_if_present(csl, "collection-title", result.series)
+        _set_if_present(csl, "edition", result.edition)
 
         if result.container_title and result.container_title.strip():
             csl["container-title"] = result.container_title.strip()
 
         if result.author and result.author.strip():
             csl["author"] = _parse_authors(result.author)
+        if result.editor and result.editor.strip():
+            csl["editor"] = _parse_authors(result.editor)
+        if result.translator and result.translator.strip():
+            csl["translator"] = _parse_authors(result.translator)
 
         if result.publication_year and result.publication_year.strip():
             try:
@@ -672,6 +684,38 @@ def extract_metadata_from_mineru(
 ) -> Dict[str, Any]:
     """Legacy entry point — delegates to DSPy extraction directly."""
     return _run_dspy_extraction(mineru_markdown, doc_type, config)
+
+
+def extract_metadata_with_dspy_priority(
+    content_list: List[Dict],
+    normalized_markdown: str,
+    doc_type: str,
+    config: Optional[IngestionConfig] = None,
+    discarded_blocks: Optional[List[Dict]] = None,
+) -> Dict[str, Any]:
+    """Pattern extraction followed by DSPy, allowing DSPy to overwrite fields.
+
+    This is intended for scanned-document backends where structured OCR output
+    is authoritative and DSPy should be allowed to refine deterministic parsing.
+    """
+    pattern_csl = extract_metadata_from_content_list(content_list, discarded_blocks)
+    dspy_csl = _run_dspy_extraction(normalized_markdown, doc_type, config)
+    if not dspy_csl:
+        pattern_csl.setdefault("_extraction_method", pattern_csl.get("_extraction_method", "pattern"))
+        return pattern_csl
+
+    merged = dict(pattern_csl)
+    for key, value in dspy_csl.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, list) and not value:
+            continue
+        merged[key] = value
+
+    merged["_extraction_method"] = "pattern+dspy_priority"
+    return merged
 
 
 # ---------------------------------------------------------------------------

@@ -34,9 +34,27 @@ Proposed CLI/config shape:
 
 - `--ocr-engine` with values: `mineru`, `glm-ocr`
 - default `ocr_engine="mineru"`
-- `--ocr-model` for model-backed OCR engines, initially used by `glm-ocr`
+- `--ocr-model` for model-backed OCR engines, initially restricted to `glm-ocr`
 - `--ollama-host` for local GLM-OCR service, default `http://localhost:11434`
 - `--mineru-backend` to choose MinerU execution backend when needed, default `pipeline`
+
+## Locked Requirements
+
+The following decisions are now fixed for the first implementation:
+
+- preserve only CiteIndex artifacts in the corpus
+- `mineru` is the default scanned backend
+- `glm-ocr` is the only optional model-backed scanned backend for now
+- `glm-ocr` starts with layout-aware region OCR, not page-only OCR
+- `glm-ocr` should use an external layout detector from the start rather than local heuristics
+- export only extracted images, not full page snapshots by default
+- PageIndex runs by default on scanned-PDF backends
+- scanned PDFs do not use GROBID
+- scanned citation metadata should come from structured MinerU / GLM-OCR outputs via DSPy-backed extraction
+- scanned citation metadata should include translator, editor, series, and edition in the first version
+- DSPy is allowed to overwrite pattern-extracted scanned metadata when it has better structured output
+- scanned PDFs should keep the current `determine_doc_type()` heuristic
+- GLM-OCR output should be normalized into a MinerU-like intermediate schema
 
 ## Current State
 
@@ -107,14 +125,12 @@ MinerU outputs should be normalized into:
 - `csl.json`
 - `merkle.json`
 - `pageindex_tree.json` when enabled
+- `pageindex_tree.json` with scanned backends enabled by default
 - `library/<slug>.md`
 - `images/` copied into the corpus folder
 
-MinerU-native artifacts should also be preserved when practical:
-
-- `mineru_middle.json`
-- `mineru_content_list.json`
-- `mineru.md`
+Raw MinerU-native artifacts should not be persisted in the first implementation;
+the corpus should contain only CiteIndex-native artifacts.
 
 ### Document Model Strategy
 
@@ -149,11 +165,11 @@ Relevant upstream signals:
 
 ```text
 PDF
-  -> rasterize pages to images with PyMuPDF
-  -> call local Ollama glm-ocr per page / region
-  -> collect OCR text + optional table/figure outputs
+  -> rasterize pages / candidate regions to images with PyMuPDF
+  -> perform layout-aware region OCR with local Ollama glm-ocr
+  -> collect OCR text + table/figure outputs
   -> build scanned document structure
-  -> export page images into corpus/images/
+  -> export extracted images into corpus/images/
   -> run citation extraction cascade
   -> run optional PageIndex tree build
   -> write corpus artifacts and library markdown
@@ -171,13 +187,13 @@ GLM-OCR in Ollama is image-driven, not PDF-native. The pipeline must therefore:
 
 The first GLM-OCR version should focus on:
 
-- page-by-page text recognition
-- optional figure/table prompting later
+- layout-aware region OCR from the start
+- explicit handling of text, figures, and tables as separate region classes when possible
 - stable local execution over maximum speed
 
 ## PageIndex in the New Scanned Flow
 
-Both backends should support optional PageIndex tree generation.
+Both backends should run PageIndex by default.
 
 ### MinerU + PageIndex
 
@@ -189,7 +205,7 @@ PageIndex should operate on the normalized page/markdown output produced from GL
 
 ### Storage
 
-When enabled, both backends should persist:
+Both backends should persist:
 
 - `pageindex_tree.json`
 - heading-aware `document.json`
@@ -209,21 +225,77 @@ and link them from `document.json` and library markdown.
 
 ### GLM-OCR
 
-Persist the rasterized page images and any extracted figure crops needed for downstream references.
+Persist only extracted images and figure/table crops needed for downstream references.
 
 Minimum requirement:
 
-- page images or extracted figures available in `corpus/<slug>/images/`
+- extracted figures / illustrations available in `corpus/<slug>/images/`
 
 ## Citation Extraction Plan
 
-Both backends should still run the CiteIndex citation cascade after OCR/layout parsing:
+Scanned backends should use a scanned-document-specific citation cascade after OCR/layout parsing:
 
-1. GROBID when possible on the original PDF
-2. LLM/DSPy extraction from structured text / markdown
+1. pattern extraction from backend-structured output
+2. DSPy signature extraction from normalized backend text / markdown
 3. file metadata fallback
 
-This preserves current citation behavior while allowing scanned-document structure to improve independently.
+GROBID should not be used for scanned PDFs in this new flow.
+
+### Reuse From Existing Project
+
+There is already a useful MinerU-oriented extraction module in
+`citeindex/ingestion/pipelines/dspy_extract.py`:
+
+- pattern extraction from `content_list`
+- DSPy fallback via `ExtractDocumentMetadata`
+- author parsing and CSL-compatible field shaping
+
+The plan should reuse that work for the MinerU backend rather than inventing
+a second metadata path.
+
+### Planned Metadata Extraction Split
+
+#### MinerU
+
+Use a two-stage metadata path based on the existing code:
+
+1. deterministic extraction from MinerU content/layout artifacts
+2. DSPy fallback on MinerU markdown / normalized structured text
+
+#### GLM-OCR
+
+Introduce a parallel scanned-document DSPy signature for GLM-OCR normalized output.
+
+Because GLM-OCR will not naturally emit MinerU-style `content_list`, the GLM-OCR
+path will first be normalized into a MinerU-like intermediate schema, then flow
+through the same metadata extraction path as much as possible.
+
+### Expanded Metadata Scope
+
+The first scanned-document metadata version should cover at least:
+
+- title
+- subtitle when present
+- author
+- translator
+- editor
+- series
+- edition
+- container-title
+- publisher
+- publication year / issued date
+- volume
+- issue
+- page range
+- DOI
+- abstract
+- keyword
+
+### CSL Output
+
+Both scanned backends should still normalize into the same CiteIndex CSL-shaped
+output used elsewhere in the project: title, author, container-title, publisher,
+issued year/date, volume, issue, page, DOI, abstract, keyword, and related fields.
 
 ## Library Markdown Plan
 
@@ -254,18 +326,22 @@ The markdown should not depend on the digital PDF pipeline.
 1. introduce a dedicated MinerU adapter in the scanned pipeline
 2. normalize MinerU outputs into CiteIndex artifacts
 3. export images
-4. generate library markdown directly from normalized structure
+4. reuse existing pattern + DSPy metadata extraction where possible
+5. generate library markdown directly from normalized structure
 
 ### Phase 3: GLM-OCR Backend
 
 1. add Ollama client support for OCR images
-2. render PDF pages to images
-3. normalize GLM-OCR outputs into CiteIndex artifacts
-4. export images and markdown
+2. add an external layout detector for region proposals
+3. render PDF pages and layout regions to images
+4. build layout-aware region OCR flow
+5. normalize GLM-OCR outputs into a MinerU-like intermediate schema, then into CiteIndex artifacts
+6. extend metadata extraction to cover translator / editor / series / edition fields
+7. export extracted images and markdown
 
 ### Phase 4: PageIndex Integration
 
-1. run PageIndex on normalized scanned output
+1. run PageIndex by default on normalized scanned output
 2. persist `pageindex_tree.json`
 3. inject heading structure into `document.json` and library markdown
 
@@ -310,14 +386,9 @@ The markdown should not depend on the digital PDF pipeline.
 
 ## Open Questions
 
-These should be resolved before implementation starts.
+One implementation choice remains open:
 
-1. For MinerU, do you want CiteIndex to preserve the raw MinerU markdown as an artifact even when we generate our own library markdown from normalized JSON?
-2. For GLM-OCR, should the first version use only whole-page OCR, or should it also attempt layout-aware region OCR from the beginning?
-3. For image export, do you want page snapshots for every scanned page, or only extracted figures/illustrations plus whatever backend emits naturally?
-4. For PageIndex, should it always run on scanned PDFs by default, or only when explicitly enabled for the scanned backends?
-5. For citation extraction, should GROBID still run first on the original PDF for both engines, even if MinerU/GLM-OCR already produced strong title/author signals?
-6. Do you want `--ocr-model` to remain generic for future Ollama OCR models, or should we keep the first version tightly scoped to `glm-ocr` only?
+1. For the external layout detector in the GLM-OCR backend, should the first implementation reuse the existing Paddle-based layout tooling already present in the repo, or should it introduce the GLM-OCR-recommended PP-DocLayoutV3 path directly?
 
 ## Recommendation
 
@@ -327,4 +398,4 @@ Recommended initial product behavior:
 - optional scanned backend: `glm-ocr`
 - no `ocrmypdf` backend option
 - no scanned handoff into `digital_pdf.run()`
-- both backends responsible for images, structure, citation enrichment, PageIndex integration, and library markdown
+- both backends responsible for extracted images, structure, citation enrichment, PageIndex integration, and library markdown
