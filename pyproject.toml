@@ -1,6 +1,6 @@
 [project]
 name = "citeindex"
-version = "0.12.1"
+version = "0.12.2"
 description = "Ingest sources with proper citation — PDF, URL, media, Office, DJVU"
 authors = [{ name = "ajia", email = "yyjfwoaini@gmail.com" }]
 dependencies = [
