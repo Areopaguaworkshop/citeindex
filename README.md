@@ -71,7 +71,7 @@ CiteIndex automatically detects the input type and routes to the correct pipelin
 ```
 PDF → PyMuPDF (text + images) → GROBID / DSPy citation enrichment
     → page-paragraph document structure
-    → PageIndex tree (optional, LLM-driven)
+    → PageIndex tree (default, LLM-driven)
     → section_tree + heading injection for document.json / library markdown
     → Merkle tree → store to corpus/
 ```

@@ -378,7 +378,7 @@ def run(
     # ── Step 4: GROBID ──────────────────────────────────────────────
     grobid_metadata, grobid_references = _run_grobid(pdf_path)
 
-    # ── Step 5: PageIndex tree (optional, uses PDF directly) ────────
+    # ── Step 5: PageIndex tree (default, uses PDF directly) ─────────
     pageindex_tree_json = None
     page_number_map: Dict[int, int] = {i: i + 1 for i in range(num_pages)}
     if cfg.use_pageindex:
