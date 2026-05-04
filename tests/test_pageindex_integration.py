@@ -2,6 +2,7 @@ import json
 
 from citeindex.ingestion.markdown_export import generate_library_markdown
 from citeindex.ingestion.pipelines.digital_pdf import _annotate_document_with_pageindex
+from citeindex.ingestion.pipelines.digital_pdf import _attach_layout_footnotes
 from citeindex.ingestion.pipelines.pdf_text_cleanup import clean_page_texts
 from citeindex.ingestion.storage import store_corpus_artifacts
 
@@ -79,12 +80,57 @@ def test_digital_pdf_pageindex_headings_flow_into_document_and_library_markdown(
     assert "### Aramaic Origins" in markdown
     assert "### THE ARAMAIC KINGDOMS" in markdown
     assert markdown.count("======page:") >= 2
-    assert "\n\n======page:1" in markdown
-    assert "\n\n======page:2" in markdown
+    assert markdown.index("Page one body text.") < markdown.index("======page:1")
+    assert markdown.index("Page two body text.") < markdown.index("======page:2")
     assert "Origins\nAramaic Origins\nPage one body text." not in markdown
     assert "THE ARAMAIC KINGDOMS\nPage two body text." not in markdown
     assert "Page one body text." in markdown
     assert "Page two body text." in markdown
+
+
+def test_digital_pdf_layout_footnotes_flow_into_library_markdown():
+    document_structure = {
+        "pages": [
+            {
+                "page_number": 1,
+                "paragraphs": [
+                    {
+                        "paragraph_id": "p1_1",
+                        "text": "Body text.",
+                        "type": "text",
+                    }
+                ],
+                "footnotes": [],
+            }
+        ],
+        "section_tree": [],
+    }
+    page_layouts = [
+        {
+            "page_number": 1,
+            "footnotes": [
+                {
+                    "footnote_id": "p1_fn1",
+                    "text": "Footnote text.",
+                }
+            ],
+        }
+    ]
+
+    _attach_layout_footnotes(document_structure, page_layouts)
+
+    markdown = generate_library_markdown(
+        csl_json={
+            "title": "Origins: A Culture of Encounter and Contact",
+            "author": [{"literal": "Chatonnet"}],
+            "type": "article-journal",
+        },
+        document_json={"structure": document_structure},
+        transcript_json=None,
+        resource_type="digital_pdf",
+    )
+
+    assert "[^1]: Footnote text." in markdown
 
 
 def test_store_corpus_artifacts_writes_pageindex_tree_json(tmp_path):

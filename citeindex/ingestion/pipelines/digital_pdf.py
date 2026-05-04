@@ -32,6 +32,7 @@ from .common import (
     make_source_id,
     split_paragraphs,
 )
+from .layout import analyze_document_layout
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,26 @@ def _embed_images_into_pages(
                 "type": "image_caption",
                 "image_path": img.get("relative_path"),
             })
+
+
+def _attach_layout_footnotes(
+    document_structure: Dict[str, Any],
+    page_layouts: List[Dict[str, Any]],
+) -> None:
+    """Copy layout-detected footnotes onto the matching document pages."""
+    pages = document_structure.get("pages", [])
+    for layout in page_layouts:
+        page_num = layout.get("page_number")
+        if not isinstance(page_num, int):
+            continue
+
+        page_idx = page_num - 1
+        if page_idx < 0 or page_idx >= len(pages):
+            continue
+
+        footnotes = layout.get("footnotes") or []
+        if footnotes:
+            pages[page_idx]["footnotes"] = footnotes
 
 
 def _page_range_bounds(page_range: Optional[str]) -> Tuple[Optional[int], Optional[int]]:
@@ -367,6 +388,14 @@ def run(
     # Embed images into pages if available
     if pdf_images:
         _embed_images_into_pages(document_structure, pdf_images)
+
+    # Attach layout-detected footnotes when layout analysis is enabled.
+    if cfg.use_layout_analysis:
+        try:
+            page_layouts = analyze_document_layout(pdf_path)
+            _attach_layout_footnotes(document_structure, page_layouts)
+        except Exception:
+            logger.warning("Layout footnote extraction failed", exc_info=True)
 
     # ── Step 4: GROBID ──────────────────────────────────────────────
     grobid_metadata, grobid_references = _run_grobid(pdf_path)

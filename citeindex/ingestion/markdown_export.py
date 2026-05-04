@@ -216,11 +216,6 @@ def _build_body_document(
     for page_idx, page in enumerate(pages):
         page_num = page.get("page_number", "?")
 
-        # ── Visible page separator with citation ──────────────────────
-        lines.append("")
-        lines.append(f"======page:{page_num} | {cite_prefix}, p.{page_num} ========")
-        lines.append("")
-
         if is_mineru:
             # MinerU path: page.paragraphs[] with types
             paragraphs = page.get("paragraphs", [])
@@ -297,6 +292,12 @@ def _build_body_document(
                 if text:
                     lines.append(text)
                     lines.append("")
+
+        # ── Visible page separator with citation ──────────────────────
+        if lines and lines[-1] != "":
+            lines.append("")
+        lines.append(f"======page:{page_num} | {cite_prefix}, p.{page_num} ========")
+        lines.append("")
 
         # Collect footnotes
         for fn in page.get("footnotes", []):
