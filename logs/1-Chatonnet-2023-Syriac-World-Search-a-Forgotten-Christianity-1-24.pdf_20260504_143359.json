@@ -54,5 +54,65 @@
   },
   {
     "message": "invalid_results: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'list_index': 10, 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'physical_index': 10}, {'list_index': 11, 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}]"
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'prev_correct': 8, 'next_correct': 15}, {'list_index': 10, 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'prev_correct': 8, 'next_correct': 15}, {'list_index': 11, 'title': 'THE CITY AND ITS TERRITORIES', 'prev_correct': 8, 'next_correct': 15}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 9, 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'list_index': 11, 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}]"
+  },
+  {
+    "message": "Maximum fix attempts reached"
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '1o\u2022n\u2022e' before the section title 'Origins'. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '2 origins' and other text before the title 'THE ARAMAIC KINGDOMS' appears. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '2 origins' and other content before the section title 'inscription of tell fekheriye' appears later. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '2 origins' and other content before the section title 'inscription of zakkur' appears. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '1o\u2022n\u2022e\\nOrigins\\nA Culture of Encounter and Contact\\n...' before the section title 'Aramaic Origins' appears. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '6 origins' and other content before the section title appears. The section title 'the story of ah .iqar, according to the aramaic version' is found later in the text, not at the very start.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '8 origins' before the section title 'ARAMAIC AND GREEK'. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '10 origins' and other text before the section title 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY' appears. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'origins 13' and other content before the section title 'THE CITY AND ITS TERRITORIES' appears later in the text. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with ' origins 15 a Persian word...' and later contains the section title 'Edessan Culture: A Culture of Contact'. Since there is content before the title, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '4 origins inscriptions...' and later contains the section title 'THE SPREAD OF THE ARAMAIC LANGUAGE'. Since there is content before the title, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '6 origins community of Edessa...' and the section title 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom' appears later in the text, after other content. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '18 origins ARCHIVAL PRACTICES' and other content before the section title 'CULTS AND WORSHIP IN EDESSA' appears later. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '18 origins' before the section title 'ARCHIVAL PRACTICES'. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'origins 21 ing consensus of of\ufb01 cial Christianity...' and later contains the section title 'ORNAMENTAL AND FUNERARY MOSAICS: A MIRROR OF EDESSAN SOCIETY'. Since there is content before the title, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
   }
 ]
