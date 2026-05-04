@@ -22,6 +22,7 @@ import fitz
 
 from ..models import IngestionConfig, PipelineResult
 from ..deterministic import build_hierarchical_merkle_tree
+from .pdf_text_cleanup import clean_page_texts
 from .common import (
     build_document_structure,
     build_merkle_for_nodes,
@@ -39,43 +40,35 @@ logger = logging.getLogger(__name__)
 # Step 1: PyMuPDF text extraction
 # ---------------------------------------------------------------------------
 
-def _extract_pages(pdf_path: str) -> Tuple[fitz.Document, List[Dict[str, Any]]]:
-    """Open PDF and return (doc, list of page texts for PageIndex)."""
+def _extract_pages(pdf_path: str) -> List[Dict[str, Any]]:
+    """Open PDF and return cleaned page texts for downstream processing."""
     doc = fitz.open(pdf_path)
     pages: List[Dict[str, Any]] = []
     for idx in range(doc.page_count):
         page = doc[idx]
-        text = page.get_text()
         pages.append({
             "page_number": idx + 1,
-            "text": text,
+            "text": page.get_text(),
             "blocks": page.get_text("blocks"),
         })
-    return doc, pages
-
-
-def _extract_page_paragraphs(pdf_path: str) -> List[Tuple[int, List[str]]]:
-    """Return list of (page_num, [paragraph_texts])."""
-    doc = fitz.open(pdf_path)
-    result: List[Tuple[int, List[str]]] = []
-    for page_idx in range(doc.page_count):
-        page = doc[page_idx]
-        text = page.get_text("text")
-        paragraphs = split_paragraphs(text) or _fallback_paragraphs(page)
-        result.append((page_idx + 1, paragraphs))
     doc.close()
+
+    cleaned_texts = clean_page_texts([page["text"] for page in pages])
+    for page, cleaned_text in zip(pages, cleaned_texts):
+        page["text"] = cleaned_text
+    return pages
+
+
+def _extract_page_paragraphs(raw_pages: List[Dict[str, Any]]) -> List[Tuple[int, List[str]]]:
+    """Return list of (page_num, [paragraph_texts]) from cleaned page text."""
+    result: List[Tuple[int, List[str]]] = []
+    for page in raw_pages:
+        text = page.get("text", "")
+        paragraphs = split_paragraphs(text)
+        if not paragraphs and text.strip():
+            paragraphs = [text.strip()]
+        result.append((page["page_number"], paragraphs))
     return result
-
-
-def _fallback_paragraphs(page: fitz.Page) -> List[str]:
-    """Split text from block bboxes as fallback."""
-    blocks = page.get_text("blocks")
-    fallback: List[str] = []
-    for block in sorted(blocks, key=lambda b: (b[1], b[0])):
-        content = (block[4] or "").strip()
-        if content:
-            fallback.extend(split_paragraphs(content))
-    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -354,8 +347,8 @@ def run(
     logger.info("Document type: %s (pages=%d)", doc_type, num_pages)
 
     # ── Step 1: PyMuPDF extraction ──────────────────────────────────
-    doc, raw_pages = _extract_pages(pdf_path)
-    page_paragraphs = _extract_page_paragraphs(pdf_path)
+    raw_pages = _extract_pages(pdf_path)
+    page_paragraphs = _extract_page_paragraphs(raw_pages)
     ordered_text = "\n\n".join(p["text"] for p in raw_pages)
 
     # ── Step 2: Image extraction ──────────────────────────────────────

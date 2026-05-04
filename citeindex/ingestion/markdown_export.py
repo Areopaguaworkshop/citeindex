@@ -236,10 +236,8 @@ def _build_body_document(
                 section_title = page.get("section_title", "")
                 if is_url:
                     label = f"Section {page_num}: {section_title}" if section_title else f"Section {page_num}"
-                else:
-                    label = f"Page {page_num}: {section_title}" if section_title else f"Page {page_num}"
-                lines.append(f"## {label}")
-                lines.append("")
+                    lines.append(f"## {label}")
+                    lines.append("")
 
             for para in paragraphs:
                 text = para.get("text", "").strip()

@@ -2,6 +2,7 @@ import json
 
 from citeindex.ingestion.markdown_export import generate_library_markdown
 from citeindex.ingestion.pipelines.digital_pdf import _annotate_document_with_pageindex
+from citeindex.ingestion.pipelines.pdf_text_cleanup import clean_page_texts
 from citeindex.ingestion.storage import store_corpus_artifacts
 
 
@@ -99,3 +100,53 @@ def test_store_corpus_artifacts_writes_pageindex_tree_json(tmp_path):
     assert doc_dir == str(tmp_path / "sample_doc")
     assert tree_path.exists()
     assert json.loads(tree_path.read_text())["level_1"][0]["heading"] == "Origins"
+
+
+def test_clean_page_texts_strips_repeated_running_headers_and_page_numbers():
+    page_texts = [
+        "1\nOrigins\nA Culture of Encounter and Contact\nBody page one.",
+        "2\nOrigins\nBody page two.",
+        "Origins\n3\nBody page three.",
+        "4\nOrigins\nBody page four.",
+    ]
+
+    cleaned = clean_page_texts(page_texts)
+
+    assert cleaned[0].startswith("Origins\nA Culture of Encounter and Contact")
+    assert cleaned[1] == "Body page two."
+    assert cleaned[2] == "Body page three."
+    assert cleaned[3] == "Body page four."
+
+
+def test_generate_library_markdown_skips_pdf_fallback_page_heading_labels():
+    markdown = generate_library_markdown(
+        csl_json={
+            "title": "Origins: A Culture of Encounter and Contact",
+            "author": [{"literal": "Chatonnet"}],
+            "type": "article-journal",
+        },
+        document_json={
+            "structure": {
+                "pages": [
+                    {
+                        "page_number": 3,
+                        "section_title": "THE ARAMAIC KINGDOMS",
+                        "paragraphs": [
+                            {
+                                "paragraph_id": "p3_1",
+                                "text": "Continuation text.",
+                                "type": "text",
+                            }
+                        ],
+                        "footnotes": [],
+                    }
+                ],
+                "section_tree": [],
+            }
+        },
+        transcript_json=None,
+        resource_type="digital_pdf",
+    )
+
+    assert "## Page 3: THE ARAMAIC KINGDOMS" not in markdown
+    assert "Continuation text." in markdown

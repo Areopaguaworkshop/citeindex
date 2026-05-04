@@ -17,6 +17,8 @@ import yaml
 from pathlib import Path
 from types import SimpleNamespace as config
 
+from ..pdf_text_cleanup import clean_page_texts
+
 # Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
 if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.getenv("CHATGPT_API_KEY")
@@ -387,10 +389,14 @@ def add_preface_if_needed(data):
 def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2"):
     if pdf_parser == "PyPDF2":
         pdf_reader = PyPDF2.PdfReader(pdf_path)
-        page_list = []
+        page_texts = []
         for page_num in range(len(pdf_reader.pages)):
             page = pdf_reader.pages[page_num]
-            page_text = page.extract_text()
+            page_texts.append(page.extract_text())
+
+        cleaned_texts = clean_page_texts(page_texts)
+        page_list = []
+        for page_text in cleaned_texts:
             token_length = litellm.token_counter(model=model, text=page_text)
             page_list.append((page_text, token_length))
         return page_list
@@ -400,11 +406,16 @@ def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2"):
             doc = pymupdf.open(stream=pdf_stream, filetype="pdf")
         elif isinstance(pdf_path, str) and os.path.isfile(pdf_path) and pdf_path.lower().endswith(".pdf"):
             doc = pymupdf.open(pdf_path)
-        page_list = []
+        page_texts = []
         for page in doc:
-            page_text = page.get_text()
+            page_texts.append(page.get_text())
+
+        cleaned_texts = clean_page_texts(page_texts)
+        page_list = []
+        for page_text in cleaned_texts:
             token_length = litellm.token_counter(model=model, text=page_text)
             page_list.append((page_text, token_length))
+        doc.close()
         return page_list
     else:
         raise ValueError(f"Unsupported PDF parser: {pdf_parser}")
@@ -707,4 +718,3 @@ def print_tree(tree, indent=0):
 def print_wrapped(text, width=100):
     for line in text.splitlines():
         print(textwrap.fill(line, width=width))
-
