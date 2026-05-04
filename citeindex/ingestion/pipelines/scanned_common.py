@@ -108,8 +108,8 @@ def content_list_to_markdown(
         page_number = page_number_map.get(page_idx, page_idx + 1)
         if page_number != current_page:
             if current_page is not None:
-                lines.extend(["", "---", ""])
-            lines.append(f"<!-- page:{page_number} -->")
+                lines.append("")
+            lines.append(f"======page:{page_number} ========")
             lines.append("")
             current_page = page_number
 

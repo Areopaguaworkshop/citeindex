@@ -77,9 +77,9 @@ def test_digital_pdf_pageindex_headings_flow_into_document_and_library_markdown(
     assert "## Origins" in markdown
     assert "### Aramaic Origins" in markdown
     assert "### THE ARAMAIC KINGDOMS" in markdown
-    assert markdown.count("---") >= 2
-    assert "\n\n---\n\n<!-- page:1" in markdown
-    assert "\n\n---\n\n<!-- page:2" in markdown
+    assert markdown.count("======page:") >= 2
+    assert "\n\n======page:1" in markdown
+    assert "\n\n======page:2" in markdown
     assert "Origins\nAramaic Origins\nPage one body text." not in markdown
     assert "THE ARAMAIC KINGDOMS\nPage two body text." not in markdown
     assert "Page one body text." in markdown
