@@ -11,7 +11,8 @@ wheels/
 .env
 
 # Corpus (user data, never committed)
-corpus/
+corpus/**/*
+library/**/*
 
 # Test output
 test_output/
