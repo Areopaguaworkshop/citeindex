@@ -1,0 +1,127 @@
+[
+  {
+    "total_page_number": 24
+  },
+  {
+    "total_token": 10179
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': '1o\u2022n\u2022e Origins A Culture of Encounter and Contact', 'physical_index': '<physical_index_1>'}, {'structure': '1.1', 'title': 'Aramaic Origins', 'physical_index': '<physical_index_1>'}, {'structure': '1.2', 'title': 'THE ARAMAIC KINGDOMS', 'physical_index': '<physical_index_2>'}, {'structure': '1.2.1', 'title': 'inscription of zakkur', 'physical_index': '<physical_index_2>'}, {'structure': '1.2.2', 'title': 'inscription of tell fekheriye', 'physical_index': '<physical_index_2>'}, {'structure': '1.3', 'title': 'THE SPREAD OF THE ARAMAIC LANGUAGE', 'physical_index': '<physical_index_4>'}, {'structure': '1.3.1', 'title': 'the story of ah .iqar, according to the aramaic version', 'physical_index': '<physical_index_6>'}, {'structure': '1.3.2', 'title': 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom', 'physical_index': '<physical_index_6>'}, {'structure': '1.4', 'title': 'ARAMAIC AND GREEK', 'physical_index': '<physical_index_8>'}, {'structure': '1.5', 'title': 'Edessa and Osrhoene', 'physical_index': '<physical_index_10>'}, {'structure': '1.5.1', 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'physical_index': '<physical_index_10>'}, {'structure': '1.5.1.1', 'title': 'the chronicle of michael the great', 'physical_index': '<physical_index_12>'}, {'structure': '1.5.2', 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': '<physical_index_13>'}, {'structure': '1.5.2.1', 'title': 'excerpt from the anonymous chronicle of edessa up to 540: the flood of ad 202', 'physical_index': '<physical_index_14>'}, {'structure': '1.5.3', 'title': 'Edessan Culture: A Culture of Contact', 'physical_index': '<physical_index_15>'}, {'structure': '1.5.3.1', 'title': 'beginning of the text on the parchment found in dura-europos (ad 243)', 'physical_index': '<physical_index_16>'}, {'structure': '1.5.3.2', 'title': 'history of abgar and jesus (teaching of addai)', 'physical_index': '<physical_index_16>'}, {'structure': '1.5.4', 'title': 'ARCHIVAL PRACTICES', 'physical_index': '<physical_index_18>'}, {'structure': '1.5.5', 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': '<physical_index_18>'}, {'structure': '1.5.5.1', 'title': 'cults in edessa (teaching of addai)', 'physical_index': '<physical_index_19>'}, {'structure': '1.5.6', 'title': 'ORNAMENTAL AND FUNERARY MOSAICS: A MIRROR OF EDESSAN SOCIETY', 'physical_index': '<physical_index_21>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': '1o\u2022n\u2022e Origins A Culture of Encounter and Contact', 'physical_index': 1}, {'structure': '1.1', 'title': 'Aramaic Origins', 'physical_index': 1}, {'structure': '1.2', 'title': 'THE ARAMAIC KINGDOMS', 'physical_index': 2}, {'structure': '1.2.1', 'title': 'inscription of zakkur', 'physical_index': 2}, {'structure': '1.2.2', 'title': 'inscription of tell fekheriye', 'physical_index': 2}, {'structure': '1.3', 'title': 'THE SPREAD OF THE ARAMAIC LANGUAGE', 'physical_index': 4}, {'structure': '1.3.1', 'title': 'the story of ah .iqar, according to the aramaic version', 'physical_index': 6}, {'structure': '1.3.2', 'title': 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom', 'physical_index': 6}, {'structure': '1.4', 'title': 'ARAMAIC AND GREEK', 'physical_index': 8}, {'structure': '1.5', 'title': 'Edessa and Osrhoene', 'physical_index': 10}, {'structure': '1.5.1', 'title': 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY', 'physical_index': 10}, {'structure': '1.5.1.1', 'title': 'the chronicle of michael the great', 'physical_index': 12}, {'structure': '1.5.2', 'title': 'THE CITY AND ITS TERRITORIES', 'physical_index': 13}, {'structure': '1.5.2.1', 'title': 'excerpt from the anonymous chronicle of edessa up to 540: the flood of ad 202', 'physical_index': 14}, {'structure': '1.5.3', 'title': 'Edessan Culture: A Culture of Contact', 'physical_index': 15}, {'structure': '1.5.3.1', 'title': 'beginning of the text on the parchment found in dura-europos (ad 243)', 'physical_index': 16}, {'structure': '1.5.3.2', 'title': 'history of abgar and jesus (teaching of addai)', 'physical_index': 16}, {'structure': '1.5.4', 'title': 'ARCHIVAL PRACTICES', 'physical_index': 18}, {'structure': '1.5.5', 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': 18}, {'structure': '1.5.5.1', 'title': 'cults in edessa (teaching of addai)', 'physical_index': 19}, {'structure': '1.5.6', 'title': 'ORNAMENTAL AND FUNERARY MOSAICS: A MIRROR OF EDESSAN SOCIETY', 'physical_index': 21}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 0.9047619047619048,
+    "incorrect_results": [
+      {
+        "list_index": 16,
+        "answer": "no",
+        "title": "history of abgar and jesus (teaching of addai)",
+        "page_number": 16
+      },
+      {
+        "list_index": 18,
+        "answer": "no",
+        "title": "CULTS AND WORSHIP IN EDESSA",
+        "page_number": 18
+      }
+    ]
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 16, 'title': 'history of abgar and jesus (teaching of addai)', 'prev_correct': 16, 'next_correct': 18}, {'list_index': 18, 'title': 'CULTS AND WORSHIP IN EDESSA', 'prev_correct': 18, 'next_correct': 19}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 18, 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': 18}]"
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 18, 'title': 'CULTS AND WORSHIP IN EDESSA', 'prev_correct': 18, 'next_correct': 19}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 18, 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': 18}]"
+  },
+  {
+    "message": "incorrect_results_and_range_logs: [{'list_index': 18, 'title': 'CULTS AND WORSHIP IN EDESSA', 'prev_correct': 18, 'next_correct': 19}]"
+  },
+  {
+    "message": "invalid_results: [{'list_index': 18, 'title': 'CULTS AND WORSHIP IN EDESSA', 'physical_index': 18}]"
+  },
+  {
+    "message": "Maximum fix attempts reached"
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'but no forti\ufb01cations or sieges...' before the section title 'THE ARAMAIC KINGDOMS' appears. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'inscriptions, either commemorative or dedicatory...' and the section title 'THE SPREAD OF THE ARAMAIC LANGUAGE' appears later in the text, after several paragraphs. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with '1o\u2022n\u2022e\\nOrigins\\nA Culture of Encounter and Contact\\n...' before reaching 'Aramaic Origins'. Therefore, the current section title does not appear at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'but no forti\ufb01 cations or sieges.' which is not the section title. The section title 'inscription of tell fekheriye' appears later in the text, after other content. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'the Jewish Aramaic of Babylon or Palestine...' and the section title 'GREEK FOUNDATION, ARAMAIC KINGDOM, AND ROMAN COLONY' appears later in the text, after several paragraphs. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'community of Edessa, entered Aramaic Christian culture...' which is not the section title. The section title 'the story of ah .iqar, according to the aramaic version' appears later in the text, after other content. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'an important point of passage...' and later contains 'the chronicle of michael the great'. Since there is content before the section title, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'guistically Arab names...' and the section title 'THE CITY AND ITS TERRITORIES' appears later in the text, after several paragraphs. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'community of Edessa, entered Aramaic Christian culture...' which is not the section title. The section title 'the wisdom of ah .iqar, according to the aramaic version: from the maxims of wisdom' appears later in the text, after other content. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'ARAMAIC AND GREEK' as the first line, with no preceding content. Therefore, the current section starts at the beginning of the page_text.\", 'start_begin': 'yes'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'richness of its cosmopolitan character...' and contains other content before the section title 'history of abgar and jesus (teaching of addai)' appears later. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'the Jewish Aramaic of Babylon or Palestine...' which is not the section title. The section title 'Edessa and Osrhoene' appears later in the text, so the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'ARCHIVAL PRACTICES' and includes several paragraphs before the section title 'CULTS AND WORSHIP IN EDESSA' appears. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'ing consensus of of\ufb01 cial Christianity...' which is not the section title. The section title 'ORNAMENTAL AND FUNERARY MOSAICS: A MIRROR OF EDESSAN SOCIETY' appears later in the text, after several lines of other content. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'richness of its cosmopolitan character...' which is before the section title 'beginning of the text on the parchment found in dura-europos (ad 243)'. Therefore, the section does not start at the beginning.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'ARCHIVAL PRACTICES' which matches the given section title. There is no preceding content, so the section starts at the beginning.\", 'start_begin': 'yes'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '1o\u2022n\u2022e' followed by newline, then 'Origins', then newline, then 'A Culture of Encounter and Contact'. This matches the given section title when ignoring line breaks and spaces. There is no content before this title, so the section starts at the beginning.\", 'start_begin': 'yes'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text starts with 'but no forti\ufb01 cations or sieges.' which is before the section title 'inscription of zakkur'. Therefore, the section does not begin at the start of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'a Persian word that was also used for the palace of Darius at Persepolis.' The section title 'Edessan Culture: A Culture of Contact' appears later in the text, after several paragraphs. Therefore, the current section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with 'base of the hill where the citadel was built...' and later contains the section title 'excerpt from the anonymous chronicle of edessa up to 540: the flood of ad 202'. Since there is content before the section title, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  }
+]
