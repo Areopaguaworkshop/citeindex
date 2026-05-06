@@ -192,6 +192,45 @@ def test_collect_footnotes_for_range():
     assert result == []
 
 
+def test_pageindex_to_citeindex_tree_without_layout_returns_empty_footnotes():
+    from citeindex.ingestion.pipelines.pageindex_tree import pageindex_to_citeindex_tree
+
+    pi_result = {
+        "structure": [
+            {
+                "title": "Chapter 1",
+                "node_id": "0001",
+                "start_index": 1,
+                "end_index": 1,
+                "summary": "Summary",
+                "nodes": [
+                    {
+                        "title": "Sec 1.1",
+                        "node_id": "0002",
+                        "start_index": 1,
+                        "end_index": 1,
+                        "summary": "Sub",
+                        "nodes": [],
+                    }
+                ],
+            }
+        ],
+    }
+    csl_data = {"id": "doc1", "type": "book", "title": "Test Doc"}
+    page_number_map = {0: 1}
+
+    # No page_layouts → footnotes should be empty list
+    tree = pageindex_to_citeindex_tree(
+        pi_result=pi_result,
+        doc_id="doc1",
+        csl_data=csl_data,
+        page_number_map=page_number_map,
+    )
+
+    locator = tree["level_1"][0]["children"][0]["children"][0]
+    assert locator["footnotes"] == []
+
+
 def test_pageindex_to_citeindex_tree_with_footnotes():
     from citeindex.ingestion.pipelines.pageindex_tree import pageindex_to_citeindex_tree
 

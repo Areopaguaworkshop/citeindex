@@ -367,6 +367,8 @@ def run(
     doc_type = cfg.doc_type_override or determine_doc_type(pdf_path, num_pages)
     logger.info("Document type: %s (pages=%d)", doc_type, num_pages)
 
+    page_layouts: Optional[List[Dict[str, Any]]] = None
+
     # ── Step 1: PyMuPDF extraction ──────────────────────────────────
     raw_pages = _extract_pages(pdf_path)
     page_paragraphs = _extract_page_paragraphs(raw_pages)
@@ -467,6 +469,7 @@ def run(
             csl_data=csl,
             page_number_map=page_number_map,
             merkle_root=merkle_tree.get("root"),
+            page_layouts=page_layouts,
         )
         _annotate_document_with_pageindex(document_structure, ci_tree)
         extra["pageindex_tree"] = ci_tree
