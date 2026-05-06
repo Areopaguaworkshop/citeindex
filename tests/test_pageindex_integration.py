@@ -192,6 +192,106 @@ def test_collect_footnotes_for_range():
     assert result == []
 
 
+def test_pageindex_tree_footnotes_match_page_ranges():
+    """Integration test: footnotes are attached to the correct LocatorNodes by page range."""
+    from citeindex.ingestion.pipelines.pageindex_tree import pageindex_to_citeindex_tree
+
+    pi_result = {
+        "structure": [
+            {
+                "title": "Introduction",
+                "node_id": "0001",
+                "start_index": 1,
+                "end_index": 2,
+                "summary": "Intro",
+                "nodes": [
+                    {
+                        "title": "1.1 Background",
+                        "node_id": "0002",
+                        "start_index": 1,
+                        "end_index": 1,
+                        "summary": "Background",
+                        "nodes": [],
+                    },
+                    {
+                        "title": "1.2 Scope",
+                        "node_id": "0003",
+                        "start_index": 2,
+                        "end_index": 2,
+                        "summary": "Scope",
+                        "nodes": [],
+                    },
+                ],
+            },
+            {
+                "title": "Methods",
+                "node_id": "0004",
+                "start_index": 3,
+                "end_index": 5,
+                "summary": "Methods chapter",
+                "nodes": [
+                    {
+                        "title": "2.1 Approach",
+                        "node_id": "0005",
+                        "start_index": 3,
+                        "end_index": 5,
+                        "summary": "Approach",
+                        "nodes": [],
+                    },
+                ],
+            },
+        ],
+    }
+    csl_data = {"id": "doc1", "type": "book", "title": "Test Paper"}
+    page_number_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5}
+    page_layouts = [
+        {
+            "page_number": 1,
+            "footnotes": [
+                {"footnote_id": "p1_fn1", "text": "Ref 1.", "marker": "1"},
+                {"footnote_id": "p1_fn2", "text": "Ref 2.", "marker": "2"},
+            ],
+        },
+        {
+            "page_number": 2,
+            "footnotes": [
+                {"footnote_id": "p2_fn1", "text": "Ref 3.", "marker": "3"},
+            ],
+        },
+        {"page_number": 3, "footnotes": []},
+        {
+            "page_number": 4,
+            "footnotes": [
+                {"footnote_id": "p4_fn1", "text": "Ref 4.", "marker": "4"},
+            ],
+        },
+        {"page_number": 5, "footnotes": []},
+    ]
+
+    tree = pageindex_to_citeindex_tree(
+        pi_result=pi_result,
+        doc_id="doc1",
+        csl_data=csl_data,
+        page_number_map=page_number_map,
+        page_layouts=page_layouts,
+    )
+
+    # Locator for "1.1 Background" (page 1) should have 2 footnotes
+    bg_locator = tree["level_1"][0]["children"][0]["children"][0]
+    assert len(bg_locator["footnotes"]) == 2
+    assert bg_locator["footnotes"][0]["footnote_id"] == "p1_fn1"
+
+    # Locator for "1.2 Scope" (page 2) should have 1 footnote
+    scope_locator = tree["level_1"][0]["children"][1]["children"][0]
+    assert len(scope_locator["footnotes"]) == 1
+    assert scope_locator["footnotes"][0]["footnote_id"] == "p2_fn1"
+
+    # Locator for "Methods" (pages 3-5) should have 1 footnote (p4_fn1)
+    methods_locator = tree["level_1"][1]["children"][0]["children"][0]
+    assert len(methods_locator["footnotes"]) == 1
+    assert methods_locator["footnotes"][0]["footnote_id"] == "p4_fn1"
+
+
 def test_pageindex_to_citeindex_tree_without_layout_returns_empty_footnotes():
     from citeindex.ingestion.pipelines.pageindex_tree import pageindex_to_citeindex_tree
 
