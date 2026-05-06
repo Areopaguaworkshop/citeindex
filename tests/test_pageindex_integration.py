@@ -192,6 +192,54 @@ def test_collect_footnotes_for_range():
     assert result == []
 
 
+def test_pageindex_to_citeindex_tree_with_footnotes():
+    from citeindex.ingestion.pipelines.pageindex_tree import pageindex_to_citeindex_tree
+
+    pi_result = {
+        "structure": [
+            {
+                "title": "Chapter 1",
+                "node_id": "0001",
+                "start_index": 1,
+                "end_index": 3,
+                "summary": "A chapter",
+                "nodes": [
+                    {
+                        "title": "Section 1.1",
+                        "node_id": "0002",
+                        "start_index": 1,
+                        "end_index": 2,
+                        "summary": "A section",
+                        "nodes": [],
+                    }
+                ],
+            }
+        ],
+    }
+    csl_data = {"id": "doc1", "type": "book", "title": "Test Doc"}
+    page_number_map = {0: 1, 1: 2, 2: 3}
+    page_layouts = [
+        {"page_number": 1, "footnotes": [{"footnote_id": "p1_fn1", "text": "See Smith.", "marker": "1"}]},
+        {"page_number": 2, "footnotes": [{"footnote_id": "p2_fn1", "text": "Also Jones.", "marker": "2"}]},
+        {"page_number": 3, "footnotes": []},
+    ]
+
+    tree = pageindex_to_citeindex_tree(
+        pi_result=pi_result,
+        doc_id="doc1",
+        csl_data=csl_data,
+        page_number_map=page_number_map,
+        page_layouts=page_layouts,
+    )
+
+    # Should have footnotes on LocatorNodes within page range
+    locator = tree["level_1"][0]["children"][0]["children"][0]
+    assert "footnotes" in locator
+    assert len(locator["footnotes"]) == 2
+    assert locator["footnotes"][0]["footnote_id"] == "p1_fn1"
+    assert locator["footnotes"][1]["footnote_id"] == "p2_fn1"
+
+
 def test_generate_library_markdown_skips_pdf_fallback_page_heading_labels():
     markdown = generate_library_markdown(
         csl_json={

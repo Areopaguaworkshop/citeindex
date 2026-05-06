@@ -137,6 +137,7 @@ def pageindex_to_citeindex_tree(
     csl_data: Dict[str, Any],
     page_number_map: Dict[int, int],
     merkle_root: Optional[str] = None,
+    page_layouts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Convert a PageIndex result to CiteIndex PageIndexTree JSON.
 
@@ -160,7 +161,7 @@ def pageindex_to_citeindex_tree(
         CiteIndex PageIndexTree JSON matching ``kernel/types/tree.rs``.
     """
     structure = pi_result.get("structure", [])
-    level_1 = _convert_sections(structure, doc_id, page_number_map)
+    level_1 = _convert_sections(structure, doc_id, page_number_map, page_layouts)
     level_0 = _build_level0(csl_data, doc_id, merkle_root)
 
     return {
@@ -245,6 +246,7 @@ def _convert_sections(
     nodes: List[Dict[str, Any]],
     doc_id: str,
     page_number_map: Dict[int, int],
+    page_layouts: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Convert top-level PageIndex nodes → CiteIndex level_1 SectionNodes."""
     sections: List[Dict[str, Any]] = []
@@ -259,7 +261,7 @@ def _convert_sections(
                 node.get("start_index"), node.get("end_index"), page_number_map
             ),
             "children": _convert_subsections(
-                node.get("nodes", []), doc_id, pi_id, page_number_map
+                node.get("nodes", []), doc_id, pi_id, page_number_map, page_layouts
             ),
         }
         if node.get("summary"):
@@ -273,6 +275,7 @@ def _convert_subsections(
     doc_id: str,
     parent_id: str,
     page_number_map: Dict[int, int],
+    page_layouts: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Convert child PageIndex nodes → CiteIndex SubsectionNodes.
 
@@ -292,7 +295,7 @@ def _convert_subsections(
                 "heading": node.get("title"),
                 "section_number": None,
                 "children": _convert_to_locators(
-                    children_nodes, doc_id, pi_id, page_number_map
+                    children_nodes, doc_id, pi_id, page_number_map, page_layouts
                 ),
             }
         else:
@@ -302,7 +305,7 @@ def _convert_subsections(
                 "heading": node.get("title"),
                 "section_number": None,
                 "children": [
-                    _make_locator(node, doc_id, pi_id, page_number_map)
+                    _make_locator(node, doc_id, pi_id, page_number_map, page_layouts)
                 ],
             }
 
@@ -327,11 +330,12 @@ def _convert_to_locators(
     doc_id: str,
     parent_id: str,
     page_number_map: Dict[int, int],
+    page_layouts: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Convert deepest PageIndex nodes → CiteIndex LocatorNodes."""
     locators: List[Dict[str, Any]] = []
     for node in nodes:
-        locators.append(_make_locator(node, doc_id, parent_id, page_number_map))
+        locators.append(_make_locator(node, doc_id, parent_id, page_number_map, page_layouts))
     return locators
 
 
@@ -340,11 +344,15 @@ def _make_locator(
     doc_id: str,
     parent_id: str,
     page_number_map: Dict[int, int],
+    page_layouts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build a single CiteIndex LocatorNode from a PageIndex leaf node."""
     pi_id = node.get("node_id", "")
     start_page = _map_page(node.get("start_index"), page_number_map)
     end_page = _map_page(node.get("end_index"), page_number_map)
+
+    # Collect footnotes that fall within this locator's page range
+    footnotes = _collect_footnotes_for_range(start_page, end_page, page_layouts)
 
     return {
         "node_id": f"{doc_id}:locator:{pi_id}",
@@ -353,6 +361,7 @@ def _make_locator(
         "page_label": _page_range_str(
             node.get("start_index"), node.get("end_index"), page_number_map
         ),
+        "footnotes": footnotes,
         "text_blocks": [],
         "figures": [],
         "tables": [],
