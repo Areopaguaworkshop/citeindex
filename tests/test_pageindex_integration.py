@@ -164,6 +164,34 @@ def test_clean_page_texts_strips_repeated_running_headers_and_page_numbers():
     assert cleaned[3] == "Body page four."
 
 
+def test_collect_footnotes_for_range():
+    from citeindex.ingestion.pipelines.pageindex_tree import _collect_footnotes_for_range
+
+    page_layouts = [
+        {"page_number": 1, "footnotes": [{"footnote_id": "p1_fn1", "text": "Note 1.", "marker": "1"}]},
+        {"page_number": 2, "footnotes": [{"footnote_id": "p2_fn1", "text": "Note 2.", "marker": "2"}]},
+        {"page_number": 3, "footnotes": []},
+    ]
+
+    # Range spanning pages 1-2
+    result = _collect_footnotes_for_range(1, 2, page_layouts)
+    assert len(result) == 2
+    assert result[0]["footnote_id"] == "p1_fn1"
+    assert result[1]["footnote_id"] == "p2_fn1"
+
+    # Range on a single page with no footnotes
+    result = _collect_footnotes_for_range(3, 3, page_layouts)
+    assert result == []
+
+    # None range (no page bounds)
+    result = _collect_footnotes_for_range(None, None, page_layouts)
+    assert result == []
+
+    # None page_layouts
+    result = _collect_footnotes_for_range(1, 2, None)
+    assert result == []
+
+
 def test_generate_library_markdown_skips_pdf_fallback_page_heading_labels():
     markdown = generate_library_markdown(
         csl_json={

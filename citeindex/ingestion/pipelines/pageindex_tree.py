@@ -202,6 +202,45 @@ def _page_range_str(
     return f"{start}-{end}"
 
 
+def _collect_footnotes_for_range(
+    start_page: Optional[int],
+    end_page: Optional[int],
+    page_layouts: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Collect footnotes from page_layouts that fall within a page range.
+
+    Parameters
+    ----------
+    start_page, end_page : int or None
+        1-based page numbers (inclusive). If None, returns empty list.
+    page_layouts : list of dict or None
+        Per-page layout dicts with ``footnotes`` key. If None, returns empty list.
+
+    Returns
+    -------
+    list of dict
+        Flattened footnote dicts with ``footnote_id``, ``text``, and ``marker``.
+    """
+    if not page_layouts or start_page is None or end_page is None:
+        return []
+
+    footnotes: List[Dict[str, Any]] = []
+    for layout in page_layouts:
+        page_num = layout.get("page_number")
+        if not isinstance(page_num, int):
+            continue
+        if start_page <= page_num <= end_page:
+            for fn in layout.get("footnotes", []):
+                entry: Dict[str, Any] = {
+                    "footnote_id": fn.get("footnote_id", ""),
+                    "text": fn.get("text", ""),
+                }
+                if fn.get("marker"):
+                    entry["marker"] = fn["marker"]
+                footnotes.append(entry)
+    return footnotes
+
+
 def _convert_sections(
     nodes: List[Dict[str, Any]],
     doc_id: str,
