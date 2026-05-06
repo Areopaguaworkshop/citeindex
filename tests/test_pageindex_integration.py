@@ -379,6 +379,49 @@ def test_pageindex_to_citeindex_tree_with_footnotes():
     assert locator["footnotes"][1]["footnote_id"] == "p2_fn1"
 
 
+def test_detect_footnotes_relaxed_thresholds():
+    """Footnotes in bottom 25% with slightly smaller font (10pt in 11pt body) should be detected."""
+    from citeindex.ingestion.pipelines.layout import detect_footnotes
+
+    # Simulate a page where footnotes are at 80% height with 10pt font (body is 11pt)
+    page_height = 648
+    blocks = [
+        {"text": "Body text paragraph one.", "bbox": [72, 71, 360, 200], "font_size": 11.0},
+        {"text": "Body text paragraph two.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
+        {"text": "Body text paragraph three.", "bbox": [72, 400, 360, 490], "font_size": 11.0},
+        # Footnote at ~80% page height, 10pt font, starts with numeric marker
+        {"text": "9 Specifically aimed at Byzantinists.", "bbox": [72, 515, 360, 540], "font_size": 10.0},
+        # Page number at very bottom, same font as body — should NOT be detected
+        {"text": "25", "bbox": [200, 581, 230, 595], "font_size": 11.0},
+    ]
+
+    body, footnotes = detect_footnotes(blocks, page_height)
+
+    assert len(footnotes) == 1
+    assert footnotes[0]["text"] == "9 Specifically aimed at Byzantinists."
+    assert len(body) == 4  # 3 body + page number
+
+
+def test_detect_footnotes_old_threshold_would_miss():
+    """Verify that footnotes at 79% height with 10pt/11pt body are detected
+    (these were missed by the old 85% / 85% thresholds)."""
+    from citeindex.ingestion.pipelines.layout import detect_footnotes
+
+    page_height = 648
+    # Block at y0=515 = 79.5% — below old 85% threshold, above new 75% threshold
+    # Font 10.0 vs median 11.0 — 10/11=90.9%, above old 85% threshold, below new 92%
+    blocks = [
+        {"text": "Regular body text.", "bbox": [72, 71, 360, 200], "font_size": 11.0},
+        {"text": "More body text.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
+        {"text": "14 In English, there are several articles on this topic.", "bbox": [72, 515, 360, 540], "font_size": 10.0},
+    ]
+
+    body, footnotes = detect_footnotes(blocks, page_height)
+
+    assert len(footnotes) == 1
+    assert "14 In English" in footnotes[0]["text"]
+
+
 def test_generate_library_markdown_skips_pdf_fallback_page_heading_labels():
     markdown = generate_library_markdown(
         csl_json={
