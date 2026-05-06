@@ -101,10 +101,13 @@ def detect_footnotes(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Identify footnotes based on position and font size.
 
-    Rules from YAML:
-    - Located near bottom of page (bottom 15%)
-    - Smaller font size than body text median
-    - Often begins with numeric marker
+    Rules:
+    - Located near bottom of page (bottom 25%, i.e. y0 >= 75% of page height)
+    - Smaller font size than body text median (< 92% of median)
+    - Often begins with numeric marker (digit + space/dot/tab)
+
+    A block is classified as a footnote if it is in the bottom 25%
+    AND either has a smaller font or starts with a numeric marker.
 
     Returns (body_blocks, footnote_blocks)
     """
@@ -116,7 +119,7 @@ def detect_footnotes(
         return list(blocks), []
 
     median_size = statistics.median(font_sizes)
-    bottom_threshold = page_height * 0.85
+    bottom_threshold = page_height * 0.75
 
     body: List[Dict[str, Any]] = []
     footnotes: List[Dict[str, Any]] = []
@@ -125,7 +128,7 @@ def detect_footnotes(
         y0 = block["bbox"][1]
         text = block["text"].lstrip()
         in_bottom = y0 >= bottom_threshold
-        small_font = block["font_size"] < median_size * 0.85
+        small_font = block["font_size"] < median_size * 0.92
         has_marker = len(text) > 1 and text[0].isdigit() and text[1] in (" ", ".", "\t")
 
         if in_bottom and (small_font or has_marker):
