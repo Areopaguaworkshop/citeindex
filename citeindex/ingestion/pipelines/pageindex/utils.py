@@ -52,7 +52,9 @@ def llm_completion(model, prompt, chat_history=None, return_finish_reason=False)
             print('************* Retrying *************')
             logging.error(f"Error: {e}")
             if i < max_retries - 1:
-                time.sleep(1)
+                backoff = min(2 ** i, 60)  # exponential backoff: 1s, 2s, 4s, 8s... capped at 60s
+                logging.info(f"Retry {i+1}/{max_retries}, waiting {backoff}s before retry...")
+                time.sleep(backoff)
             else:
                 logging.error('Max retries reached for prompt: ' + prompt)
                 if return_finish_reason:
@@ -78,7 +80,9 @@ async def llm_acompletion(model, prompt):
             print('************* Retrying *************')
             logging.error(f"Error: {e}")
             if i < max_retries - 1:
-                await asyncio.sleep(1)
+                backoff = min(2 ** i, 60)  # exponential backoff: 1s, 2s, 4s, 8s... capped at 60s
+                logging.info(f"Retry {i+1}/{max_retries}, waiting {backoff}s before retry...")
+                await asyncio.sleep(backoff)
             else:
                 logging.error('Max retries reached for prompt: ' + prompt)
                 return ""
