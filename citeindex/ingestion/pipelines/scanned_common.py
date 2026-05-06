@@ -201,6 +201,7 @@ def build_scanned_pipeline_result(
                     csl_data=csl,
                     page_number_map=page_number_map,
                     merkle_root=merkle_tree.get("root"),
+                    page_layouts=None,  # scanned PDFs don't have layout analysis
                 )
                 extra["pageindex_tree"] = ci_tree
                 if not document_structure.get("section_tree"):

@@ -609,6 +609,7 @@ def run(
                 csl_data=csl_json,
                 page_number_map={},  # URLs have no physical page numbers
                 merkle_root=merkle_tree.get("root"),
+                page_layouts=None,  # URL articles have no layout analysis
             )
             extra["pageindex_tree"] = ci_tree
             logger.info("PageIndex tree built for URL: %d sections",
