@@ -380,7 +380,8 @@ def test_pageindex_to_citeindex_tree_with_footnotes():
 
 
 def test_detect_footnotes_relaxed_thresholds():
-    """Footnotes in bottom 25% with slightly smaller font (10pt in 11pt body) should be detected."""
+    """Footnotes in bottom 25% with slightly smaller font (10pt in 11pt body) should be detected.
+    Page numbers (short numeric text < 5 words) should NOT be detected."""
     from citeindex.ingestion.pipelines.layout import detect_footnotes
 
     # Simulate a page where footnotes are at 80% height with 10pt font (body is 11pt)
@@ -389,17 +390,100 @@ def test_detect_footnotes_relaxed_thresholds():
         {"text": "Body text paragraph one.", "bbox": [72, 71, 360, 200], "font_size": 11.0},
         {"text": "Body text paragraph two.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
         {"text": "Body text paragraph three.", "bbox": [72, 400, 360, 490], "font_size": 11.0},
-        # Footnote at ~80% page height, 10pt font, starts with numeric marker
+        # Footnote at ~80% page height, 10pt font, starts with numeric marker — 5+ words
         {"text": "9 Specifically aimed at Byzantinists.", "bbox": [72, 515, 360, 540], "font_size": 10.0},
-        # Page number at very bottom, same font as body — should NOT be detected
-        {"text": "25", "bbox": [200, 581, 230, 595], "font_size": 11.0},
+        # Page number at very bottom — only 1 word, should NOT be detected even if small font
+        {"text": "25", "bbox": [200, 581, 230, 595], "font_size": 9.0},
     ]
 
     body, footnotes = detect_footnotes(blocks, page_height)
 
     assert len(footnotes) == 1
     assert footnotes[0]["text"] == "9 Specifically aimed at Byzantinists."
-    assert len(body) == 4  # 3 body + page number
+    # Page number "25" is too short → stays in body
+    assert any(b["text"] == "25" for b in body)
+
+
+def test_detect_footnotes_with_separator_line():
+    """When a footnote separator line (footnoterule) is detected,
+    blocks below it with small font or numeric markers are footnotes."""
+    from citeindex.ingestion.pipelines.layout import detect_footnotes
+
+    page_height = 648
+    # Separator at 80% of page height (y=518)
+    separator_y = 518.0
+    blocks = [
+        {"text": "Body text paragraph one.", "bbox": [72, 71, 360, 200], "font_size": 11.0},
+        {"text": "Body text paragraph two.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
+        # Footnote BELOW separator, 10pt font
+        {"text": "9 Specifically aimed at Byzantinists.", "bbox": [72, 523, 360, 540], "font_size": 10.0},
+        # Even higher up but still below separator — 10pt with marker
+        {"text": "14 In English, there are several articles.", "bbox": [72, 523, 360, 540], "font_size": 10.0},
+        # Below separator but body font size and no marker — NOT a footnote
+        {"text": "Some regular text in the margin.", "bbox": [72, 535, 360, 550], "font_size": 11.0},
+    ]
+
+    body, footnotes = detect_footnotes(blocks, page_height, separator_y=separator_y)
+
+    # The 10pt footnote blocks should be detected; 11pt non-marker should not
+    fn_texts = [fn["text"] for fn in footnotes]
+    assert "9 Specifically aimed at Byzantinists." in fn_texts
+    assert "14 In English, there are several articles." in fn_texts
+    assert len(footnotes) == 2  # only the two 10pt blocks
+    assert any(b["text"] == "Some regular text in the margin." for b in body)
+
+
+def test_detect_footnotes_font_size_clustering():
+    """Font size clustering correctly identifies small fonts as footnote-sized
+    regardless of absolute sizes (8pt footnotes in 10pt body, or 10pt in 11pt body)."""
+    from citeindex.ingestion.pipelines.layout import detect_footnotes
+
+    page_height = 648
+
+    # Academic PDF: 8pt footnotes, 10pt body (IEEE-style)
+    blocks_ieee = [
+        {"text": "Body text.", "bbox": [72, 71, 360, 300], "font_size": 10.0},
+        {"text": "Body text 2.", "bbox": [72, 300, 360, 500], "font_size": 10.0},
+        # 8pt footnote at bottom with numeric marker
+        {"text": "1 See Smith et al. for details.", "bbox": [72, 545, 360, 570], "font_size": 8.0},
+    ]
+    _, fns_ieee = detect_footnotes(blocks_ieee, page_height)
+    assert len(fns_ieee) == 1
+    assert "1 See Smith" in fns_ieee[0]["text"]
+
+    # Book PDF: 10pt footnotes, 11pt body (Springer-style)
+    blocks_springer = [
+        {"text": "Body text.", "bbox": [72, 71, 360, 300], "font_size": 11.0},
+        {"text": "Body text 2.", "bbox": [72, 300, 360, 500], "font_size": 11.0},
+        # 10pt footnote at bottom with numeric marker
+        {"text": "14 In English, there are several articles.", "bbox": [72, 515, 360, 540], "font_size": 10.0},
+    ]
+    _, fns_springer = detect_footnotes(blocks_springer, page_height)
+    assert len(fns_springer) == 1
+    assert "14 In English" in fns_springer[0]["text"]
+
+
+def test_detect_footnotes_rejects_page_numbers_and_headers():
+    """Short text (< 5 words) at page bottom should NOT be classified as footnotes.
+    This prevents false positives from page numbers and running headers/footers."""
+    from citeindex.ingestion.pipelines.layout import detect_footnotes
+
+    page_height = 648
+    blocks = [
+        {"text": "Body text paragraph.", "bbox": [72, 71, 360, 200], "font_size": 11.0},
+        {"text": "More body text.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
+        # Page number at bottom — only 1 "word", small font
+        {"text": "25", "bbox": [200, 581, 230, 595], "font_size": 9.0},
+        # Running header at bottom — only 3 words, small font
+        {"text": "A N INTRODUCTION TO SYRIAC STUDIES", "bbox": [72, 35, 360, 49], "font_size": 9.0},
+    ]
+
+    body, footnotes = detect_footnotes(blocks, page_height)
+
+    assert len(footnotes) == 0
+    # Page numbers and headers should be in body, not footnotes
+    assert any(b["text"] == "25" for b in body)
+    assert any("INTRODUCTION" in b["text"] for b in body)
 
 
 def test_detect_footnotes_old_threshold_would_miss():

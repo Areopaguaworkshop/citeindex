@@ -3,7 +3,7 @@
 import logging
 import statistics
 from collections import Counter
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import fitz
 
@@ -96,18 +96,98 @@ def detect_columns(
     return columns
 
 
+def _find_footnote_separator(page: fitz.Page) -> Optional[float]:
+    """Find a footnote separator line (footnote rule) on the page.
+
+    Looks for thin horizontal vector drawings typical of LaTeX's
+    ``\\footnoterule`` or similar separators. Returns the Y coordinate
+    of the separator, or None if not found.
+
+    Research shows this is the most reliable single signal for
+    identifying the footnote zone (GROBID, pdfalto).
+    """
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return None
+
+    for d in drawings:
+        for item in d.get("items", []):
+            # 're' = rectangle (common for footnote rules in many PDFs)
+            if item[0] == "re":
+                rect = item[1]
+                height = rect[3] - rect[1]
+                width = rect[2] - rect[0]
+                # Thin rectangle (< 2pt tall, > 50pt wide) = horizontal rule.
+                # Must be in the bottom half of the page (footnote rules are never
+                # at the top — top rules are decorative or section separators).
+                if height < 2 and width > 50 and rect[1] > page.rect.height * 0.5:
+                    return rect[1]
+            # 'l' = line
+            elif item[0] == "l":
+                p1, p2 = item[1], item[2]
+                if abs(p1.y - p2.y) < 1 and abs(p2.x - p1.x) > 50:
+                    if p1.y > page.rect.height * 0.5:
+                        return p1.y
+
+    return None
+
+
+def _compute_font_size_clusters(
+    blocks: List[Dict[str, Any]], n_clusters: int = 3
+) -> Dict[float, str]:
+    """Classify font sizes into clusters: small (footnotes), medium (body), large (headings).
+
+    Uses median font size as the body reference (robust against footnote-heavy
+    pages where small-font text may have more total characters).
+
+    Research (PDFBoT, TETer) shows font-size clustering outperforms fixed
+    ratio thresholds because it adapts to different document styles
+    (e.g., 8pt+7pt vs 12pt+9pt).
+    """
+    if not blocks:
+        return {}
+
+    font_sizes = [b["font_size"] for b in blocks if b.get("font_size", 0) > 0]
+    if not font_sizes:
+        return {}
+
+    # Body font = median (robust against footnote-heavy pages)
+    body_size = statistics.median(font_sizes)
+
+    result: Dict[float, str] = {}
+    for sz in set(font_sizes):
+        ratio = sz / body_size if body_size > 0 else 1.0
+        if ratio < 0.93:
+            result[sz] = "small"
+        elif ratio > 1.15:
+            result[sz] = "large"
+        else:
+            result[sz] = "medium"
+
+    return result
+
+
 def detect_footnotes(
-    blocks: List[Dict[str, Any]], page_height: float
+    blocks: List[Dict[str, Any]],
+    page_height: float,
+    separator_y: Optional[float] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Identify footnotes based on position and font size.
+    """Identify footnotes using a composite of heuristics.
 
-    Rules:
-    - Located near bottom of page (bottom 25%, i.e. y0 >= 75% of page height)
-    - Smaller font size than body text median (< 92% of median)
-    - Often begins with numeric marker (digit + space/dot/tab)
+    Detection strategy (in priority order, based on PDF parsing research):
 
-    A block is classified as a footnote if it is in the bottom 25%
-    AND either has a smaller font or starts with a numeric marker.
+    1. **Separator line** (most reliable): If a footnote rule (thin horizontal
+       line) is found in the bottom half of the page, blocks below it with
+       small font or numeric marker are treated as footnotes.
+    2. **Font size clustering** (adaptive): Classifies font sizes relative
+       to the body text median, avoiding fixed percentage thresholds that
+       break on different document styles (8pt/7pt vs 12pt/9pt).
+    3. **Position + marker** (fallback): If no separator is found, uses
+       position (bottom 25%) combined with either smaller font or a
+       numeric marker at the start of the text.
+    4. **Minimum length**: Blocks shorter than 5 words are excluded to
+       avoid false positives from page numbers and running headers/footers.
 
     Returns (body_blocks, footnote_blocks)
     """
@@ -118,8 +198,18 @@ def detect_footnotes(
     if not font_sizes:
         return list(blocks), []
 
+    font_clusters = _compute_font_size_clusters(blocks)
     median_size = statistics.median(font_sizes)
-    bottom_threshold = page_height * 0.75
+
+    # Minimum word count — page numbers and short labels are not footnotes.
+    # Research (GROBID's repetitivePattern) shows that short, recurring
+    # text at fixed positions is typically running headers/footers,
+    # not content footnotes.
+    MIN_FOOTNOTE_WORDS = 5
+
+    def _is_footnote_text(text: str) -> bool:
+        """True if text is long enough to be a meaningful footnote."""
+        return len(text.split()) >= MIN_FOOTNOTE_WORDS
 
     body: List[Dict[str, Any]] = []
     footnotes: List[Dict[str, Any]] = []
@@ -127,11 +217,39 @@ def detect_footnotes(
     for block in blocks:
         y0 = block["bbox"][1]
         text = block["text"].lstrip()
-        in_bottom = y0 >= bottom_threshold
-        small_font = block["font_size"] < median_size * 0.92
-        has_marker = len(text) > 1 and text[0].isdigit() and text[1] in (" ", ".", "\t")
+        block_size = block["font_size"]
+        cluster = font_clusters.get(block_size, "medium")
 
-        if in_bottom and (small_font or has_marker):
+        # Skip short blocks — page numbers, running headers/footers
+        if not _is_footnote_text(text):
+            body.append(block)
+            continue
+
+        # Heuristic 1: Separator line defines the footnote zone
+        if separator_y is not None and y0 >= separator_y:
+            # Below separator — likely footnote. Verify with font size
+            # or marker to avoid catching body text that extends below.
+            is_small = cluster == "small"
+            has_marker = (
+                len(text) > 1
+                and text[0].isdigit()
+                and text[1] in (" ", ".", "\t")
+            )
+            if is_small or has_marker:
+                footnotes.append(block)
+                continue
+
+        # Heuristic 2: Position + font cluster + marker (fallback)
+        # Bottom 25% AND (small font cluster OR numeric marker)
+        in_bottom = y0 >= page_height * 0.75
+        is_small = cluster == "small"
+        has_marker = (
+            len(text) > 1
+            and text[0].isdigit()
+            and text[1] in (" ", ".", "\t")
+        )
+
+        if in_bottom and (is_small or has_marker):
             footnotes.append(block)
         else:
             body.append(block)
@@ -185,7 +303,13 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
     }
     """
     blocks = extract_text_blocks(page)
-    body_blocks, footnote_blocks = detect_footnotes(blocks, page.rect.height)
+
+    # Detect footnote separator line (most reliable signal)
+    separator_y = _find_footnote_separator(page)
+
+    body_blocks, footnote_blocks = detect_footnotes(
+        blocks, page.rect.height, separator_y=separator_y
+    )
     columns = detect_columns(body_blocks, page.rect.width)
     ordered = resolve_reading_order(columns, footnote_blocks)
 
