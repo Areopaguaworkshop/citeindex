@@ -1,9 +1,13 @@
-"""Layout analysis for PDF pages: column detection, footnote isolation, reading order."""
+"""Layout analysis for PDF pages: column detection, footnote isolation,
+page number extraction from headers/footers, reading order."""
 
 import logging
+import re
 import statistics
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
+
+from .common import PAGE_NUMBER_RE, extract_page_number_candidates
 
 import fitz
 
@@ -257,6 +261,98 @@ def detect_footnotes(
     return body, footnotes
 
 
+# ---------------------------------------------------------------------------
+# Page number detection from headers/footers
+# ---------------------------------------------------------------------------
+
+# Top/bottom fraction of page considered header/footer zone.
+# Conservative: only the outer 12% — avoids body text that spills into margins.
+_HEADER_ZONE = 0.12
+_FOOTER_ZONE = 0.88
+
+# Maximum word count for a block to be considered a header/footer.
+# Running headers like "TOOLS 49" are 2 words; standalone "25" is 1 word.
+_MAX_HEADER_FOOTER_WORDS = 8
+
+
+def detect_page_numbers(
+    blocks: List[Dict[str, Any]],
+    page_height: float,
+    header_zone: float = _HEADER_ZONE,
+    footer_zone: float = _FOOTER_ZONE,
+    max_words: int = _MAX_HEADER_FOOTER_WORDS,
+) -> Tuple[List[Dict[str, Any]], List[int]]:
+    """Identify page numbers in header/footer blocks.
+
+    Mirrors ``detect_footnotes``: scans raw layout blocks, identifies header/
+    footer blocks by position, extracts numeric page-number candidates.
+
+    Detection strategy:
+
+    1. **Position**: Blocks in the top 12% or bottom 12% of the page
+       are candidate headers/footers.
+    2. **Length**: Only short blocks (≤ 8 words) qualify — longer text
+       at page edges is likely marginalia, not a simple header.
+    3. **Font size** (for block classification only): Blocks with body-size
+       font in the header/footer zone are likely footnotes or body text
+       that spills into the margin — they are NOT classified as header/
+       footer blocks (and thus NOT removed from body paragraphs).  However,
+       their numeric candidates are still extracted because body-font
+       headers like ``"TOOLS 49"`` use the same font as body text.
+    4. **Extraction**: Numeric values are extracted via regex patterns
+       covering common formats (bare, decorated, prefixed).
+
+    Returns
+    -------
+    (header_footer_blocks, candidate_page_numbers)
+        header_footer_blocks: blocks to remove from body (small-font or
+            bare-number headers/footers only).
+        candidate_page_numbers: all numeric candidates from the header/
+            footer zone, regardless of font size.
+    """
+    if not blocks:
+        return [], []
+
+    font_clusters = _compute_font_size_clusters(blocks)
+
+    header_footer: List[Dict[str, Any]] = []
+    candidates: List[int] = []
+
+    for block in blocks:
+        y0 = block["bbox"][1]
+        text = block["text"].strip()
+        block_size = block["font_size"]
+
+        in_header = y0 < page_height * header_zone
+        in_footer = y0 >= page_height * footer_zone
+
+        if not (in_header or in_footer):
+            continue
+
+        # Only short blocks are headers/footers
+        if len(text.split()) > max_words:
+            continue
+
+        # Extract page number candidates from ALL short blocks in the
+        # header/footer zone, regardless of font size.  Many academic PDFs
+        # use body-size font for running headers (e.g., "TOOLS 49" in 11pt
+        # when body is also 11pt).
+        candidates.extend(extract_page_number_candidates(text))
+
+        # But only classify as "header/footer block to remove" if the font
+        # is smaller than body OR the text is a bare number.  Body-font
+        # blocks in the header zone (like "Grammar (Winona Lake, ...)")
+        # are NOT headers — they're body text that starts high on the page.
+        cluster = font_clusters.get(block_size, "medium")
+        is_small_or_large = cluster in ("small", "large")
+        is_bare_number = bool(re.match(r"^\s*\d{1,4}\s*$", text))
+
+        if is_small_or_large or is_bare_number:
+            header_footer.append(block)
+
+    return header_footer, candidates
+
+
 def resolve_reading_order(
     columns: List[List[Dict[str, Any]]], footnotes: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -288,17 +384,12 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
     Returns structured dict:
     {
         "page_number": int,
-        "columns": [
-            {
-                "column_id": int,
-                "paragraphs": [
-                    {"paragraph_id": str, "text": str, "lines": [...], "bbox": [...]}
-                ]
-            }
+        "columns": [...],
+        "footnotes": [...],
+        "headers_footers": [
+            {"text": str, "bbox": [...]}
         ],
-        "footnotes": [
-            {"footnote_id": str, "text": str, "bbox": [...]}
-        ],
+        "page_number_candidates": [int, ...],
         "ordered_text": str
     }
     """
@@ -307,9 +398,20 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
     # Detect footnote separator line (most reliable signal)
     separator_y = _find_footnote_separator(page)
 
+    # Detect page numbers and header/footer blocks FIRST
+    # (same pattern as footnotes: find from raw layout before filtering)
+    header_footer_blocks, page_num_candidates = detect_page_numbers(
+        blocks, page.rect.height
+    )
+
     body_blocks, footnote_blocks = detect_footnotes(
         blocks, page.rect.height, separator_y=separator_y
     )
+
+    # Remove header/footer blocks from body (they are not content)
+    hf_block_ids = {id(b) for b in header_footer_blocks}
+    body_blocks = [b for b in body_blocks if id(b) not in hf_block_ids]
+
     columns = detect_columns(body_blocks, page.rect.width)
     ordered = resolve_reading_order(columns, footnote_blocks)
 
@@ -339,12 +441,22 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
             "bbox": fn_block["bbox"],
         })
 
+    # Build header/footer dicts
+    hf_dicts: List[Dict[str, Any]] = []
+    for hf_block in sorted(header_footer_blocks, key=lambda b: b["bbox"][1]):
+        hf_dicts.append({
+            "text": hf_block["text"],
+            "bbox": hf_block["bbox"],
+        })
+
     ordered_text = "\n\n".join(block["text"] for block in ordered)
 
     return {
         "page_number": page_number,
         "columns": column_dicts,
         "footnotes": fn_dicts,
+        "headers_footers": hf_dicts,
+        "page_number_candidates": page_num_candidates,
         "ordered_text": ordered_text,
     }
 
@@ -367,8 +479,47 @@ def analyze_document_layout(pdf_path: str) -> List[Dict[str, Any]]:
                 "page_number": page_number,
                 "columns": [],
                 "footnotes": [],
+                "headers_footers": [],
+                "page_number_candidates": [],
                 "ordered_text": "",
             }
         results.append(layout)
     doc.close()
     return results
+
+
+def build_page_number_map(
+    page_layouts: List[Dict[str, Any]],
+) -> Dict[int, int]:
+    """Build physical→printed page number map from layout analysis results.
+
+    Uses ``_select_continuous_sequence`` (from dspy_extract) to find the
+    best offset that explains the most candidate page numbers as a
+    continuous sequence.
+
+    Parameters
+    ----------
+    page_layouts : list of dict
+        Per-page layout dicts from ``analyze_document_layout()``.
+
+    Returns
+    -------
+    dict
+        Mapping ``{0-based physical page index → printed page number}``.
+        Empty dict if no consistent page numbering is found.
+    """
+    from .dspy_extract import _select_continuous_sequence
+
+    candidates: Dict[int, List[int]] = {}
+    for layout in page_layouts:
+        # page_number in layout is 1-based physical index
+        physical_1based = layout.get("page_number")
+        if not isinstance(physical_1based, int):
+            continue
+        idx_0based = physical_1based - 1
+
+        page_candidates = layout.get("page_number_candidates", [])
+        if page_candidates:
+            candidates[idx_0based] = page_candidates
+
+    return _select_continuous_sequence(candidates)

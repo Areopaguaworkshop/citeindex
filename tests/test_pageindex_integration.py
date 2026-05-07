@@ -192,6 +192,33 @@ def test_collect_footnotes_for_range():
     assert result == []
 
 
+def test_collect_footnotes_no_duplicates_on_overlapping_ranges():
+    """Footnotes on boundary pages should not be duplicated across overlapping ranges."""
+    from citeindex.ingestion.pipelines.pageindex_tree import _collect_footnotes_for_range
+
+    page_layouts = [
+        {"page_number": 9, "footnotes": [{"footnote_id": "p9_fn1", "text": "Note on page 9."}]},
+        {"page_number": 26, "footnotes": [{"footnote_id": "p26_fn1", "text": "Note on page 26."}]},
+    ]
+
+    # Simulate two overlapping locators: 5-9 and 9-11
+    assigned = set()
+    fns_first = _collect_footnotes_for_range(5, 9, page_layouts, assigned)
+    fns_second = _collect_footnotes_for_range(9, 11, page_layouts, assigned)
+
+    # p9_fn1 should only appear once (assigned to the first range)
+    all_ids = [fn["footnote_id"] for fn in fns_first + fns_second]
+    assert all_ids.count("p9_fn1") == 1
+    assert "p9_fn1" in assigned
+
+    # Another overlapping pair: 23-26 and 26-27
+    assigned2 = set()
+    fns_a = _collect_footnotes_for_range(23, 26, page_layouts, assigned2)
+    fns_b = _collect_footnotes_for_range(26, 27, page_layouts, assigned2)
+    all_ids2 = [fn["footnote_id"] for fn in fns_a + fns_b]
+    assert all_ids2.count("p26_fn1") == 1
+
+
 def test_pageindex_tree_footnotes_match_page_ranges():
     """Integration test: footnotes are attached to the correct LocatorNodes by page range."""
     from citeindex.ingestion.pipelines.pageindex_tree import pageindex_to_citeindex_tree
@@ -538,3 +565,239 @@ def test_generate_library_markdown_skips_pdf_fallback_page_heading_labels():
 
     assert "## Page 3: THE ARAMAIC KINGDOMS" not in markdown
     assert "Continuation text." in markdown
+
+
+def test_attach_layout_footnotes_removes_footnote_text_from_paragraphs():
+    """When footnotes are detected by layout analysis, their text should be
+    removed from body paragraphs to avoid duplication in markdown output."""
+    document_structure = {
+        "pages": [
+            {
+                "page_number": 1,
+                "paragraphs": [
+                    {"paragraph_id": "p1_1", "text": "Body text paragraph.", "type": "text"},
+                    {"paragraph_id": "p1_2", "text": "9 Specifically aimed at Byzantinists, a summary guide.", "type": "text"},
+                ],
+                "footnotes": [],
+            },
+        ],
+    }
+    page_layouts = [
+        {
+            "page_number": 1,
+            "footnotes": [
+                {
+                    "footnote_id": "p1_fn1",
+                    "text": "9 Specifically aimed at Byzantinists, a summary guide.",
+                },
+            ],
+        },
+    ]
+
+    _attach_layout_footnotes(document_structure, page_layouts)
+
+    p1 = document_structure["pages"][0]
+    # Footnote text should be removed from paragraphs
+    para_texts = [p["text"] for p in p1["paragraphs"]]
+    assert "9 Specifically aimed at Byzantinists, a summary guide." not in para_texts
+    assert "Body text paragraph." in para_texts
+    assert len(p1["paragraphs"]) == 1
+    # Footnote should be attached
+    assert p1["footnotes"][0]["footnote_id"] == "p1_fn1"
+
+
+def test_attach_layout_footnotes_whitespace_tolerant_match():
+    """Footnote text may differ in whitespace from paragraph text;
+    the removal should handle this via normalized comparison."""
+    document_structure = {
+        "pages": [
+            {
+                "page_number": 1,
+                "paragraphs": [
+                    {"paragraph_id": "p1_1", "text": "Body text.", "type": "text"},
+                    {"paragraph_id": "p1_2", "text": "9 Specifically aimed at Byzantinists", "type": "text"},
+                ],
+                "footnotes": [],
+            },
+        ],
+    }
+    # Note: footnote text has trailing space
+    page_layouts = [
+        {
+            "page_number": 1,
+            "footnotes": [
+                {
+                    "footnote_id": "p1_fn1",
+                    "text": "9 Specifically aimed at Byzantinists ",
+                },
+            ],
+        },
+    ]
+
+    _attach_layout_footnotes(document_structure, page_layouts)
+
+    p1 = document_structure["pages"][0]
+    para_texts = [p["text"] for p in p1["paragraphs"]]
+    assert "Body text." in para_texts
+    assert len(p1["paragraphs"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Page number detection tests
+# ---------------------------------------------------------------------------
+
+
+def test_detect_page_numbers_finds_candidates_in_header():
+    """Page numbers in top-of-page headers should be detected."""
+    from citeindex.ingestion.pipelines.layout import detect_page_numbers
+
+    page_height = 648
+    blocks = [
+        # Header block with page number (top of page, y0 < 12%)
+        {"text": "TOOLS 49", "bbox": [72, 35, 404, 49], "font_size": 9.0},
+        # Body text (mid-page, NOT a header)
+        {"text": "The Mongol period is well covered in the short book.", "bbox": [72, 200, 360, 300], "font_size": 11.0},
+        # Body text 2
+        {"text": "Another paragraph.", "bbox": [72, 350, 360, 400], "font_size": 11.0},
+    ]
+
+    hf_blocks, candidates = detect_page_numbers(blocks, page_height)
+
+    assert len(hf_blocks) == 1  # "TOOLS 49" is a header
+    assert 49 in candidates
+
+
+def test_detect_page_numbers_finds_standalone_footer_number():
+    """A standalone page number at the bottom of a page should be detected."""
+    from citeindex.ingestion.pipelines.layout import detect_page_numbers
+
+    page_height = 648
+    blocks = [
+        # Body text (mid-page, well outside header/footer zones)
+        {"text": "Body text paragraph.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
+        # Footer number at bottom (y0 > 88% = 570)
+        {"text": "25", "bbox": [200, 581, 230, 595], "font_size": 9.0},
+    ]
+
+    hf_blocks, candidates = detect_page_numbers(blocks, page_height)
+
+    assert len(hf_blocks) == 1
+    assert 25 in candidates
+
+
+def test_detect_page_numbers_ignores_body_text():
+    """Mid-page blocks (not in header/footer zone) should not be detected."""
+    from citeindex.ingestion.pipelines.layout import detect_page_numbers
+
+    page_height = 648
+    blocks = [
+        {"text": "Body text paragraph.", "bbox": [72, 300, 360, 400], "font_size": 11.0},
+        {"text": "Another body paragraph.", "bbox": [72, 400, 360, 500], "font_size": 11.0},
+    ]
+
+    hf_blocks, candidates = detect_page_numbers(blocks, page_height)
+
+    assert len(hf_blocks) == 0
+    assert len(candidates) == 0
+
+
+def test_detect_page_numbers_ignores_long_blocks():
+    """Long blocks in header/footer zone are not headers/footers."""
+    from citeindex.ingestion.pipelines.layout import detect_page_numbers
+
+    page_height = 648
+    blocks = [
+        # Long text at top of page — not a simple header
+        {"text": "This is a very long paragraph that spans multiple sentences and is clearly body text, not a header.",
+         "bbox": [72, 35, 400, 70], "font_size": 11.0},
+    ]
+
+    hf_blocks, candidates = detect_page_numbers(blocks, page_height)
+
+    assert len(hf_blocks) == 0
+
+
+def test_build_page_number_map_from_layouts():
+    """build_page_number_map should convert per-page candidates to a continuous offset map."""
+    from citeindex.ingestion.pipelines.layout import build_page_number_map
+
+    # Simulate 3 pages: physical 1→25, 2→26, 3→27
+    page_layouts = [
+        {"page_number": 1, "page_number_candidates": [25], "footnotes": [], "headers_footers": []},
+        {"page_number": 2, "page_number_candidates": [26], "footnotes": [], "headers_footers": []},
+        {"page_number": 3, "page_number_candidates": [27], "footnotes": [], "headers_footers": []},
+    ]
+
+    pnm = build_page_number_map(page_layouts)
+
+    assert pnm[0] == 25
+    assert pnm[1] == 26
+    assert pnm[2] == 27
+
+
+def test_build_page_number_map_returns_empty_when_no_candidates():
+    """With no candidates, build_page_number_map returns empty dict."""
+    from citeindex.ingestion.pipelines.layout import build_page_number_map
+
+    page_layouts = [
+        {"page_number": 1, "page_number_candidates": [], "footnotes": [], "headers_footers": []},
+        {"page_number": 2, "page_number_candidates": [], "footnotes": [], "headers_footers": []},
+    ]
+
+    pnm = build_page_number_map(page_layouts)
+    assert pnm == {}
+
+
+def test_remove_header_footer_paragraphs():
+    """Running header text should be removed from body paragraphs."""
+    from citeindex.ingestion.pipelines.digital_pdf import _remove_header_footer_paragraphs
+
+    document_structure = {
+        "pages": [
+            {
+                "page_number": 1,
+                "paragraphs": [
+                    {"paragraph_id": "p1_1", "text": "TOOLS 49", "type": "text"},
+                    {"paragraph_id": "p1_2", "text": "Body text paragraph.", "type": "text"},
+                ],
+                "footnotes": [],
+            },
+        ],
+    }
+    page_layouts = [
+        {
+            "page_number": 1,
+            "headers_footers": [
+                {"text": "TOOLS 49", "bbox": [72, 35, 404, 49]},
+            ],
+            "footnotes": [],
+        },
+    ]
+
+    _remove_header_footer_paragraphs(document_structure, page_layouts)
+
+    p1 = document_structure["pages"][0]
+    para_texts = [p["text"] for p in p1["paragraphs"]]
+    assert "Body text paragraph." in para_texts
+    assert "TOOLS 49" not in para_texts
+    assert len(p1["paragraphs"]) == 1
+
+
+def test_apply_page_number_map_updates_page_numbers():
+    """_apply_page_number_map should rewrite page_number fields."""
+    from citeindex.ingestion.pipelines.digital_pdf import _apply_page_number_map
+
+    document_structure = {
+        "pages": [
+            {"page_number": 1, "paragraphs": [], "footnotes": []},
+            {"page_number": 2, "paragraphs": [], "footnotes": []},
+            {"page_number": 3, "paragraphs": [], "footnotes": []},
+        ]
+    }
+    page_number_map = {0: 25, 1: 26, 2: 27}
+
+    _apply_page_number_map(document_structure, page_number_map)
+
+    assert document_structure["pages"][0]["page_number"] == 25
+    assert document_structure["pages"][1]["page_number"] == 26
+    assert document_structure["pages"][2]["page_number"] == 27

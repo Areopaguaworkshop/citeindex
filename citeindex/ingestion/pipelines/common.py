@@ -10,6 +10,60 @@ from ..models import IngestionConfig
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Shared page-number regex patterns
+# ---------------------------------------------------------------------------
+
+# Individual patterns for extracting a page number from a block of text.
+# Used by both layout.py (digital PDF pipeline) and dspy_extract.py
+# (scanned/mineru pipeline) to avoid duplication.
+PAGE_NUMBER_PATTERNS: List[re.Pattern] = [
+    re.compile(r"[·•∙・]\s*(\d{1,4})\s*[·•∙・]"),      # · 74 ·
+    re.compile(r"[-–—]\s*(\d{1,4})\s*[-–—]"),         # — 74 —
+    re.compile(r"第\s*(\d{1,4})\s*[页頁]"),               # 第74页
+    re.compile(r"[Pp]age\s+(\d{1,4})"),                   # Page 74
+    re.compile(r"[Ss]\.\s*(\d{1,4})"),                   # S. 74 (German)
+    re.compile(r"[Pp]\.\s*(\d{1,4})"),                   # p. 74 (French)
+    re.compile(r"^\s*(\d{1,4})\s*$"),                     # bare number
+]
+
+# Combined single-regex version (for use with finditer on short text
+# that may contain an embedded number, e.g. "TOOLS 49").
+# Catches all the individual patterns plus a catch-all for numbers
+# embedded in short header text.
+PAGE_NUMBER_RE = re.compile(
+    r"(?:"
+    r"[·•∙・]\s*(\d{1,4})\s*[·•∙・]"    # · 74 ·
+    r"|[-–—]\s*(\d{1,4})\s*[-–—]"      # — 74 —
+    r"|第\s*(\d{1,4})\s*[页頁]"         # 第74页
+    r"|[Pp]age\s+(\d{1,4})"             # Page 74
+    r"|[Ss]\.\s*(\d{1,4})"              # S. 74
+    r"|[Pp]\.\s*(\d{1,4})"              # p. 74
+    r"|(?:.*\s)?(\d{1,4})(?:\s.*)?"     # any number in short text
+    r")"
+)
+
+
+def extract_page_number_candidates(text: str) -> List[int]:
+    """Extract candidate page numbers from a short text block.
+
+    Returns a list of ints (possibly empty).  Uses ``PAGE_NUMBER_RE``
+    which handles decorated, prefixed, bare, and embedded numbers.
+    """
+    candidates: List[int] = []
+    for m in PAGE_NUMBER_RE.finditer(text):
+        for g in m.groups():
+            if g is not None:
+                try:
+                    val = int(g)
+                    if 1 <= val <= 9999:
+                        candidates.append(val)
+                except ValueError:
+                    continue
+                break  # only take first matching group per match
+    return candidates
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 

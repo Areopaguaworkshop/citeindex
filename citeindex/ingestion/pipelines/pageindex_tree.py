@@ -161,7 +161,8 @@ def pageindex_to_citeindex_tree(
         CiteIndex PageIndexTree JSON matching ``kernel/types/tree.rs``.
     """
     structure = pi_result.get("structure", [])
-    level_1 = _convert_sections(structure, doc_id, page_number_map, page_layouts)
+    assigned_fn_ids: set = set()  # Track footnote IDs to avoid duplicates across locators
+    level_1 = _convert_sections(structure, doc_id, page_number_map, page_layouts, assigned_fn_ids)
     level_0 = _build_level0(csl_data, doc_id, merkle_root)
 
     return {
@@ -207,6 +208,7 @@ def _collect_footnotes_for_range(
     start_page: Optional[int],
     end_page: Optional[int],
     page_layouts: Optional[List[Dict[str, Any]]],
+    assigned_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """Collect footnotes from page_layouts that fall within a page range.
 
@@ -216,6 +218,10 @@ def _collect_footnotes_for_range(
         1-based page numbers (inclusive). If None, returns empty list.
     page_layouts : list of dict or None
         Per-page layout dicts with ``footnotes`` key. If None, returns empty list.
+    assigned_ids : set or None
+        Set of footnote IDs already assigned to a prior locator. Used internally
+        to prevent the same footnote from appearing in multiple locators when
+        page ranges overlap (e.g., ranges 5-9 and 9-11 both containing page 9).
 
     Returns
     -------
@@ -225,6 +231,9 @@ def _collect_footnotes_for_range(
     if not page_layouts or start_page is None or end_page is None:
         return []
 
+    if assigned_ids is None:
+        assigned_ids = set()
+
     footnotes: List[Dict[str, Any]] = []
     for layout in page_layouts:
         page_num = layout.get("page_number")
@@ -232,13 +241,18 @@ def _collect_footnotes_for_range(
             continue
         if start_page <= page_num <= end_page:
             for fn in layout.get("footnotes", []):
+                fn_id = fn.get("footnote_id", "")
+                if fn_id and fn_id in assigned_ids:
+                    continue
                 entry: Dict[str, Any] = {
-                    "footnote_id": fn.get("footnote_id", ""),
+                    "footnote_id": fn_id,
                     "text": fn.get("text", ""),
                 }
                 if fn.get("marker"):
                     entry["marker"] = fn["marker"]
                 footnotes.append(entry)
+                if fn_id:
+                    assigned_ids.add(fn_id)
     return footnotes
 
 
@@ -247,8 +261,11 @@ def _convert_sections(
     doc_id: str,
     page_number_map: Dict[int, int],
     page_layouts: Optional[List[Dict[str, Any]]] = None,
+    assigned_fn_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """Convert top-level PageIndex nodes → CiteIndex level_1 SectionNodes."""
+    if assigned_fn_ids is None:
+        assigned_fn_ids = set()
     sections: List[Dict[str, Any]] = []
     for node in nodes:
         pi_id = node.get("node_id", "")
@@ -261,7 +278,7 @@ def _convert_sections(
                 node.get("start_index"), node.get("end_index"), page_number_map
             ),
             "children": _convert_subsections(
-                node.get("nodes", []), doc_id, pi_id, page_number_map, page_layouts
+                node.get("nodes", []), doc_id, pi_id, page_number_map, page_layouts, assigned_fn_ids
             ),
         }
         if node.get("summary"):
@@ -276,6 +293,7 @@ def _convert_subsections(
     parent_id: str,
     page_number_map: Dict[int, int],
     page_layouts: Optional[List[Dict[str, Any]]] = None,
+    assigned_fn_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """Convert child PageIndex nodes → CiteIndex SubsectionNodes.
 
@@ -283,6 +301,8 @@ def _convert_subsections(
     LocatorNode so the tree always has the 3-level depth that the Rust
     ``PageIndexTree`` type expects.
     """
+    if assigned_fn_ids is None:
+        assigned_fn_ids = set()
     subsections: List[Dict[str, Any]] = []
     for node in nodes:
         pi_id = node.get("node_id", "")
@@ -295,7 +315,7 @@ def _convert_subsections(
                 "heading": node.get("title"),
                 "section_number": None,
                 "children": _convert_to_locators(
-                    children_nodes, doc_id, pi_id, page_number_map, page_layouts
+                    children_nodes, doc_id, pi_id, page_number_map, page_layouts, assigned_fn_ids
                 ),
             }
         else:
@@ -305,7 +325,7 @@ def _convert_subsections(
                 "heading": node.get("title"),
                 "section_number": None,
                 "children": [
-                    _make_locator(node, doc_id, pi_id, page_number_map, page_layouts)
+                    _make_locator(node, doc_id, pi_id, page_number_map, page_layouts, assigned_fn_ids)
                 ],
             }
 
@@ -331,11 +351,12 @@ def _convert_to_locators(
     parent_id: str,
     page_number_map: Dict[int, int],
     page_layouts: Optional[List[Dict[str, Any]]] = None,
+    assigned_fn_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """Convert deepest PageIndex nodes → CiteIndex LocatorNodes."""
     locators: List[Dict[str, Any]] = []
     for node in nodes:
-        locators.append(_make_locator(node, doc_id, parent_id, page_number_map, page_layouts))
+        locators.append(_make_locator(node, doc_id, parent_id, page_number_map, page_layouts, assigned_fn_ids))
     return locators
 
 
@@ -345,14 +366,16 @@ def _make_locator(
     parent_id: str,
     page_number_map: Dict[int, int],
     page_layouts: Optional[List[Dict[str, Any]]] = None,
+    assigned_fn_ids: Optional[set] = None,
 ) -> Dict[str, Any]:
     """Build a single CiteIndex LocatorNode from a PageIndex leaf node."""
     pi_id = node.get("node_id", "")
     start_page = _map_page(node.get("start_index"), page_number_map)
     end_page = _map_page(node.get("end_index"), page_number_map)
 
-    # Collect footnotes that fall within this locator's page range
-    footnotes = _collect_footnotes_for_range(start_page, end_page, page_layouts)
+    # Collect footnotes that fall within this locator's page range,
+    # skipping any already assigned to a prior locator.
+    footnotes = _collect_footnotes_for_range(start_page, end_page, page_layouts, assigned_fn_ids)
 
     return {
         "node_id": f"{doc_id}:locator:{pi_id}",

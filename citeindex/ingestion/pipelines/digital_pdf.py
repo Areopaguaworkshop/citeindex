@@ -32,7 +32,7 @@ from .common import (
     make_source_id,
     split_paragraphs,
 )
-from .layout import analyze_document_layout
+from .layout import analyze_document_layout, build_page_number_map
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,12 @@ def _attach_layout_footnotes(
     document_structure: Dict[str, Any],
     page_layouts: List[Dict[str, Any]],
 ) -> None:
-    """Copy layout-detected footnotes onto the matching document pages."""
+    """Copy layout-detected footnotes onto the matching document pages.
+
+    Also removes footnote text from page body paragraphs to avoid
+    duplication (PyMuPDF extracts footnotes as body text, but we now
+    know they should be footnotes only).
+    """
     pages = document_structure.get("pages", [])
     for layout in page_layouts:
         page_num = layout.get("page_number")
@@ -177,6 +182,98 @@ def _attach_layout_footnotes(
         footnotes = layout.get("footnotes") or []
         if footnotes:
             pages[page_idx]["footnotes"] = footnotes
+            # Remove footnote text from body paragraphs to avoid duplication.
+            # Footnote text blocks were misclassified as body paragraphs by
+            # PyMuPDF, so we strip them now that layout analysis identifies them.
+            # Whitespace may differ (trailing spaces, line break variants), so
+            # we normalize before comparing.
+            fn_signatures = set()
+            for fn in footnotes:
+                fn_text = fn.get("text", "")
+                if fn_text:
+                    # Normalize: collapse whitespace, strip edges
+                    sig = " ".join(fn_text.split())
+                    fn_signatures.add(sig[:200])  # Use first 200 chars as signature
+
+            if fn_signatures:
+                filtered = []
+                for para in pages[page_idx].get("paragraphs", []):
+                    para_text = para.get("text", "")
+                    if para_text:
+                        sig = " ".join(para_text.split())
+                        if sig[:200] in fn_signatures:
+                            logger.debug(
+                                "Removing footnote text from body paragraph on page %d: %.50s...",
+                                page_num, para_text.strip(),
+                            )
+                            continue
+                    filtered.append(para)
+                pages[page_idx]["paragraphs"] = filtered
+
+
+def _remove_header_footer_paragraphs(
+    document_structure: Dict[str, Any],
+    page_layouts: List[Dict[str, Any]],
+) -> None:
+    """Remove running header/footer text from page body paragraphs.
+
+    Layout analysis identifies header/footer blocks (short text in the
+    top/bottom 12% of the page).  These blocks are not body content but
+    were extracted as paragraphs by PyMuPDF.  Remove them, using the
+    same normalised-signature matching as footnote removal.
+    """
+    pages = document_structure.get("pages", [])
+    for layout in page_layouts:
+        page_num = layout.get("page_number")
+        if not isinstance(page_num, int):
+            continue
+
+        page_idx = page_num - 1
+        if page_idx < 0 or page_idx >= len(pages):
+            continue
+
+        headers_footers = layout.get("headers_footers") or []
+        if not headers_footers:
+            continue
+
+        hf_signatures = set()
+        for hf in headers_footers:
+            hf_text = hf.get("text", "")
+            if hf_text:
+                sig = " ".join(hf_text.split())
+                hf_signatures.add(sig[:200])
+
+        if hf_signatures:
+            filtered = []
+            for para in pages[page_idx].get("paragraphs", []):
+                para_text = para.get("text", "")
+                if para_text:
+                    sig = " ".join(para_text.split())
+                    if sig[:200] in hf_signatures:
+                        logger.debug(
+                            "Removing header/footer text from body paragraph on page %d: %.50s...",
+                            page_num, para_text.strip(),
+                        )
+                        continue
+                filtered.append(para)
+            pages[page_idx]["paragraphs"] = filtered
+
+
+def _apply_page_number_map(
+    document_structure: Dict[str, Any],
+    page_number_map: Dict[int, int],
+) -> None:
+    """Update document structure page_number values using the real printed page numbers.
+
+    By default PyMuPDF gives 1-based physical indices.  ``page_number_map``
+    maps 0-based physical indices → printed page numbers.  This function
+    rewrites each page's ``page_number`` field accordingly.
+    """
+    pages = document_structure.get("pages", [])
+    for page_idx, page in enumerate(pages):
+        printed = page_number_map.get(page_idx)
+        if printed is not None:
+            page["page_number"] = printed
 
 
 def _page_range_bounds(page_range: Optional[str]) -> Tuple[Optional[int], Optional[int]]:
@@ -391,20 +488,34 @@ def run(
     if pdf_images:
         _embed_images_into_pages(document_structure, pdf_images)
 
-    # Attach layout-detected footnotes when layout analysis is enabled.
+    # ── Step 3b: Layout analysis (footnotes + page numbers + headers/footers)
+    page_number_map: Dict[int, int] = {i: i + 1 for i in range(num_pages)}
     if cfg.use_layout_analysis:
         try:
             page_layouts = analyze_document_layout(pdf_path)
             _attach_layout_footnotes(document_structure, page_layouts)
+            _remove_header_footer_paragraphs(document_structure, page_layouts)
+
+            # Build page number map from detected page numbers in headers/footers
+            detected_map = build_page_number_map(page_layouts)
+            if detected_map:
+                page_number_map = detected_map
+                logger.info(
+                    "Page number map from layout: offset=%d (covers %d/%d pages)",
+                    page_number_map.get(0, 1) - 1,
+                    len(page_number_map),
+                    num_pages,
+                )
+                # Update document structure page numbers to use real printed numbers
+                _apply_page_number_map(document_structure, page_number_map)
         except Exception:
-            logger.warning("Layout footnote extraction failed", exc_info=True)
+            logger.warning("Layout analysis failed", exc_info=True)
 
     # ── Step 4: GROBID ──────────────────────────────────────────────
     grobid_metadata, grobid_references = _run_grobid(pdf_path)
 
     # ── Step 5: PageIndex tree (default, uses PDF directly) ─────────
     pageindex_tree_json = None
-    page_number_map: Dict[int, int] = {i: i + 1 for i in range(num_pages)}
     if cfg.use_pageindex:
         try:
             from .pageindex_tree import run_pageindex_tree, pageindex_to_citeindex_tree

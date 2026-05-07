@@ -231,16 +231,8 @@ _KEYWORD_LABELS = re.compile(
     re.IGNORECASE,
 )
 
-# Page number patterns for discarded blocks
-_PAGE_NUM_PATTERNS = [
-    re.compile(r"[·•∙・]\s*(\d+)\s*[·•∙・]"),         # · 74 ·
-    re.compile(r"[—\-–]\s*(\d+)\s*[—\-–]"),            # — 74 —
-    re.compile(r"第\s*(\d+)\s*[页頁]"),                  # 第74页
-    re.compile(r"[Pp]age\s+(\d+)"),                      # Page 74
-    re.compile(r"[Ss]\.\s*(\d+)"),                       # S. 74 (German)
-    re.compile(r"[Pp]\.\s*(\d+)"),                       # p. 74 (French)
-    re.compile(r"^\s*(\d+)\s*$"),                        # bare number
-]
+# Page number patterns — shared with layout.py via common.py
+from .common import PAGE_NUMBER_PATTERNS as _PAGE_NUM_PATTERNS
 
 
 def _get_text(item: Dict[str, Any]) -> str:
