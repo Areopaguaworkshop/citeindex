@@ -1,0 +1,27 @@
+[
+  {
+    "total_page_number": 3
+  },
+  {
+    "total_token": 2083
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': 'V. TOOLS', 'physical_index': '<physical_index_1>'}, {'structure': '1.1', 'title': 'A. GRAMMARS', 'physical_index': '<physical_index_1>'}, {'structure': '1.1.1', 'title': 'Elementary Grammars', 'physical_index': '<physical_index_1>'}, {'structure': '1.1.2', 'title': 'Reference Grammars', 'physical_index': '<physical_index_1>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': 'V. TOOLS', 'physical_index': 1}, {'structure': '1.1', 'title': 'A. GRAMMARS', 'physical_index': 1}, {'structure': '1.1.1', 'title': 'Elementary Grammars', 'physical_index': 1}, {'structure': '1.1.2', 'title': 'Reference Grammars', 'physical_index': 1}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 0,
+    "incorrect_results": []
+  }
+]

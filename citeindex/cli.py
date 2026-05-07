@@ -114,6 +114,16 @@ def main() -> None:
         help="Disable PageIndex LLM-driven tree building for section hierarchy",
     )
     parser.add_argument(
+        "--force-ocr",
+        action="store_true",
+        help="Force scanned PDF pipeline (OCR) regardless of PDF type detection",
+    )
+    parser.add_argument(
+        "--force-digital",
+        action="store_true",
+        help="Force digital PDF pipeline regardless of PDF type detection",
+    )
+    parser.add_argument(
         "--pageindex-model",
         default="ollama/deepseek-v4-flash:cloud",
         help="LLM model for PageIndex tree building (default: ollama/deepseek-v4-flash:cloud)",
@@ -152,6 +162,13 @@ def main() -> None:
     args = parser.parse_args()
     _configure_logging(args.verbose)
 
+    # Determine force_pdf_kind from mutually exclusive flags
+    force_pdf_kind = None
+    if args.force_ocr:
+        force_pdf_kind = "force_ocr"
+    elif args.force_digital:
+        force_pdf_kind = "force_digital"
+
     config = IngestionConfig(
         llm_model=args.llm,
         ocr_engine=args.ocr_engine,
@@ -167,6 +184,7 @@ def main() -> None:
         is_primary=args.is_primary,
         use_pageindex=not args.no_pageindex,
         pageindex_model=args.pageindex_model,
+        force_pdf_kind=force_pdf_kind,
     )
 
     orchestrator = CiteIndexIngestionOrchestrator(

@@ -45,6 +45,8 @@ class IngestionConfig:
     is_primary: bool = False
     use_pageindex: bool = True  # default changed to True
     pageindex_model: str = "ollama/deepseek-v4-flash:cloud"
+    force_pdf_kind: Optional[str] = None  # 'force_ocr', 'force_digital', or None for auto-detect
+    strip_existing_ocr: bool = True  # treat OCR overlay text as unreliable during classification
 
 
 @dataclass

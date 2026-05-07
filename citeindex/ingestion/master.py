@@ -34,7 +34,7 @@ class CiteIndexIngestionOrchestrator:
     ) -> Dict[str, Any]:
         cfg = config or IngestionConfig()
         try:
-            resource_type, normalized = self.detect_resource_type(input_ref)
+            resource_type, normalized = self.detect_resource_type(input_ref, config=cfg)
             if resource_type == "unsupported":
                 return self._failure(
                     stage="detect_resource_type",
@@ -56,7 +56,7 @@ class CiteIndexIngestionOrchestrator:
                         error_message=f"Failed to convert Office document: {input_ref}",
                         next_action="Ensure LibreOffice is installed",
                     )
-                resource_type = self._pdf_kind(temp_pdf)
+                resource_type = self._pdf_kind(temp_pdf, force_kind=cfg.force_pdf_kind)
                 normalized = temp_pdf
 
             elif resource_type == "djvu_document":
@@ -69,7 +69,7 @@ class CiteIndexIngestionOrchestrator:
                         error_message=f"Failed to convert DJVU document: {input_ref}",
                         next_action="Ensure djvulibre-bin is installed",
                     )
-                resource_type = self._pdf_kind(temp_pdf)
+                resource_type = self._pdf_kind(temp_pdf, force_kind=cfg.force_pdf_kind)
                 normalized = temp_pdf
 
             try:
@@ -178,7 +178,7 @@ class CiteIndexIngestionOrchestrator:
                 next_action="Inspect stack trace and input file health",
             )
 
-    def detect_resource_type(self, input_ref: str) -> tuple[str, str]:
+    def detect_resource_type(self, input_ref: str, config: Optional[IngestionConfig] = None) -> tuple[str, str]:
         parsed = urlparse(input_ref)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
             host = parsed.netloc.lower()
@@ -191,7 +191,8 @@ class CiteIndexIngestionOrchestrator:
 
         ext = os.path.splitext(input_ref.lower())[1]
         if ext == ".pdf":
-            return self._pdf_kind(input_ref), os.path.abspath(input_ref)
+            force_kind = config.force_pdf_kind if config else None
+            return self._pdf_kind(input_ref, force_kind=force_kind), os.path.abspath(input_ref)
         if ext in _OFFICE_EXTENSIONS:
             return "office_document", os.path.abspath(input_ref)
         if ext in _DJVU_EXTENSIONS:
@@ -200,17 +201,28 @@ class CiteIndexIngestionOrchestrator:
             return "media", os.path.abspath(input_ref)
         return "unsupported", input_ref
 
-    def _pdf_kind(self, pdf_path: str) -> str:
-        import fitz
+    def _pdf_kind(self, pdf_path: str, force_kind: Optional[str] = None) -> str:
+        """Classify a PDF as digital, scanned, or mixed.
 
-        doc = fitz.open(pdf_path)
-        text_present = False
-        for i in range(min(3, doc.page_count)):
-            if doc[i].get_text().strip():
-                text_present = True
-                break
-        doc.close()
-        return "digital_pdf" if text_present else "scanned_pdf"
+        Uses a multi-layered heuristic inspired by docling (bitmap coverage)
+        and marker (text quality, OCR layer detection) to produce robust
+        per-page and document-level classification.
+
+        Parameters
+        ----------
+        pdf_path : str
+            Path to the PDF file.
+        force_kind : str, optional
+            Override classification. One of 'force_ocr', 'force_digital',
+            'digital_pdf', 'scanned_pdf', 'mixed_pdf'.
+
+        Returns
+        -------
+        str
+            One of 'digital_pdf', 'scanned_pdf', or 'mixed_pdf'.
+        """
+        from .pdf_classifier import pdf_kind
+        return pdf_kind(pdf_path, force_kind=force_kind)
 
     def _convert_office_to_pdf(self, doc_path: str, config: IngestionConfig) -> Optional[str]:
         """Convert Office document to PDF using legacy file_converter."""
