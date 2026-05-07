@@ -64,4 +64,10 @@ __all__ = [
     "IngestionConfig",
     "IngestionFailure",
     "PipelineResult",
+    "PDFClassification",
+    "PageClassification",
+    "DocumentKind",
+    "PageKind",
+    "classify_pdf",
+    "pdf_kind",
 ]
