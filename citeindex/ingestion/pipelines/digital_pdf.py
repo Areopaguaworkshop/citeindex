@@ -1,14 +1,16 @@
-"""Digital PDF ingestion pipeline (v0.3).
+"""Digital PDF ingestion pipeline (v0.4).
 
-Uses PyMuPDF as the primary tool — no MinerU dependency in this pipeline:
-  1. PyMuPDF      — extract text per page + images to corpus/<slug>/images/
-  2. PageIndex    — LLM-driven section tree building (optional, no MinerU needed)
+Uses PyMuPDF4LLM (GNN layout classification) as the primary tool —
+falls back to raw PyMuPDF + heuristic layout if pymupdf4llm is not installed:
+  1. PyMuPDF4LLM  — GNN-classified text blocks (footnote, header, footer, etc.)
+  2. PageIndex    — LLM-driven section tree building (optional)
   3. Citation     — GROBID (if available) or LLM on raw text
   4. Document     — page-paragraph structure augmented with PageIndex headings
   5. Merkle tree  — deterministic hash chain
 
-Upstream PageIndex (VectifyAI/PageIndex) follows the same approach:
-it opens PDFs with pymupdf (fitz) and reads page.get_text() for tree building.
+Layout analysis is hybrid: GNN for header/footer classification (85-100% AP),
+heuristic detect_footnotes() for footnote detection (better recall than GNN's
+~0.72 F1). Falls back to heuristic-only when pymupdf4llm is not installed.
 """
 
 import logging
@@ -32,7 +34,7 @@ from .common import (
     make_source_id,
     split_paragraphs,
 )
-from .layout import analyze_document_layout, build_page_number_map
+from .layout import analyze_document_layout, analyze_document_layout_pymupdf4llm, build_page_number_map
 
 logger = logging.getLogger(__name__)
 
@@ -466,10 +468,44 @@ def run(
 
     page_layouts: Optional[List[Dict[str, Any]]] = None
 
-    # ── Step 1: PyMuPDF extraction ──────────────────────────────────
-    raw_pages = _extract_pages(pdf_path)
-    page_paragraphs = _extract_page_paragraphs(raw_pages)
-    ordered_text = "\n\n".join(p["text"] for p in raw_pages)
+    # ── Step 1: Text extraction + Layout analysis ─────────────────
+    # When layout analysis is enabled and pymupdf4llm is installed,
+    # we use the GNN-classified blocks for both text extraction and
+    # layout analysis in a single pass (no duplicate fitz.open()).
+    # Falls back to raw PyMuPDF extraction + heuristic layout otherwise.
+    if cfg.use_layout_analysis:
+        try:
+            page_layouts = analyze_document_layout_pymupdf4llm(pdf_path)
+            # Build page_paragraphs from the layout results (body text only,
+            # headers/footers already excluded by the GNN classification).
+            raw_pages = []
+            for layout in page_layouts:
+                page_texts = []
+                for col in layout.get("columns", []):
+                    for para in col.get("paragraphs", []):
+                        page_texts.append(para.get("text", ""))
+                raw_pages.append({
+                    "page_number": layout.get("page_number", 0),
+                    "text": "\n\n".join(t for t in page_texts if t.strip()),
+                    "blocks": [],
+                })
+            # Apply clean_page_texts for text segmentation (split_paragraphs
+            # needs clean \n\n breaks; layout gives classified blocks but
+            # clean_page_texts handles repeated-header stripping).
+            cleaned_texts = clean_page_texts([p.get("text", "") for p in raw_pages])
+            for page, cleaned_text in zip(raw_pages, cleaned_texts):
+                page["text"] = cleaned_text
+            page_paragraphs = _extract_page_paragraphs(raw_pages)
+            ordered_text = "\n\n".join(layout.get("ordered_text", "") for layout in page_layouts)
+        except Exception:
+            logger.warning("pymupdf4llm layout failed, falling back to raw extraction", exc_info=True)
+            page_layouts = None
+
+    if page_layouts is None:
+        # Fallback: raw PyMuPDF extraction (no layout classification)
+        raw_pages = _extract_pages(pdf_path)
+        page_paragraphs = _extract_page_paragraphs(raw_pages)
+        ordered_text = "\n\n".join(p["text"] for p in raw_pages)
 
     # ── Step 2: Image extraction ──────────────────────────────────────
     pdf_images: List[Dict[str, Any]] = []
@@ -488,15 +524,35 @@ def run(
     if pdf_images:
         _embed_images_into_pages(document_structure, pdf_images)
 
-    # ── Step 3b: Layout analysis (footnotes + page numbers + headers/footers)
+    # ── Step 3b: Layout post-processing (footnotes, page numbers, headers/footers)
+    # When pymupdf4llm was used, footnotes are already extracted and headers/footers
+    # are already excluded from columns. We still need to:
+    #   - Remove any footnote text that leaked into body paragraphs
+    #   - Remove any header/footer text that leaked (safety net)
+    #   - Apply the page number map
     page_number_map: Dict[int, int] = {i: i + 1 for i in range(num_pages)}
-    if cfg.use_layout_analysis:
+    if page_layouts is not None:
+        _attach_layout_footnotes(document_structure, page_layouts)
+        _remove_header_footer_paragraphs(document_structure, page_layouts)
+
+        # Build page number map from detected page numbers in headers/footers
+        detected_map = build_page_number_map(page_layouts)
+        if detected_map:
+            page_number_map = detected_map
+            logger.info(
+                "Page number map from layout: offset=%d (covers %d/%d pages)",
+                page_number_map.get(0, 1) - 1,
+                len(page_number_map),
+                num_pages,
+            )
+            # Update document structure page numbers to use real printed numbers
+            _apply_page_number_map(document_structure, page_number_map)
+    elif cfg.use_layout_analysis:
         try:
             page_layouts = analyze_document_layout(pdf_path)
             _attach_layout_footnotes(document_structure, page_layouts)
             _remove_header_footer_paragraphs(document_structure, page_layouts)
 
-            # Build page number map from detected page numbers in headers/footers
             detected_map = build_page_number_map(page_layouts)
             if detected_map:
                 page_number_map = detected_map
@@ -506,7 +562,6 @@ def run(
                     len(page_number_map),
                     num_pages,
                 )
-                # Update document structure page numbers to use real printed numbers
                 _apply_page_number_map(document_structure, page_number_map)
         except Exception:
             logger.warning("Layout analysis failed", exc_info=True)

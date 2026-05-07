@@ -1,5 +1,14 @@
 """Layout analysis for PDF pages: column detection, footnote isolation,
-page number extraction from headers/footers, reading order."""
+page number extraction from headers/footers, reading order.
+
+Two implementations:
+  - analyze_document_layout_pymupdf4llm(): Uses PyMuPDF4LLM's GNN to classify
+    blocks into DocLayNet labels (footnote, page-header, page-footer, etc.).
+    Hybrid: GNN for headers/footers (85-100% AP), heuristic for footnotes
+    (better recall than GNN's ~0.72 F1). Preferred when pymupdf4llm is installed.
+  - analyze_document_layout(): Uses heuristic position/font-size analysis.
+    Fallback when pymupdf4llm is not available.
+"""
 
 import logging
 import re
@@ -486,6 +495,224 @@ def analyze_document_layout(pdf_path: str) -> List[Dict[str, Any]]:
         results.append(layout)
     doc.close()
     return results
+
+
+def _gnn_classified_blocks_to_layout(
+    pdoc,
+    pdf_path: str,
+) -> List[Dict[str, Any]]:
+    """Convert PyMuPDF4LLM ParsedDocument to our layout dict shape.
+
+    Uses GNN classification for headers/footers (excellent accuracy)
+    but falls back to our heuristic detect_footnotes() for footnote
+    detection (better recall — GNN F1 ~0.72 misses footnotes that
+    lack clear spatial separation from body text).
+
+    Returns list of page layout dicts with the same keys as
+    analyze_page_layout().
+    """
+    # Open the PDF again for footnote-separator detection
+    # (which needs fitz.Page drawing access not available through ParsedDocument)
+    sep_doc = fitz.open(pdf_path)
+    separator_cache: Dict[int, Optional[float]] = {}
+
+    results: List[Dict[str, Any]] = []
+
+    for page in pdoc.pages:
+        page_number = page.page_number  # 1-based
+
+        # ── Collect GNN-classified blocks per category ──
+        gnn_footnote_blocks: List[Dict[str, Any]] = []
+        gnn_header_blocks: List[Dict[str, Any]] = []
+        gnn_footer_blocks: List[Dict[str, Any]] = []
+        gnn_body_blocks: List[Dict[str, Any]] = []
+
+        for box in page.boxes:
+            btype = box.boxclass
+            text = ""
+            lines_data: List[Dict[str, Any]] = []
+            font_sizes: List[float] = []
+
+            if box.textlines:
+                for tl in box.textlines:
+                    line_text = "".join(s.get("text", "") for s in tl.get("spans", []))
+                    lines_data.append({
+                        "text": line_text,
+                        "bbox": list(tl.get("bbox", [])) if isinstance(tl.get("bbox", []), (list, tuple)) else [],
+                    })
+                    for s in tl.get("spans", []):
+                        char_count = len(s.get("text", ""))
+                        font_sizes.extend([s.get("size", 0.0)] * char_count)
+                text = "\n".join(ln["text"] for ln in lines_data)
+
+            # Dominant font size from spans
+            dom_size = Counter(font_sizes).most_common(1)[0][0] if font_sizes else 0.0
+
+            block_dict = {
+                "page_number": page_number,
+                "block_id": 0,
+                "text": text,
+                "bbox": [box.x0, box.y0, box.x1, box.y1],
+                "font_size": dom_size,
+                "font_name": "",
+                "lines": lines_data,
+                "_gnn_class": btype,  # preserve for hybrid footnote detection
+            }
+
+            if btype == "footnote":
+                gnn_footnote_blocks.append(block_dict)
+            elif btype == "page-header":
+                gnn_header_blocks.append(block_dict)
+            elif btype == "page-footer":
+                gnn_footer_blocks.append(block_dict)
+            else:
+                gnn_body_blocks.append(block_dict)
+
+        # ── Hybrid footnote detection ──
+        # Run our heuristic on body blocks to catch footnotes the GNN missed.
+        # However, only reclassify blocks as footnotes if:
+        #   - The GNN classified them as "text" (not section-header, title, etc.)
+        #   - Our heuristic has high confidence (separator line OR small font + marker)
+        # This prevents false positives on OCR'd pages where body text is
+        # positioned low and looks footnotelike to a position-only heuristic.
+        separator_y = separator_cache.get(page_number)
+        if separator_y is None and 0 <= page_number - 1 < len(sep_doc):
+            separator_y = _find_footnote_separator(sep_doc[page_number - 1])
+            separator_cache[page_number] = separator_y
+
+        # Only run heuristic on blocks the GNN classified as "text"
+        # (skip section-header, title, list-item — these are clearly not footnotes)
+        heuristic_candidate_blocks = [
+            b for b in gnn_body_blocks
+            if b.get("_gnn_class") == "text"
+        ]
+        heuristic_body, heuristic_footnotes = detect_footnotes(
+            heuristic_candidate_blocks, page.height, separator_y=separator_y,
+        )
+
+        # GNN-classified non-text body blocks (section-header, title, etc.)
+        # are always body — never reclassify as footnotes
+        gnn_non_text_body = [
+            b for b in gnn_body_blocks
+            if b.get("_gnn_class") != "text"
+        ]
+
+        # Merge: heuristic footnotes + GNN footnotes (dedup by signature)
+        all_footnote_blocks = list(heuristic_footnotes)
+        existing_fn_sigs = {" ".join(b["text"][:200].split()) for b in all_footnote_blocks}
+        for fn_block in gnn_footnote_blocks:
+            sig = " ".join(fn_block["text"][:200].split())
+            if sig not in existing_fn_sigs:
+                all_footnote_blocks.append(fn_block)
+                existing_fn_sigs.add(sig)
+
+        # Body blocks = heuristic body (text-only, footnotes removed)
+        # + non-text GNN body blocks (section-header, title, etc.)
+        final_body_blocks = gnn_non_text_body + heuristic_body
+
+        # Remove internal _gnn_class before building output
+        for b in final_body_blocks:
+            b.pop("_gnn_class", None)
+
+        # ── Header/footer dicts ──
+        hf_dicts: List[Dict[str, Any]] = []
+        for hf_block in sorted(gnn_header_blocks + gnn_footer_blocks, key=lambda b: b["bbox"][1]):
+            hf_dicts.append({
+                "text": hf_block["text"],
+                "bbox": hf_block["bbox"],
+            })
+
+        # ── Page number candidates from headers/footers ──
+        page_num_candidates: List[int] = []
+        for hf_block in gnn_header_blocks + gnn_footer_blocks:
+            page_num_candidates.extend(
+                extract_page_number_candidates(hf_block["text"])
+            )
+
+        # ── Column detection on body blocks ──
+        columns = detect_columns(final_body_blocks, page.width)
+
+        # ── Build output dicts (same shape as analyze_page_layout) ──
+        column_dicts: List[Dict[str, Any]] = []
+        for col_idx, col_blocks in enumerate(columns):
+            col_sorted = sorted(col_blocks, key=lambda b: b["bbox"][1])
+            paragraphs: List[Dict[str, Any]] = []
+            for para_idx, block in enumerate(col_sorted, start=1):
+                paragraphs.append({
+                    "paragraph_id": f"p{page_number}_c{col_idx}_para{para_idx}",
+                    "text": block["text"],
+                    "lines": block["lines"],
+                    "bbox": block["bbox"],
+                })
+            column_dicts.append({
+                "column_id": col_idx,
+                "paragraphs": paragraphs,
+            })
+
+        fn_dicts: List[Dict[str, Any]] = []
+        for fn_idx, fn_block in enumerate(
+            sorted(all_footnote_blocks, key=lambda b: b["bbox"][1]), start=1
+        ):
+            fn_dicts.append({
+                "footnote_id": f"p{page_number}_fn{fn_idx}",
+                "text": fn_block["text"],
+                "bbox": fn_block["bbox"],
+            })
+
+        # Ordered text: body + footnotes
+        ordered_blocks = sorted(final_body_blocks, key=lambda b: (b["bbox"][0], b["bbox"][1]))
+        ordered_blocks.extend(sorted(all_footnote_blocks, key=lambda b: b["bbox"][1]))
+        ordered_text = "\n\n".join(b["text"] for b in ordered_blocks)
+
+        results.append({
+            "page_number": page_number,
+            "columns": column_dicts,
+            "footnotes": fn_dicts,
+            "headers_footers": hf_dicts,
+            "page_number_candidates": page_num_candidates,
+            "ordered_text": ordered_text,
+        })
+
+    sep_doc.close()
+    return results
+
+
+def analyze_document_layout_pymupdf4llm(pdf_path: str) -> List[Dict[str, Any]]:
+    """Analyze layout using PyMuPDF4LLM's GNN classification.
+
+    Hybrid approach:
+      - **GNN for headers/footers**: PyMuPDF4LLM's GNN (page-header,
+        page-footer labels at 85-100% AP) reliably separates running
+        headers/footers from body text.
+      - **Heuristics for footnotes**: Our ``detect_footnotes()`` has
+        better recall than the GNN (which F1 ~0.72 — misses footnotes
+        that lack clear spatial separation from body text).
+
+    Returns the same dict shape as ``analyze_document_layout()`` so all
+    downstream consumers work unchanged.
+
+    Falls back to ``analyze_document_layout()`` if pymupdf4llm is not
+    installed or if ``parse_document()`` fails.
+    """
+    try:
+        from pymupdf4llm.helpers.document_layout import parse_document
+    except ImportError:
+        logger.warning("pymupdf4llm not installed, falling back to heuristic layout")
+        return analyze_document_layout(pdf_path)
+
+    import pymupdf
+
+    doc = pymupdf.open(pdf_path)
+    try:
+        pdoc = parse_document(doc, show_progress=False)
+        return _gnn_classified_blocks_to_layout(pdoc, pdf_path)
+    except Exception:
+        logger.warning("pymupdf4llm parse_document() failed, falling back", exc_info=True)
+        doc.close()
+        return analyze_document_layout(pdf_path)
+    finally:
+        if not doc.is_closed:
+            doc.close()
 
 
 def build_page_number_map(
