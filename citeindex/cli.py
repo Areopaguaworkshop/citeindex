@@ -156,7 +156,15 @@ def main() -> None:
         "--verbose",
         "-v",
         action="store_true",
-        help="Enable verbose/debug logging",
+        default=True,
+        help="Enable verbose/debug logging (default: enabled)",
+    )
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        dest="verbose",
+        action="store_false",
+        help="Disable verbose/debug logging",
     )
 
     args = parser.parse_args()
