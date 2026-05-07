@@ -160,10 +160,12 @@ def build_scanned_pipeline_result(
 ) -> PipelineResult:
     source_id = make_source_id(pdf_path)
     num_pages = max(len(document_structure.get("pages", [])), len(page_paragraphs))
+    logger.info("[%s] Building result: %d pages, determining doc type...", backend_name, num_pages)
     doc_type = config.doc_type_override or determine_doc_type(pdf_path, num_pages)
     page_number_map = build_page_number_map_from_content_list(content_list)
     normalized_markdown = markdown_text or content_list_to_markdown(content_list, page_number_map)
 
+    logger.info("[%s] Extracting metadata via DSPy...", backend_name)
     extracted_csl = extract_metadata_with_dspy_priority(
         content_list=content_list,
         normalized_markdown=normalized_markdown,
@@ -183,6 +185,7 @@ def build_scanned_pipeline_result(
         if value is not None:
             csl[key] = value
 
+    logger.info("[%s] Building content nodes and Merkle tree...", backend_name)
     nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=config.is_primary)
     merkle_tree = build_merkle_for_nodes(nodes)
     if document_structure.get("pages"):
@@ -193,6 +196,7 @@ def build_scanned_pipeline_result(
     extra: Dict[str, Any] = {}
     if config.use_pageindex and normalized_markdown.strip():
         try:
+            logger.info("[%s] Running PageIndex tree generation...", backend_name)
             pi_result = run_pageindex_md_tree(normalized_markdown, model=config.pageindex_model)
             if pi_result and pi_result.get("structure"):
                 ci_tree = pageindex_to_citeindex_tree(

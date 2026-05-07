@@ -34,7 +34,9 @@ class CiteIndexIngestionOrchestrator:
     ) -> Dict[str, Any]:
         cfg = config or IngestionConfig()
         try:
+            logger.info("Ingesting: %s", input_ref)
             resource_type, normalized = self.detect_resource_type(input_ref, config=cfg)
+            logger.info("Detected resource type: %s", resource_type)
             if resource_type == "unsupported":
                 return self._failure(
                     stage="detect_resource_type",
@@ -73,6 +75,7 @@ class CiteIndexIngestionOrchestrator:
                 normalized = temp_pdf
 
             try:
+                logger.info("Routing to pipeline: %s", resource_type)
                 sub_result = self.route_to_pipeline(resource_type, normalized, cfg)
             finally:
                 # Clean up temp PDF from Office/DJVU conversion
@@ -85,6 +88,7 @@ class CiteIndexIngestionOrchestrator:
                 sub_result.merkle_tree or {},
                 resource_type,
             )
+            logger.info("Standardized CSL JSON for: %s", standardized_csl.get("title", "unknown"))
 
             # ── Author enrichment fallback ────────────────────────────
             # First validate LLM/GROBID authors (detect garbage extraction)
@@ -221,8 +225,33 @@ class CiteIndexIngestionOrchestrator:
         str
             One of 'digital_pdf', 'scanned_pdf', or 'mixed_pdf'.
         """
-        from .pdf_classifier import pdf_kind
-        return pdf_kind(pdf_path, force_kind=force_kind)
+        from .pdf_classifier import classify_pdf, DocumentKind
+        logger.info("Classifying PDF: %s (force_kind=%s)", os.path.basename(pdf_path), force_kind)
+        force_doc_kind = None
+        if force_kind == "force_ocr":
+            force_doc_kind = DocumentKind.SCANNED_PDF
+        elif force_kind == "force_digital":
+            force_doc_kind = DocumentKind.DIGITAL_PDF
+        elif force_kind in ("digital_pdf", "scanned_pdf", "mixed_pdf"):
+            force_doc_kind = DocumentKind(force_kind)
+
+        classification = classify_pdf(pdf_path, force_kind=force_doc_kind)
+        kind = classification.document_kind.value
+        # For mixed_pdf, route to scanned pipeline (OCR handles both text and images)
+        if classification.document_kind == DocumentKind.MIXED_PDF:
+            logger.info("Mixed PDF detected (%d digital, %d scanned, %d mixed pages) — routing to scanned pipeline",
+                        classification.digital_page_count,
+                        classification.scanned_page_count,
+                        classification.mixed_page_count)
+            kind = "scanned_pdf"
+        else:
+            logger.info("PDF classified as %s (%d digital, %d scanned, %d mixed, %d empty pages)",
+                        kind,
+                        classification.digital_page_count,
+                        classification.scanned_page_count,
+                        classification.mixed_page_count,
+                        classification.empty_page_count)
+        return kind
 
     def _convert_office_to_pdf(self, doc_path: str, config: IngestionConfig) -> Optional[str]:
         """Convert Office document to PDF using legacy file_converter."""

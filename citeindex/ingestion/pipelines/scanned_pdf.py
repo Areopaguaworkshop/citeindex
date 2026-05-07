@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Callable, Dict, Optional
 
 from ..models import IngestionConfig, PipelineResult
@@ -28,5 +29,7 @@ def run(
     cfg = config or IngestionConfig()
     backend_name = cfg.ocr_engine or "mineru"
     backend = _resolve_backend(backend_name)
-    logger.info("Running scanned PDF backend: %s", backend_name)
-    return backend(pdf_path, source_type="scanned_pdf", config=cfg)
+    logger.info("Starting scanned PDF pipeline: backend=%s, file=%s", backend_name, os.path.basename(pdf_path))
+    result = backend(pdf_path, source_type="scanned_pdf", config=cfg)
+    logger.info("Scanned PDF pipeline completed: backend=%s", backend_name)
+    return result

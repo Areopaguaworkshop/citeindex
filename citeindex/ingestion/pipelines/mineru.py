@@ -119,21 +119,75 @@ def run_mineru(
             cmd.extend(["-b", backend])
         logger.info("Running MinerU: %s", " ".join(cmd))
 
-        result = subprocess.run(
+        # ── Stream MinerU output with periodic heartbeat logging ──
+        import threading
+        import time
+
+        process = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=300,
         )
 
-        if result.returncode != 0:
-            logger.error("MinerU failed (rc=%d): %s", result.returncode, result.stderr)
-            raise RuntimeError(f"MinerU failed: {result.stderr[:500]}")
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
 
+        def _drain_stream(stream, collector):
+            for line in iter(stream.readline, ""):
+                collector.append(line)
+
+        stdout_thread = threading.Thread(
+            target=_drain_stream, args=(process.stdout, stdout_lines), daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=_drain_stream, args=(process.stderr, stderr_lines), daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+
+        start_time = time.time()
+        last_log_time = start_time
+        HEARTBEAT_INTERVAL = 15  # seconds between progress log lines
+        TOTAL_TIMEOUT = 300
+
+        while process.poll() is None:
+            time.sleep(2)
+            now = time.time()
+            elapsed = int(now - start_time)
+
+            if elapsed > TOTAL_TIMEOUT:
+                process.kill()
+                raise RuntimeError(f"MinerU timed out after {TOTAL_TIMEOUT}s")
+
+            if now - last_log_time >= HEARTBEAT_INTERVAL:
+                last_line = (
+                    (stderr_lines[-1] or stdout_lines[-1] or ""
+                     if (stderr_lines or stdout_lines) else "")
+                ).strip()
+                logger.info(
+                    "MinerU still running... %ds elapsed%s",
+                    elapsed,
+                    f" — {last_line[:120]}" if last_line else "",
+                )
+                last_log_time = now
+
+        # Wait for stream threads to finish draining
+        stdout_thread.join(timeout=10)
+        stderr_thread.join(timeout=10)
+
+        returncode = process.returncode
+        if returncode != 0:
+            stderr_text = "".join(stderr_lines)
+            logger.error("MinerU failed (rc=%d): %s", returncode, stderr_text[:500])
+            raise RuntimeError(f"MinerU failed: {stderr_text[:500]}")
+
+        elapsed = int(time.time() - start_time)
+        logger.info("MinerU completed for %s (%ds)", os.path.basename(pdf_path), elapsed)
         return _collect_mineru_outputs(output_dir, pdf_path)
 
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("MinerU timed out after 300s")
+    except RuntimeError:
+        raise
     except Exception:
         if cleanup_temp and os.path.isdir(output_dir):
             shutil.rmtree(output_dir, ignore_errors=True)
@@ -598,6 +652,7 @@ def run(
     images_tmpdir: Optional[str] = None
 
     try:
+        logger.info("[mineru] Step 1/5: Running MinerU OCR subprocess...")
         mineru_output = run_mineru(
             pdf_path,
             output_dir=mineru_tmpdir,
@@ -608,6 +663,7 @@ def run(
         if not isinstance(content_list, list) or not content_list:
             raise RuntimeError("MinerU did not return a usable content_list")
 
+        logger.info("[mineru] Step 2/5: Extracting images from PDF...")
         images_list: List[Dict[str, Any]] = []
         images_tmpdir = make_images_tmpdir(prefix="citeindex_mineru_imgs_")
         try:
@@ -621,6 +677,7 @@ def run(
 
         attach_image_paths_to_content_list(content_list, images_list)
 
+        logger.info("[mineru] Step 3/5: Building document structure...")
         page_number_map = build_page_number_map_from_content_list(content_list)
         document_structure = content_list_to_document_structure(
             content_list,
@@ -629,6 +686,7 @@ def run(
         )
         page_paragraphs = content_list_to_paragraphs(content_list, page_number_map)
 
+        logger.info("[mineru] Step 4/5: Building pipeline result (metadata + PageIndex)...")
         result = build_scanned_pipeline_result(
             pdf_path=pdf_path,
             backend_name="mineru",
@@ -642,6 +700,7 @@ def run(
         )
         if result.document_json is not None:
             result.document_json["metadata"]["original_pdf_path"] = os.path.abspath(pdf_path)
+        logger.info("[mineru] Step 5/5: Done.")
         return result
     except Exception:
         if images_tmpdir:

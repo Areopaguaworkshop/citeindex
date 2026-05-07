@@ -298,12 +298,17 @@ def run(
 
     try:
         doc = fitz.open(pdf_path)
+        total_pages = doc.page_count
         try:
             content_list: List[Dict[str, Any]] = []
             images_list: List[Dict[str, Any]] = []
             title_promoted = False
 
-            for page_idx in range(doc.page_count):
+            logger.info("[glm-ocr] Step 1/4: Processing %d pages with GLM-OCR...", total_pages)
+            for page_idx in range(total_pages):
+                page_num = page_idx + 1
+                if page_num == 1 or page_num % 5 == 0 or page_num == total_pages:
+                    logger.info("[glm-ocr]   Processing page %d/%d...", page_num, total_pages)
                 page = doc[page_idx]
                 page_items, page_images, page_promoted = _extract_page_items(
                     page,
@@ -323,12 +328,16 @@ def run(
         if not content_list:
             raise RuntimeError("GLM-OCR did not produce any content items")
 
+        logger.info("[glm-ocr] Step 2/4: Extracting images and attaching to content...")
+
+        logger.info("[glm-ocr] Step 2/4: Extracting images and attaching to content...")
         if not images_list:
             shutil.rmtree(images_tmpdir, ignore_errors=True)
             images_tmpdir = None
 
         attach_image_paths_to_content_list(content_list, images_list)
         page_number_map = build_page_number_map_from_content_list(content_list)
+        logger.info("[glm-ocr] Step 3/4: Building document structure...")
         document_structure = content_list_to_document_structure(
             content_list,
             page_number_map,
@@ -336,6 +345,7 @@ def run(
         )
         page_paragraphs = content_list_to_paragraphs(content_list, page_number_map)
 
+        logger.info("[glm-ocr] Step 4/4: Building pipeline result (metadata + PageIndex)...")
         result = build_scanned_pipeline_result(
             pdf_path=pdf_path,
             backend_name="glm-ocr",
