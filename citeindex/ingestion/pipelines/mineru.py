@@ -446,7 +446,29 @@ def content_list_to_document_structure(
             page["paragraphs"].append(para_data)
             continue
 
-        # ── Discarded items ────────────────────────────────────────
+        # ── MinerU explicit footnote tag ───────────────────────────
+        # MinerU 3.x content_list.json emits items with explicit types
+        # ``page_footnote``, ``page_number``, ``header``, ``footer``.  Older
+        # versions (or fallback) used a single ``discarded`` type whose
+        # sub-classification we recover via ``_classify_discarded``.
+        if item_type == "page_footnote" and text:
+            fn_n = len(page["footnotes"]) + 1
+            marker = _extract_footnote_marker(text)
+            page["footnotes"].append({
+                "footnote_id": f"p{actual_page}_fn{fn_n}",
+                "text": text,
+                "marker": marker,
+                "bbox": bbox,
+            })
+            continue
+
+        # Page numbers, running headers, and watermark footers are dropped:
+        # the printed page number is already captured separately via
+        # ``extract_page_numbers_from_content_list``.
+        if item_type in ("page_number", "header", "footer"):
+            continue
+
+        # ── Legacy ``discarded`` items (older MinerU versions) ─────
         if item_type == "discarded" and text:
             classification = _classify_discarded(text)
 
