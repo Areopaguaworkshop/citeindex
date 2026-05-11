@@ -1,0 +1,18 @@
+# Gitleaks configuration
+# https://gitleaks.io/
+
+title = "citeindex secret scan"
+
+[extend]
+# Use default rules as base
+useDefault = true
+
+# Global allowlist for false positives
+[allowlist]
+description = "global allow lists"
+paths = [
+    '''\.env\.example$''',
+    '''\.gitleaks\.toml$''',
+    '''^tests/''',
+    '''^test_output/''',
+]

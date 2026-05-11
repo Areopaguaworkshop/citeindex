@@ -9,6 +9,9 @@ wheels/
 
 # Environment
 .env
+.env.local
+.env.*.local
+!.env.example
 
 # Corpus (user data, never committed)
 corpus/**/*
