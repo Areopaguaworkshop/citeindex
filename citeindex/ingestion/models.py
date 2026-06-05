@@ -36,6 +36,7 @@ class IngestionConfig:
     ollama_host: str = "http://localhost:11434"
     mineru_backend: str = "pipeline"
     mineru_timeout: int = 3600
+    mineru_chunk_pages: int | str = "auto"
     text_direction: str = "horizontal"
     vertical_lang: str = "ch"
     lang: str = "auto"

@@ -76,6 +76,8 @@ def run_mineru(
     parse_method: str = "auto",
     backend: str = "pipeline",
     timeout: int = 3600,
+    start_page: Optional[int] = None,
+    end_page: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Run MinerU on a PDF and return parsed outputs.
 
@@ -89,6 +91,10 @@ def run_mineru(
         ``"auto"`` (default), ``"ocr"``, or ``"txt"``.
     timeout : int
         Maximum seconds to wait for the MinerU subprocess.
+    start_page : int, optional
+        Zero-based first page to parse, forwarded to MinerU ``--start``.
+    end_page : int, optional
+        Zero-based last page to parse, forwarded to MinerU ``--end``.
 
     Returns
     -------
@@ -120,6 +126,10 @@ def run_mineru(
         ]
         if backend:
             cmd.extend(["-b", backend])
+        if start_page is not None:
+            cmd.extend(["-s", str(start_page)])
+        if end_page is not None:
+            cmd.extend(["-e", str(end_page)])
         logger.info("Running MinerU: %s", " ".join(cmd))
 
         # ── Stream MinerU output with periodic heartbeat logging ──
@@ -659,6 +669,141 @@ def _load_text(path: Path) -> str:
     return ""
 
 
+def _maybe_shift_content_list_page_indices(
+    content_list: Any,
+    start_page: int,
+    end_page: int,
+) -> None:
+    """Shift chunk-local MinerU page indexes to original PDF indexes when needed."""
+    if not isinstance(content_list, list) or start_page <= 0:
+        return
+
+    page_indices = [
+        item.get("page_idx")
+        for item in content_list
+        if isinstance(item, dict) and isinstance(item.get("page_idx"), int)
+    ]
+    if not page_indices:
+        return
+
+    chunk_len = end_page - start_page + 1
+    # MinerU may preserve original indexes when --start/--end are used. Only
+    # shift if indexes look local to the chunk (0..chunk_len-1).
+    if min(page_indices) >= start_page:
+        return
+    if max(page_indices) >= chunk_len:
+        return
+
+    for item in content_list:
+        if isinstance(item, dict) and isinstance(item.get("page_idx"), int):
+            item["page_idx"] += start_page
+
+
+def run_mineru_chunked(
+    pdf_path: str,
+    output_dir: str,
+    parse_method: str = "auto",
+    backend: str = "pipeline",
+    timeout: int = 3600,
+    chunk_pages: int | str = "auto",
+) -> Dict[str, Any]:
+    """Run MinerU on a large PDF in page chunks and merge key outputs."""
+    with fitz.open(pdf_path) as doc:
+        total_pages = doc.page_count
+
+    resolved_chunk_pages = _resolve_mineru_chunk_pages(total_pages, chunk_pages)
+
+    if resolved_chunk_pages <= 0 or total_pages <= resolved_chunk_pages:
+        return run_mineru(
+            pdf_path,
+            output_dir=output_dir,
+            parse_method=parse_method,
+            backend=backend,
+            timeout=timeout,
+        )
+
+    logger.info(
+        "MinerU chunking enabled: %d pages, %d pages per chunk",
+        total_pages,
+        resolved_chunk_pages,
+    )
+
+    merged_middle_json: list[Any] = []
+    merged_content_list: list[Any] = []
+    merged_markdown_parts: list[str] = []
+    output_dirs: list[str] = []
+
+    for start_page in range(0, total_pages, resolved_chunk_pages):
+        end_page = min(start_page + resolved_chunk_pages - 1, total_pages - 1)
+        chunk_output_dir = os.path.join(output_dir, f"chunk_{start_page + 1}_{end_page + 1}")
+        os.makedirs(chunk_output_dir, exist_ok=True)
+        logger.info(
+            "MinerU chunk %d-%d/%d starting",
+            start_page + 1,
+            end_page + 1,
+            total_pages,
+        )
+        chunk_output = run_mineru(
+            pdf_path,
+            output_dir=chunk_output_dir,
+            parse_method=parse_method,
+            backend=backend,
+            timeout=timeout,
+            start_page=start_page,
+            end_page=end_page,
+        )
+
+        middle_json = chunk_output.get("middle_json")
+        if isinstance(middle_json, list):
+            merged_middle_json.extend(middle_json)
+        elif middle_json:
+            merged_middle_json.append(middle_json)
+
+        content_list = chunk_output.get("content_list")
+        _maybe_shift_content_list_page_indices(content_list, start_page, end_page)
+        if isinstance(content_list, list):
+            merged_content_list.extend(content_list)
+
+        markdown = chunk_output.get("markdown")
+        if isinstance(markdown, str) and markdown.strip():
+            merged_markdown_parts.append(markdown)
+
+        output_dir_value = chunk_output.get("output_dir")
+        if isinstance(output_dir_value, str):
+            output_dirs.append(output_dir_value)
+
+    return {
+        "middle_json": merged_middle_json,
+        "markdown": "\n\n".join(merged_markdown_parts),
+        "content_list": merged_content_list,
+        "output_dir": output_dirs[0] if output_dirs else output_dir,
+        "chunk_output_dirs": output_dirs,
+    }
+
+
+def _resolve_mineru_chunk_pages(total_pages: int, chunk_pages: int | str) -> int:
+    """Choose a MinerU chunk size that scales down for large scanned books."""
+    if isinstance(chunk_pages, str):
+        normalized = chunk_pages.strip().lower()
+        if normalized != "auto":
+            try:
+                return max(0, int(normalized))
+            except ValueError:
+                logger.warning("Invalid mineru_chunk_pages=%r; falling back to auto", chunk_pages)
+
+        if total_pages <= 100:
+            return 0  # one MinerU subprocess is usually fine for short PDFs
+        if total_pages <= 250:
+            return 50
+        if total_pages <= 500:
+            return 40
+        if total_pages <= 1000:
+            return 25
+        return 20
+
+    return max(0, int(chunk_pages))
+
+
 def run(
     pdf_path: str,
     source_type: str = "scanned_pdf",
@@ -678,12 +823,13 @@ def run(
 
     try:
         logger.info("[mineru] Step 1/5: Running MinerU OCR subprocess...")
-        mineru_output = run_mineru(
+        mineru_output = run_mineru_chunked(
             pdf_path,
             output_dir=mineru_tmpdir,
             parse_method="ocr",
             backend=cfg.mineru_backend,
             timeout=cfg.mineru_timeout,
+            chunk_pages=cfg.mineru_chunk_pages,
         )
         content_list = mineru_output.get("content_list")
         if not isinstance(content_list, list) or not content_list:

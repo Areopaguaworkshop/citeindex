@@ -29,6 +29,20 @@ def _mineru_timeout_seconds(value: str) -> int:
     return timeout
 
 
+def _non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be 0 or greater")
+    return parsed
+
+
+def _mineru_chunk_pages(value: str) -> int | str:
+    normalized = value.strip().lower()
+    if normalized == "auto":
+        return "auto"
+    return _non_negative_int(value)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="citeindex",
@@ -79,6 +93,12 @@ def main() -> None:
         type=_mineru_timeout_seconds,
         default=3600,
         help="MinerU subprocess timeout in seconds, up to 3600 (default: 3600)",
+    )
+    parser.add_argument(
+        "--mineru-chunk-pages",
+        type=_mineru_chunk_pages,
+        default="auto",
+        help="Split large PDFs into MinerU chunks: auto, a page count, or 0 to disable (default: auto)",
     )
     parser.add_argument(
         "--text-direction",
@@ -197,6 +217,7 @@ def main() -> None:
         ollama_host=args.ollama_host,
         mineru_backend=args.mineru_backend,
         mineru_timeout=args.mineru_timeout,
+        mineru_chunk_pages=args.mineru_chunk_pages,
         text_direction=args.text_direction,
         vertical_lang=args.vertical_lang,
         lang=args.lang,
