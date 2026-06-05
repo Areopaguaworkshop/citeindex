@@ -75,6 +75,7 @@ def run_mineru(
     output_dir: Optional[str] = None,
     parse_method: str = "auto",
     backend: str = "pipeline",
+    timeout: int = 3600,
 ) -> Dict[str, Any]:
     """Run MinerU on a PDF and return parsed outputs.
 
@@ -86,6 +87,8 @@ def run_mineru(
         Directory for MinerU output.  A temp dir is created when *None*.
     parse_method : str
         ``"auto"`` (default), ``"ocr"``, or ``"txt"``.
+    timeout : int
+        Maximum seconds to wait for the MinerU subprocess.
 
     Returns
     -------
@@ -149,16 +152,16 @@ def run_mineru(
         start_time = time.time()
         last_log_time = start_time
         HEARTBEAT_INTERVAL = 15  # seconds between progress log lines
-        TOTAL_TIMEOUT = 300
+        total_timeout = max(1, min(3600, int(timeout or 3600)))
 
         while process.poll() is None:
             time.sleep(2)
             now = time.time()
             elapsed = int(now - start_time)
 
-            if elapsed > TOTAL_TIMEOUT:
+            if elapsed > total_timeout:
                 process.kill()
-                raise RuntimeError(f"MinerU timed out after {TOTAL_TIMEOUT}s")
+                raise RuntimeError(f"MinerU timed out after {total_timeout}s")
 
             if now - last_log_time >= HEARTBEAT_INTERVAL:
                 last_line = (
@@ -680,6 +683,7 @@ def run(
             output_dir=mineru_tmpdir,
             parse_method="ocr",
             backend=cfg.mineru_backend,
+            timeout=cfg.mineru_timeout,
         )
         content_list = mineru_output.get("content_list")
         if not isinstance(content_list, list) or not content_list:

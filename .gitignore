@@ -35,3 +35,5 @@ Cargo.lock
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+# CocoIndex Code (ccc)
+/.cocoindex_code/

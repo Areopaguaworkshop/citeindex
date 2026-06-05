@@ -35,6 +35,7 @@ class IngestionConfig:
     ocr_model: str = "glm-ocr:latest"
     ollama_host: str = "http://localhost:11434"
     mineru_backend: str = "pipeline"
+    mineru_timeout: int = 3600
     text_direction: str = "horizontal"
     vertical_lang: str = "ch"
     lang: str = "auto"

@@ -22,6 +22,13 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
+def _mineru_timeout_seconds(value: str) -> int:
+    timeout = int(value)
+    if timeout < 1 or timeout > 3600:
+        raise argparse.ArgumentTypeError("must be between 1 and 3600 seconds")
+    return timeout
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="citeindex",
@@ -66,6 +73,12 @@ def main() -> None:
         "--mineru-backend",
         default="pipeline",
         help="MinerU execution backend passed to the CLI (default: pipeline)",
+    )
+    parser.add_argument(
+        "--mineru-timeout",
+        type=_mineru_timeout_seconds,
+        default=3600,
+        help="MinerU subprocess timeout in seconds, up to 3600 (default: 3600)",
     )
     parser.add_argument(
         "--text-direction",
@@ -183,6 +196,7 @@ def main() -> None:
         ocr_model=args.ocr_model,
         ollama_host=args.ollama_host,
         mineru_backend=args.mineru_backend,
+        mineru_timeout=args.mineru_timeout,
         text_direction=args.text_direction,
         vertical_lang=args.vertical_lang,
         lang=args.lang,

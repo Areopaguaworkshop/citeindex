@@ -174,6 +174,7 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 | `ocr_model` | `--ocr-model` | `glm-ocr:latest` | Ollama model name used by model-backed OCR engines such as GLM-OCR |
 | `ollama_host` | `--ollama-host` | `http://localhost:11434` | Ollama base URL for GLM-OCR requests |
 | `mineru_backend` | `--mineru-backend` | `pipeline` | Backend value forwarded to the MinerU CLI |
+| `mineru_timeout` | `--mineru-timeout` | `3600` | MinerU subprocess timeout in seconds, up to `3600` |
 | `text_direction` | `--text-direction`, `-td` | `horizontal` | `horizontal`, `auto`, or `vertical` |
 | `vertical_lang` | `--vertical-lang` | `ch` | CJK language: `ch` (Chinese) or `japan` |
 | `lang` | `--lang`, `-l` | `auto` | OCR language (auto-detect or Tesseract code) |
