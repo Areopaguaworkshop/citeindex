@@ -5,6 +5,8 @@ CiteIndex, ingest sources with proper citation. PDF, URL, media, Office, DJVU.
 Deterministic citation extraction, Merkle-verified integrity, CJK-first OCR.
 Every claim is traced, verified, and cited — no hallucinations.
 
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/citeindex?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=RED&left_text=downloads)](https://pepy.tech/projects/citeindex)
+
 ## Install
 
 ```bash
