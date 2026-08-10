@@ -1,3 +1,5 @@
+
+
 # CiteIndex
 
 CiteIndex, ingest sources with proper citation. PDF, URL, media, Office, DJVU.
@@ -294,7 +296,7 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.12.1},
+  version = {0.12.9},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},
