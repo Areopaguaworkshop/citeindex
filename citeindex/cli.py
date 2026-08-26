@@ -6,6 +6,7 @@ Usage:
 """
 
 import argparse
+from email.utils import parseaddr
 import json
 import logging
 import sys
@@ -41,6 +42,24 @@ def _mineru_chunk_pages(value: str) -> int | str:
     if normalized == "auto":
         return "auto"
     return _non_negative_int(value)
+
+
+def _provider_qualified_model(value: str) -> str:
+    model = value.strip()
+    if not model or "/" not in model or model.startswith("/") or model.endswith("/"):
+        raise argparse.ArgumentTypeError("must be a non-empty provider-qualified model, e.g. openai/gpt-5")
+    return model
+
+
+def _contact_email(value: str) -> str:
+    address = value.strip()
+    _, parsed = parseaddr(address)
+    if not address or parsed != address or "@" not in parsed:
+        raise argparse.ArgumentTypeError("must be a valid email address")
+    local, _, domain = parsed.partition("@")
+    if not local or not domain or "." not in domain:
+        raise argparse.ArgumentTypeError("must be a valid email address")
+    return address
 
 
 def main() -> None:
@@ -162,6 +181,33 @@ def main() -> None:
         help="LLM model for PageIndex tree building (default: ollama/deepseek-v4-flash:cloud)",
     )
     parser.add_argument(
+        "--verify-citations",
+        action="store_true",
+        help="Verify citation metadata against source evidence (default: disabled)",
+    )
+    parser.add_argument(
+        "--citation-verifier-model",
+        type=_provider_qualified_model,
+        help="Provider-qualified strong model for citation conflicts, e.g. openai/gpt-5",
+    )
+    parser.add_argument(
+        "--no-crossref",
+        dest="crossref_enabled",
+        action="store_false",
+        default=True,
+        help="Disable Crossref DOI lookup during citation verification",
+    )
+    parser.add_argument(
+        "--offline-verification",
+        action="store_true",
+        help="Block registry and verifier-model requests during citation verification",
+    )
+    parser.add_argument(
+        "--registry-contact-email",
+        type=_contact_email,
+        help="Contact email for polite registry requests",
+    )
+    parser.add_argument(
         "--all-url-article",
         "-aua",
         action="store_true",
@@ -227,6 +273,11 @@ def main() -> None:
         is_primary=args.is_primary,
         use_pageindex=not args.no_pageindex,
         pageindex_model=args.pageindex_model,
+        verify_citations=args.verify_citations,
+        citation_verifier_model=args.citation_verifier_model,
+        crossref_enabled=args.crossref_enabled,
+        offline_verification=args.offline_verification,
+        registry_contact_email=args.registry_contact_email,
         force_pdf_kind=force_pdf_kind,
     )
 

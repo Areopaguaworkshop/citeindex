@@ -97,7 +97,7 @@ def _yaml_escape(value: str) -> str:
 # Front-matter
 # ---------------------------------------------------------------------------
 
-def _build_front_matter(csl: Dict[str, Any]) -> str:
+def _build_front_matter(csl: Dict[str, Any], verification_status: Optional[str] = None) -> str:
     lines = ["---"]
     lines.append(f"title: {_yaml_escape(csl.get('title', 'Untitled'))}")
     lines.append(f"author: {_yaml_escape(_format_authors(csl))}")
@@ -111,6 +111,8 @@ def _build_front_matter(csl: Dict[str, Any]) -> str:
         lines.append(f"content_hash: {csl['content_hash'][:16]}")
     if csl.get("URL"):
         lines.append(f"url: {_yaml_escape(csl['URL'])}")
+    if verification_status:
+        lines.append(f"citation_verification: {verification_status}")
     lines.append("---")
     return "\n".join(lines)
 
@@ -403,12 +405,13 @@ def generate_library_markdown(
     document_json: Optional[Dict[str, Any]],
     transcript_json: Optional[Dict[str, Any]],
     resource_type: str,
+    verification_status: Optional[str] = None,
 ) -> str:
     """Generate a complete Markdown string for the library file."""
     parts: List[str] = []
 
     # 1. Front-matter
-    parts.append(_build_front_matter(csl_json))
+    parts.append(_build_front_matter(csl_json, verification_status))
     parts.append("")
 
     # 2. Title + inline citation
@@ -446,6 +449,7 @@ def write_library_markdown(
     document_json: Optional[Dict[str, Any]],
     transcript_json: Optional[Dict[str, Any]],
     resource_type: str,
+    verification_status: Optional[str] = None,
 ) -> str:
     """Generate and write the library MD file. Returns the file path."""
     # library/ is a sibling of corpus/
@@ -468,6 +472,7 @@ def write_library_markdown(
         document_json=document_json,
         transcript_json=transcript_json,
         resource_type=resource_type,
+        verification_status=verification_status,
     )
 
     with open(md_path, "w", encoding="utf-8") as f:

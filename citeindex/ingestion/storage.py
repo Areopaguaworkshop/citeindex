@@ -108,5 +108,7 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: Dict[s
         write_json(os.path.join(doc_dir, "media_metadata.json"), artifacts["media_metadata"])
     if artifacts.get("pageindex_tree") is not None:
         write_json(os.path.join(doc_dir, "pageindex_tree.json"), artifacts["pageindex_tree"])
+    if artifacts.get("citation_verification") is not None:
+        write_json(os.path.join(doc_dir, "citation_verification.json"), artifacts["citation_verification"])
 
     return doc_dir

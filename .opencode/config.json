@@ -1,6 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": [
-    ".opencode/instructions/MEMPALACE.md"
-  ]
+    ".opencode/instructions/MEMPALACE.md",
+    ".opencode/instructions/CITATION_VERIFICATION.md"
+  ],
+  "permission": {
+    "skill": {
+      "citation-verification": "allow"
+    }
+  }
 }

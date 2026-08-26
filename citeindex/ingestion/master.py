@@ -3,7 +3,7 @@ import logging
 import os
 import shutil
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from .deterministic import hash_payload
@@ -12,6 +12,7 @@ from .pipelines import digital_pdf, media, scanned_pdf, url_article
 from .markdown_export import write_library_markdown
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
+from .citation_verification import verify_citation_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -83,44 +84,54 @@ class CiteIndexIngestionOrchestrator:
                     os.remove(temp_pdf)
                     logger.info("Removed temporary conversion file: %s", temp_pdf)
 
-            standardized_csl = self.standardize_csl_json(
-                sub_result.csl_json,
-                sub_result.merkle_tree or {},
-                resource_type,
-            )
-            logger.info("Standardized CSL JSON for: %s", standardized_csl.get("title", "unknown"))
-
             # ── Author enrichment fallback ────────────────────────────
             # First validate LLM/GROBID authors (detect garbage extraction)
-            existing_authors = standardized_csl.get("author", [])
+            candidate_csl = dict(sub_result.csl_json)
+            existing_authors = candidate_csl.get("author", [])
             validated_authors = validate_authors(existing_authors, input_ref) if existing_authors else None
 
             if validated_authors:
                 # Keep the cleaned authors
-                standardized_csl["author"] = validated_authors
+                candidate_csl["author"] = validated_authors
                 logger.info("Validated authors: %s", validated_authors)
-            elif not validated_authors and standardized_csl.get("author"):
+            elif not validated_authors and candidate_csl.get("author"):
                 # All authors were garbage — clear them and try fallback
-                standardized_csl.pop("author", None)
+                candidate_csl.pop("author", None)
 
-            if not standardized_csl.get("author"):
+            if not candidate_csl.get("author"):
                 # 1. Try parsing from filename
                 author_from_filename = parse_author_from_filename(input_ref)
                 if author_from_filename:
-                    standardized_csl["author"] = [author_from_filename]
+                    candidate_csl["author"] = [author_from_filename]
                     logger.info("Author extracted from filename: %s", author_from_filename)
                 else:
                     # 2. Interactive prompt
                     author_from_prompt = prompt_author_interactively()
                     if author_from_prompt:
-                        standardized_csl["author"] = author_from_prompt
+                        candidate_csl["author"] = author_from_prompt
                         logger.info("Author provided interactively: %s", author_from_prompt)
+
+            citation_verification = None
+            if cfg.verify_citations:
+                candidate_csl, citation_verification = verify_citation_metadata(
+                    candidate_csl, sub_result.document_json, resource_type, sub_result.extra, cfg,
+                )
+
+            standardized_csl = self.standardize_csl_json(
+                candidate_csl, sub_result.merkle_tree or {}, resource_type,
+            )
+            logger.info("Standardized CSL JSON for: %s", standardized_csl.get("title", "unknown"))
 
             artifacts = sub_result.to_dict()
             artifacts["csl_json"] = standardized_csl
+            if citation_verification:
+                artifacts["citation_verification"] = citation_verification
 
             folder_name = csl_folder_name(standardized_csl)
             document_path = store_corpus_artifacts(self.corpus_root, folder_name, artifacts)
+            snapshot_path = sub_result.extra.get("source_snapshot_path")
+            if resource_type == "url_article" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
+                shutil.copy2(snapshot_path, os.path.join(document_path, "source.html"))
             log_entry = self.log_ingestion(input_ref, resource_type, standardized_csl, sub_result)
 
             # ── Copy extracted images to corpus dir ─────────────────
@@ -156,6 +167,8 @@ class CiteIndexIngestionOrchestrator:
                 "sub_pipeline_outputs": sub_result.to_dict(),
                 "ingestion_log_entry": log_entry,
             }
+            if citation_verification:
+                output["citation_verification"] = citation_verification
 
             write_json(os.path.join(document_path, "ingestion_output.json"), output)
 
@@ -167,6 +180,7 @@ class CiteIndexIngestionOrchestrator:
                     document_json=sub_result.document_json,
                     transcript_json=sub_result.transcript_json,
                     resource_type=resource_type,
+                    verification_status=citation_verification["status"] if citation_verification else None,
                 )
                 output["library_md_path"] = library_md_path
             except Exception:

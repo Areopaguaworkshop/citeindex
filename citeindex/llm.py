@@ -1,6 +1,6 @@
 import dspy
 import logging
-from typing import Dict, Optional
+from typing import Dict
 
 
 def get_llm_model(model_name: str = "ollama/deepseek-v4-flash:cloud", temperature: float = 0.1) -> dspy.LM:
@@ -37,14 +37,10 @@ def get_llm_model(model_name: str = "ollama/deepseek-v4-flash:cloud", temperatur
             model_kwargs={"temperature": temperature}
         )
     
-    else:
-        # Default to Ollama for backward compatibility
-        logging.warning(f"Unknown model format: {model_name}, defaulting to Ollama")
-        return dspy.LM(
-            model=model_name, 
-            base_url="http://localhost:11434",
-            model_kwargs={"temperature": temperature}
-        )
+    if "/" not in model_name:
+        raise ValueError("model name must be provider-qualified")
+    logging.info("Using provider-qualified model: %s", model_name)
+    return dspy.LM(model=model_name, model_kwargs={"temperature": temperature})
 
 
 def get_provider_info() -> Dict[str, str]:
@@ -57,4 +53,5 @@ def get_provider_info() -> Dict[str, str]:
     return {
         "ollama": "Local Ollama models (format: ollama/model-name)",
         "gemini": "Google Gemini models (format: gemini/model-name)",
+        "openai": "OpenAI models (format: openai/model-name)",
     }
