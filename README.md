@@ -44,7 +44,23 @@ citeindex paper.pdf --text-direction vertical --vertical-lang ch
 citeindex scanned.pdf --ocr-engine mineru --lang auto --page-range "1-10"
 citeindex paper.pdf --no-layout  # disable column/footnote detection
 citeindex -v paper.pdf           # verbose/debug logging
+
+# Evidence-backed citation verification (Crossref exact DOI lookup)
+citeindex paper.pdf --verify-citations --registry-contact-email you@example.org
+
+# Ask a stronger provider-qualified model only to resolve remaining conflicts
+citeindex paper.pdf --verify-citations --citation-verifier-model openai/gpt-5
 ```
+
+Verification is opt-in. Crossref receives only an exact DOI, never document
+text. A model correction is accepted only when it supplies a matching source
+quote and stable locator; unavailable models leave the record unchanged for
+review. Use `--no-crossref` to disable registry lookup or
+`--offline-verification` to disable registry and verifier-model requests.
+
+An independent harness audit is available only through an explicit Codex,
+Claude Code, OpenCode, or Pi skill/command; running `citeindex` directly does
+not auto-trigger one.
 
 ## Python API
 
@@ -165,6 +181,20 @@ For PDF inputs, CiteIndex enriches metadata through a priority cascade:
 2. **LLM extraction** — DSPy-based citation parsing (fallback)
 3. **PDF metadata** — basic file metadata only (last resort)
 
+With `--verify-citations`, the finalized draft follows this additional
+evidence-first stage before CSL IDs, hashes, filenames, and Markdown are
+written:
+
+```
+candidate CSL → DOI extraction → exact Crossref lookup
+              → source quote + page/paragraph or URL snapshot evidence
+              → deterministic reconciliation → optional conflict model
+              → standardized CSL + verification report
+```
+
+Registry-only values are never applied automatically. They must also appear in
+the original source evidence; otherwise CiteIndex records `needs_review`.
+
 For web pages with ambiguous metadata, a local Perplexica search API can fill missing citation fields (title, author, publisher).
 
 ## Configuration Reference
@@ -187,6 +217,11 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
 | `use_pageindex` | `--no-pageindex` | `True` | PageIndex hierarchy is enabled by default; pass `--no-pageindex` to disable it |
 | `pageindex_model` | `--pageindex-model` | `ollama/deepseek-v4-flash:cloud` | LLM for PageIndex tree building |
+| `verify_citations` | `--verify-citations` | `False` | Enable evidence-backed metadata verification |
+| `citation_verifier_model` | `--citation-verifier-model` | none | Provider-qualified model used only for unresolved conflicts |
+| `crossref_enabled` | `--no-crossref` | `True` | Disable exact DOI Crossref lookup |
+| `offline_verification` | `--offline-verification` | `False` | Block Crossref and verifier-model requests (not normal ingestion fetching) |
+| `registry_contact_email` | `--registry-contact-email` | none | Optional polite Crossref contact email; not persisted |
 | `citation_style` | (API only) | `chicago-author-date` | CSL citation style for output |
 | `corpus_root` | `--corpus-root` | `corpus` | Output directory for ingested artifacts |
 | `schema_version` | `--schema-version` | `1.0.0` | Output schema version tag |
@@ -209,10 +244,23 @@ Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) and 
 | `transcript.json` | Timestamped transcript with speaker segments (media only) |
 | `media_metadata.json` | Source media metadata (media only) |
 | `ingestion_output.json` | Full ingestion result with all pipeline outputs |
+| `citation_verification.json` | Evidence, Crossref provenance/digest, accepted corrections, and `needs_review` items (when verification is enabled) |
 
 ### Library markdown (`library/Author_2024_Title.md`)
 
 Human-readable markdown with YAML front-matter, inline citation, page/section/timestamp headers with CSL-level detail, full extracted text, and footnotes. When PageIndex is available, digital PDFs emit section headings into the markdown instead of only flat page labels. Written to `library/` (sibling of `corpus/`).
+
+### Agent-harness final audit
+
+Codex, OpenCode, Claude Code, and Pi can load the shared
+`citation-verification` skill after ingestion. The audit reads the original
+source and `citation_verification.json`, then returns quotation-backed repair
+recommendations. It never edits persisted `csl.json` directly.
+
+The CLI itself always performs the core verification when
+`--verify-citations` is supplied. The additional agent audit runs only through
+an explicit harness workflow (for example OpenCode `/ingest-verified`); a raw
+`citeindex` subprocess cannot detect or launch an agent harness.
 
 ### Ingestion log (`corpus/ingestion_log.jsonl`)
 

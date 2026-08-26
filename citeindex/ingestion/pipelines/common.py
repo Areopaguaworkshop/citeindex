@@ -157,6 +157,54 @@ def build_nodes_with_granularity(
     return nodes
 
 
+def attach_evidence_locators(
+    document_structure: Dict[str, Any],
+    nodes: List[Dict[str, Any]],
+    page_layouts: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    """Attach persisted-node and stable source locators to paragraphs in place."""
+    layouts_by_index = {
+        layout.get("page_number", index + 1) - 1: layout
+        for index, layout in enumerate(page_layouts or [])
+        if isinstance(layout.get("page_number", index + 1), int)
+    }
+    for physical_index, page in enumerate(document_structure.get("pages", [])):
+        if not isinstance(page, dict):
+            continue
+        page.setdefault("physical_page_index", page.get("page_idx", physical_index))
+        if not isinstance(page["physical_page_index"], int):
+            page["physical_page_index"] = physical_index
+        page_number = page.get("page_number")
+        layout_paragraphs = [
+            paragraph
+            for column in layouts_by_index.get(page["physical_page_index"], {}).get("columns", [])
+            for paragraph in column.get("paragraphs", [])
+        ]
+        for paragraph in page.get("paragraphs", []):
+            if not isinstance(paragraph, dict) or not isinstance(paragraph.get("text"), str):
+                continue
+            text = canonicalize_text(paragraph["text"])
+            paragraph["char_start"] = 0
+            paragraph["char_end"] = len(paragraph["text"])
+            matching_nodes = [
+                node for node in nodes
+                if canonicalize_text(str(node.get("text", ""))) == text
+                and (node.get("page") == page_number or node.get("page") == page["physical_page_index"] + 1)
+            ]
+            if matching_nodes:
+                paragraph["node_id"] = matching_nodes[0]["node_id"]
+            if not paragraph.get("bbox"):
+                matching_layout = next(
+                    (
+                        item for item in layout_paragraphs
+                        if canonicalize_text(str(item.get("text", ""))) == text and item.get("bbox")
+                    ),
+                    None,
+                )
+                if matching_layout:
+                    paragraph["bbox"] = matching_layout["bbox"]
+
+
 def build_document_structure(page_paragraphs: List[Tuple[int, List[str]]]) -> Dict[str, Any]:
     return {
         "pages": [

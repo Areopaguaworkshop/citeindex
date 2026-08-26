@@ -1,0 +1,18 @@
+{
+  "metadata": {"source_path": "scanned-cjk.pdf"},
+  "structure": {
+    "pages": [{
+      "page_idx": 0,
+      "physical_page_index": 0,
+      "page_number": "第12页",
+      "paragraphs": [{
+        "node_id": "scan:p1",
+        "char_start": 0,
+        "char_end": 17,
+        "bbox": [10, 20, 200, 60],
+        "text": "王明《中国史》北京出版社"
+      }]
+    }]
+  },
+  "nodes": [{"node_id": "scan:p1", "page": 1, "text": "王明《中国史》北京出版社"}]
+}

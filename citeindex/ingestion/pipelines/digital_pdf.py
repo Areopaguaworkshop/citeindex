@@ -641,6 +641,12 @@ def run(
         extra["pageindex_tree"] = ci_tree
         logger.info("PageIndex → CiteIndex tree: %d sections", len(ci_tree.get("level_1", [])))
 
+    # Locators are part of the persisted source representation, not a
+    # verification-only sidecar.  Add them after PageIndex has finished
+    # reshaping paragraphs.
+    from .common import attach_evidence_locators
+    attach_evidence_locators(document_structure, nodes, page_layouts)
+
     if pdf_images and _images_tmpdir:
         extra["_images_tmpdir"] = _images_tmpdir
         extra["_images_list"] = pdf_images
@@ -668,6 +674,7 @@ def _build_flat_document_structure(
     for page_num, paragraphs in page_paragraphs:
         page_dict: Dict[str, Any] = {
             "page_number": page_num,
+            "physical_page_index": len(pages),
             "paragraphs": [
                 {
                     "paragraph_id": f"p{page_num}_{i + 1}",

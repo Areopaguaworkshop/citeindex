@@ -144,3 +144,12 @@ External responses are provenance-bearing candidates. The source remains authori
 - DataCite, NCBI, arXiv, Open Library, OpenAlex, bibliographic title matching, and media verification are introduced after the Crossref contract and tests are stable; the common registry interface avoids pipeline-specific integrations.
 - No custom cache service, database, or background queue. Add caching only if registry rate limits or repeated batch lookups require it.
 - No direct post-hoc artifact editor. Add a repair command only after finalization can regenerate all dependent artifacts safely.
+
+## Implementation status
+
+The phase-one tasks above are implemented: pipeline-specific stable locators,
+field-aware reconciliation with source precedence, constrained per-field DSPy
+review, all-or-nothing CSL finalization, explicit Codex/Claude Code/OpenCode/Pi
+harness entry points, and mocked digital/scanned/CJK/URL/date-conflict tests.
+The registry integrations listed under “Later phases” remain intentionally
+deferred.

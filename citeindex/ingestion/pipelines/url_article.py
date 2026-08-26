@@ -23,6 +23,7 @@ import trafilatura
 
 from ..models import IngestionConfig, PipelineResult
 from .common import (
+    attach_evidence_locators,
     build_merkle_for_nodes,
     build_nodes,
     make_basic_csl,
@@ -590,6 +591,7 @@ def run(
     # ── Step 7: Build section-hierarchical structure ───────────────
     pages, section_tree, page_paragraphs = _parse_markdown_sections(markdown_text, url)
     nodes = build_nodes(source_id, page_paragraphs)
+    attach_evidence_locators({"pages": pages}, nodes)
 
     # ── Step 8: Merkle tree (no retrieval index) ──────────────────
     merkle_tree = build_merkle_for_nodes(nodes)

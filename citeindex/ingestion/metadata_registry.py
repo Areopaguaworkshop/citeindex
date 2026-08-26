@@ -63,7 +63,7 @@ def _first_string(value: Any) -> str | None:
 
 
 def _date_parts(record: Mapping[str, Any]) -> dict[str, list[list[int]]] | None:
-    for key in ("issued", "published-print", "published-online", "published"):
+    for key in ("published-print", "issued", "published-online", "published"):
         date = record.get(key)
         if not isinstance(date, Mapping):
             continue

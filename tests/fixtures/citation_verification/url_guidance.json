@@ -1,0 +1,7 @@
+{
+  "metadata": {"url": "https://example.org/article"},
+  "structure": {
+    "pages": [{"paragraphs": [{"node_id": "url:p1", "text": "Cite this: Ada Lovelace (2019)."}]}]
+  },
+  "nodes": [{"node_id": "url:p1", "page": 1, "text": "Cite this: Ada Lovelace (2019)."}]
+}

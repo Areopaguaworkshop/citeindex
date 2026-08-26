@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..deterministic import build_hierarchical_merkle_tree
 from ..models import IngestionConfig, PipelineResult
 from .common import (
+    attach_evidence_locators,
     build_merkle_for_nodes,
     build_nodes_with_granularity,
     determine_doc_type,
@@ -212,6 +213,8 @@ def build_scanned_pipeline_result(
                     _annotate_document_with_pageindex(document_structure, ci_tree)
         except Exception:
             logger.warning("PageIndex failed for scanned backend", exc_info=True)
+
+    attach_evidence_locators(document_structure, nodes)
 
     if images_tmpdir and images_list:
         extra["_images_tmpdir"] = images_tmpdir
