@@ -5,8 +5,6 @@ import math
 import random
 import re
 from .utils import *
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 ################### check title in page #########################################################
@@ -123,15 +121,15 @@ def toc_detector_single_page(content, model=None):
 
 
 def check_if_toc_extraction_is_complete(content, toc, model=None):
-    prompt = f"""
+    prompt = """
     You are given a partial document  and a  table of contents.
     Your job is to check if the  table of contents is complete, which it contains all the main sections in the partial document.
 
     Reply format:
-    {{
+    {
         "thinking": <why do you think the table of contents is complete or not>
         "completed": "yes" or "no"
-    }}
+    }
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + '\n Document:\n' + content + '\n Table of contents:\n' + toc
@@ -157,7 +155,7 @@ def extract_toc_content(content, model=None):
         {"role": "user", "content": prompt}, 
         {"role": "assistant", "content": response},    
     ]
-    prompt = f"""please continue the generation of table of contents , directly output the remaining part of the structure"""
+    prompt = """please continue the generation of table of contents , directly output the remaining part of the structure"""
     new_response, finish_reason = llm_completion(model=model, prompt=prompt, chat_history=chat_history, return_finish_reason=True)
     response = response + new_response
     if_complete = check_if_toc_transformation_is_complete(content, response, model)
@@ -174,7 +172,7 @@ def extract_toc_content(content, model=None):
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": response},
         ]
-        prompt = f"""please continue the generation of table of contents , directly output the remaining part of the structure"""
+        prompt = """please continue the generation of table of contents , directly output the remaining part of the structure"""
         new_response, finish_reason = llm_completion(model=model, prompt=prompt, chat_history=chat_history, return_finish_reason=True)
         response = response + new_response
         if_complete = check_if_toc_transformation_is_complete(content, response, model)

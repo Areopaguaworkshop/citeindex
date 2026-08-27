@@ -10,10 +10,11 @@ import hashlib
 import logging
 import re
 from typing import List, Optional, Set
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
-import requests
 import trafilatura
+
+from .url_security import fetch_text, validate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ async def _discover_urls_async(
     max_pages: int = 100,
 ) -> List[str]:
     """Use crawl4ai BFS to discover article URLs from a root page."""
+    validate_public_url(root_url)
     from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
     from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
     from crawl4ai.deep_crawling.filters import FilterChain, ContentTypeFilter
@@ -92,13 +94,16 @@ async def _discover_urls_async(
 
             # The crawled page itself
             if _is_article_url(result.url, root_domain):
+                validate_public_url(result.url, resolve=False)
                 discovered.add(result.url)
 
             # Internal links found on this page
             for link in result.links.get("internal", []):
                 href = link.get("href", "")
-                if href and _is_article_url(href, root_domain):
-                    discovered.add(href)
+                candidate = urljoin(result.url, href) if href else ""
+                if candidate and _is_article_url(candidate, root_domain):
+                    validate_public_url(candidate, resolve=False)
+                    discovered.add(candidate)
 
     urls = sorted(discovered)
     logger.info("Discovered %d article URLs from %s (depth=%d)", len(urls), root_url, max_depth)
@@ -130,9 +135,7 @@ def fetch_content_hash(url: str) -> Optional[str]:
     changes (ads, timestamps, navigation) are ignored.
     """
     try:
-        resp = requests.get(url, timeout=30, headers={"User-Agent": "CiteIndex/0.11"})
-        resp.raise_for_status()
-        html = resp.text
+        html = fetch_text(url, timeout=30)
     except Exception:
         logger.warning("Failed to fetch %s for content hash", url)
         return None

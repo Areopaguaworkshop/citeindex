@@ -17,11 +17,12 @@ For "mixed_pdf", the majority type wins but per-page info is logged.
 """
 
 import logging
-import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
+
+import pymupdf as fitz
 
 logger = logging.getLogger(__name__)
 
@@ -407,8 +408,6 @@ def classify_pdf(
     PDFClassification
         Document-level classification with per-page details.
     """
-    import fitz
-
     if force_kind is not None:
         logger.info("PDF classification forced to: %s", force_kind.value)
         return PDFClassification(document_kind=force_kind)

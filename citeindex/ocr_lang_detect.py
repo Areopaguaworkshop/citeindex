@@ -1,5 +1,5 @@
-import logging
 import fitz  # PyMuPDF
+import hashlib
 import subprocess
 import tempfile
 import os
@@ -12,28 +12,54 @@ from typing import Optional
 MODEL_DIR = os.path.expanduser("~/.cache/fasttext")
 MODEL_PATH = os.path.join(MODEL_DIR, "lid.176.bin")
 MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+MODEL_MAX_BYTES = 200 * 1024 * 1024
+# SHA-256 of the published lid.176.bin artifact (also recorded by the
+# upstream-compatible Hugging Face mirror).
+MODEL_SHA256 = "7e69ec5451bc261cc7844e49e4792a85d7f09c06789ec800fc4a44aec362764e"
+
+
+def _model_is_valid(path: str) -> bool:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as model_file:
+            for chunk in iter(lambda: model_file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return digest.hexdigest() == MODEL_SHA256
 
 def download_fasttext_model():
     """Downloads the fastText language identification model if it doesn't exist."""
-    if os.path.exists(MODEL_PATH):
+    if os.path.exists(MODEL_PATH) and _model_is_valid(MODEL_PATH):
         print("✅ fastText model found.")
         return
+    if os.path.exists(MODEL_PATH):
+        os.remove(MODEL_PATH)
 
     print("⬇️ fastText model not found. Downloading...")
     os.makedirs(MODEL_DIR, exist_ok=True)
     
     try:
-        with requests.get(MODEL_URL, stream=True) as r:
+        with requests.get(MODEL_URL, stream=True, timeout=60) as r:
             r.raise_for_status()
-            with open(MODEL_PATH, "wb") as f:
+            with tempfile.NamedTemporaryFile(dir=MODEL_DIR, prefix=".lid.176.", delete=False) as f:
+                temporary_path = f.name
+                total = 0
+                digest = hashlib.sha256()
                 for chunk in r.iter_content(chunk_size=8192):
+                    total += len(chunk)
+                    if total > MODEL_MAX_BYTES:
+                        raise ValueError("fastText model exceeds the configured size limit")
                     f.write(chunk)
+                    digest.update(chunk)
+        if digest.hexdigest() != MODEL_SHA256:
+            raise ValueError("fastText model checksum mismatch")
+        os.replace(temporary_path, MODEL_PATH)
         print("✅ Model downloaded successfully.")
     except Exception as e:
         print(f"❌ Error downloading fastText model: {e}")
-        # Clean up partial download if it exists
-        if os.path.exists(MODEL_PATH):
-            os.remove(MODEL_PATH)
+        if "temporary_path" in locals() and os.path.exists(temporary_path):
+            os.remove(temporary_path)
 
 # --- Language Mapping ---
 def map_lang_to_tesseract(lang_code: str) -> str:
@@ -91,7 +117,9 @@ def detect_language_from_scanned_pdf(pdf_path: str) -> Optional[str]:
 
                 # Run OCR on the single page
                 cmd = ["ocrmypdf", "--force-ocr", "-l", detection_languages, temp_single_page, temp_ocr_pdf]
-                process = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+                process = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=45, start_new_session=True,
+                )
 
                 if process.returncode == 0:
                     ocr_doc = fitz.open(temp_ocr_pdf)

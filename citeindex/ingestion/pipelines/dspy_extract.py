@@ -13,6 +13,7 @@ import dspy
 
 from ...llm import get_llm_model
 from ..models import IngestionConfig
+from .common import PAGE_NUMBER_PATTERNS as _PAGE_NUM_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -230,10 +231,6 @@ _KEYWORD_LABELS = re.compile(
     r"^(?:关键词|关\s*键\s*词|Keywords?|KEYWORDS?|Schlüsselwörter|Mots[- ]clés)\s*[:：]?\s*",
     re.IGNORECASE,
 )
-
-# Page number patterns — shared with layout.py via common.py
-from .common import PAGE_NUMBER_PATTERNS as _PAGE_NUM_PATTERNS
-
 
 def _get_text(item: Dict[str, Any]) -> str:
     """Extract text from a content_list item."""
@@ -519,7 +516,6 @@ def _select_continuous_sequence(
     For each page_idx that has candidates, try to find a consistent offset
     (actual_page = page_idx + offset) that satisfies the most pages.
     """
-    import itertools
     from collections import Counter
 
     # Compute all possible offsets: offset = candidate - page_idx
@@ -537,7 +533,6 @@ def _select_continuous_sequence(
 
     # Build final map using this offset — only include pages that agree
     page_map: Dict[int, int] = {}
-    all_page_idxs = set()
     for item_list in candidates.values():
         pass  # just need the keys
     for page_idx, nums in candidates.items():

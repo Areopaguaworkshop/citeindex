@@ -1,6 +1,6 @@
 import re
 import dspy
-from typing import Dict, List, Tuple, Optional
+from typing import Dict
 from .model import CitationLLM
 from .utils import parse_multiple_authors
 

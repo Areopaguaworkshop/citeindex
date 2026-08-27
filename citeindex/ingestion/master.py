@@ -8,11 +8,11 @@ from urllib.parse import urlparse
 
 from .deterministic import hash_payload
 from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, PipelineResult
-from .pipelines import digital_pdf, media, scanned_pdf, url_article
 from .markdown_export import write_library_markdown
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
 from .citation_verification import verify_citation_metadata
+from .url_security import UnsafeUrlError, validate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,18 @@ class CiteIndexIngestionOrchestrator:
         config: Optional[IngestionConfig] = None,
     ) -> Dict[str, Any]:
         cfg = config or IngestionConfig()
+        cleanup_paths: list[str] = []
+
+        def cleanup_temporary_outputs() -> None:
+            for path in cleanup_paths:
+                try:
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, ignore_errors=True)
+                    elif os.path.isfile(path):
+                        os.remove(path)
+                except OSError:
+                    logger.warning("Failed to clean temporary output: %s", path, exc_info=True)
+
         try:
             logger.info("Ingesting: %s", input_ref)
             resource_type, normalized = self.detect_resource_type(input_ref, config=cfg)
@@ -78,6 +90,12 @@ class CiteIndexIngestionOrchestrator:
             try:
                 logger.info("Routing to pipeline: %s", resource_type)
                 sub_result = self.route_to_pipeline(resource_type, normalized, cfg)
+                for key in ("source_snapshot_path", "_images_tmpdir"):
+                    path = sub_result.extra.get(key)
+                    if isinstance(path, str) and sub_result.extra.get(
+                        "cleanup_source_snapshot" if key == "source_snapshot_path" else key
+                    ) is not None:
+                        cleanup_paths.append(path)
             finally:
                 # Clean up temp PDF from Office/DJVU conversion
                 if temp_pdf and os.path.exists(temp_pdf):
@@ -155,8 +173,8 @@ class CiteIndexIngestionOrchestrator:
             elif images_tmpdir:
                 shutil.rmtree(images_tmpdir, ignore_errors=True)
 
-            # Remove internal keys from extra before serializing
-            for key in ("_images_tmpdir", "_images_list"):
+            # Remove internal paths before serializing persisted pipeline output.
+            for key in ("_images_tmpdir", "_images_list", "source_snapshot_path", "cleanup_source_snapshot"):
                 sub_result.extra.pop(key, None)
 
             output = {
@@ -169,8 +187,6 @@ class CiteIndexIngestionOrchestrator:
             }
             if citation_verification:
                 output["citation_verification"] = citation_verification
-
-            write_json(os.path.join(document_path, "ingestion_output.json"), output)
 
             # Generate human-readable library markdown
             try:
@@ -186,8 +202,11 @@ class CiteIndexIngestionOrchestrator:
             except Exception:
                 logger.warning("Library markdown generation failed", exc_info=True)
 
+            write_json(os.path.join(document_path, "ingestion_output.json"), output)
+            cleanup_temporary_outputs()
             return output
         except Exception as e:
+            cleanup_temporary_outputs()
             return self._failure(
                 stage="master_ingestion",
                 source_id="unknown",
@@ -199,6 +218,12 @@ class CiteIndexIngestionOrchestrator:
     def detect_resource_type(self, input_ref: str, config: Optional[IngestionConfig] = None) -> tuple[str, str]:
         parsed = urlparse(input_ref)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
+            try:
+                # Lexical checks keep obvious private targets out of every route;
+                # network fetches perform DNS-aware validation immediately before I/O.
+                validate_public_url(input_ref, resolve=False)
+            except UnsafeUrlError:
+                return "unsupported", input_ref
             host = parsed.netloc.lower()
             if any(token in host for token in ["youtube", "youtu.be", "vimeo", "podcast", "soundcloud"]):
                 return "media", input_ref
@@ -284,12 +309,16 @@ class CiteIndexIngestionOrchestrator:
         config: IngestionConfig,
     ) -> PipelineResult:
         if resource_type == "digital_pdf":
+            from .pipelines import digital_pdf
             return digital_pdf.run(normalized_input, source_type="digital_pdf", config=config)
         if resource_type == "scanned_pdf":
+            from .pipelines import scanned_pdf
             return scanned_pdf.run(normalized_input, config=config)
         if resource_type == "url_article":
+            from .pipelines import url_article
             return url_article.run(normalized_input, config=config)
         if resource_type == "media":
+            from .pipelines import media
             return media.run(normalized_input)
         raise ValueError(f"No route for resource type: {resource_type}")
 

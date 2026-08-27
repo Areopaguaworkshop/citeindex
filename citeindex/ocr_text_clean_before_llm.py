@@ -7,13 +7,9 @@ It removes irrelevant content and focuses on citation-relevant information.
 
 import logging
 import re
-import fitz  # PyMuPDF
-from typing import Dict, List, Optional, Tuple
-import numpy as np
+from typing import Dict, List
 
 # Import existing functions
-from .vertical_handler import is_page_blank, get_structure_engine, extract_text_results
-from .model import CitationLLM
 
 
 def get_multilingual_content_keywords() -> Dict[str, List[str]]:

@@ -130,7 +130,13 @@ def _value_strings(value: Any) -> list[str]:
         if "literal" in value:
             return _value_strings(value["literal"])
         if "date-parts" in value:
-            return [str(part) for group in value.get("date-parts", []) for part in (group if isinstance(group, list) else [])]
+            parts = next((group for group in value.get("date-parts", []) if isinstance(group, list)), [])
+            if not parts:
+                return []
+            raw = [str(part) for part in parts]
+            padded = [raw[0]] + [part.zfill(2) for part in raw[1:]]
+            candidates = {"-".join(raw), "-".join(padded), "/".join(raw), " ".join(raw)}
+            return sorted(candidates, key=len, reverse=True)
         name = " ".join(str(value.get(key, "")).strip() for key in ("given", "family")).strip()
         return [name] if name else []
     if isinstance(value, list):
@@ -145,7 +151,12 @@ def _find_evidence(value: Any, evidence: Iterable[Dict[str, Any]]) -> Dict[str, 
     if not values:
         return None
     for item in evidence:
-        if all(value in item["quote"].casefold() for value in values):
+        quote = item["quote"].casefold()
+        if isinstance(value, dict) and "date-parts" in value:
+            matched = any(candidate in quote for candidate in values)
+        else:
+            matched = all(candidate in quote for candidate in values)
+        if matched:
             return item
     return None
 
@@ -223,9 +234,12 @@ def _valid_model_decision(decision: Dict[str, Any] | None, field: str, draft_val
         return False
     if not 0 <= decision["confidence"] <= 1:
         return False
+    selected = decision["selected_value"]
+    if not (_same_value(field, selected, draft_value) or _same_value(field, selected, registry_value)):
+        return False
     if not _valid_locator(decision["locator"]):
         return False
-    return any(item["quote"] == decision["quote"] and item["locator"] == decision["locator"] and _find_evidence(decision["selected_value"], [item]) for item in evidence)
+    return any(item["quote"] == decision["quote"] and item["locator"] == decision["locator"] and _find_evidence(selected, [item]) for item in evidence)
 
 
 def verify_citation_metadata(
@@ -277,9 +291,13 @@ def verify_citation_metadata(
                 corrections.append({"field": field, "value": decision["selected_value"], "quote": decision["quote"], "locator": decision["locator"], "confidence": decision["confidence"], "rationale": decision["rationale"], "provenance": {"provider": "model", "model": config.citation_verifier_model}})
         needs_review = unresolved
 
-    status = "verified" if not needs_review else "needs_review"
-    if registry["status"] not in {"found", "not_found"}:
-        status = "needs_review" if config.citation_verifier_model else registry["status"]
+    registry_status = registry.get("status")
+    if registry_status == "found":
+        status = "verified" if not needs_review else "needs_review"
+    elif registry_status == "not_found":
+        status = "needs_review"
+    else:
+        status = registry_status or "needs_review"
     applied = corrections if not needs_review else []
     digest = _source_digest(document_json, resource_type, extra, evidence)
     report = {

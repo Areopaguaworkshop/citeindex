@@ -93,7 +93,8 @@ def convert_to_pdf(file_path: str) -> Optional[str]:
         ]
         
         process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=600, start_new_session=True,
         )
 
         if process.returncode != 0:
@@ -143,7 +144,8 @@ def convert_djvu_to_pdf(djvu_path: str, temp_dir: str) -> Optional[str]:
         logging.info(f"Converting first 10 pages of DJVU to PDF using ddjvu: {' '.join(cmd)}")
         
         process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=600, start_new_session=True,
         )
         
         if process.returncode != 0:
@@ -204,7 +206,8 @@ def convert_djvu_to_pdf_range(djvu_path: str, page_range: str, num_pages: int) -
         logging.info(f"Running ddjvu command: {' '.join(cmd)}")
 
         process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=600, start_new_session=True,
         )
 
         if process.returncode != 0:
@@ -232,7 +235,10 @@ def count_djvu_pages(djvu_path: str) -> int:
     """Count pages in DJVU file using djvudump."""
     try:
         cmd = ["djvudump", djvu_path]
-        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(
+            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=60, start_new_session=True,
+        )
         
         if result.returncode == 0:
             # Parse the output to find the page count
@@ -250,10 +256,10 @@ def count_djvu_pages(djvu_path: str) -> int:
                             except ValueError:
                                 continue
             
-            logging.error(f"Could not parse page count from djvudump output")
+            logging.error("Could not parse page count from djvudump output")
             return 0
             
-        logging.error(f"Failed to run djvudump on DJVU file")
+        logging.error("Failed to run djvudump on DJVU file")
         return 0
         
     except Exception as e:
@@ -279,7 +285,6 @@ def count_office_document_pages(doc_path: str) -> int:
         # Convert to PDF first to get page count, then delete temp file
         temp_dir = tempfile.gettempdir()
         base_name, _ = os.path.splitext(os.path.basename(doc_path))
-        temp_pdf_path = os.path.join(temp_dir, f"{base_name}_pagecount.pdf")
         
         cmd = [
             "soffice",
@@ -292,7 +297,8 @@ def count_office_document_pages(doc_path: str) -> int:
         ]
         
         process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=600, start_new_session=True,
         )
         
         if process.returncode != 0:
@@ -356,7 +362,7 @@ def convert_pymupdf_to_pdf_range(doc_path: str, page_range: str, num_pages: int)
         source_doc.close()
 
         if not os.path.exists(output_pdf_path):
-            logging.error(f"PyMuPDF page range extraction failed - output file not found")
+            logging.error("PyMuPDF page range extraction failed - output file not found")
             return None
 
         logging.info(f"Successfully extracted PyMuPDF page range to temporary PDF: {output_pdf_path}")
@@ -376,7 +382,6 @@ def convert_office_to_pdf_range(doc_path: str, page_range: str, num_pages: int) 
         temp_dir = tempfile.gettempdir()
         
         # First convert entire document to PDF
-        full_pdf_path = os.path.join(temp_dir, f"{base_name}_full.pdf")
         
         cmd = [
             "soffice",
@@ -389,7 +394,8 @@ def convert_office_to_pdf_range(doc_path: str, page_range: str, num_pages: int) 
         ]
         
         process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=600, start_new_session=True,
         )
         
         if process.returncode != 0:
@@ -432,7 +438,7 @@ def convert_office_to_pdf_range(doc_path: str, page_range: str, num_pages: int) 
         os.remove(actual_full_pdf)
 
         if not os.path.exists(output_pdf_path):
-            logging.error(f"Office document page range extraction failed - output file not found")
+            logging.error("Office document page range extraction failed - output file not found")
             return None
 
         logging.info(f"Successfully converted office document page range to temporary PDF: {output_pdf_path}")

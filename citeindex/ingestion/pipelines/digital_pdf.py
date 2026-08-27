@@ -16,7 +16,6 @@ heuristic detect_footnotes() for footnote detection (better recall than GNN's
 import logging
 import os
 import re
-import shutil
 import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,7 +25,6 @@ from ..models import IngestionConfig, PipelineResult
 from ..deterministic import build_hierarchical_merkle_tree
 from .pdf_text_cleanup import clean_page_texts
 from .common import (
-    build_document_structure,
     build_merkle_for_nodes,
     build_nodes_with_granularity,
     determine_doc_type,

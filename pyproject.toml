@@ -31,6 +31,9 @@ dependencies = [
     "litellm>=1.83.0",
     "PyPDF2>=3.0.1",
     "python-dotenv>=1.1.0",
+    "dill>=0.3.0,<0.3.9",
+    "fsspec[http]>=2023.1.0,<=2025.3.0",
+    "packaging>=23.2,<26.0.0",
     "pymupdf4llm>=1.27.2.3",
 ]
 readme = "README.md"
@@ -53,3 +56,9 @@ dev-dependencies = ["pytest>=7.0.0", "pytest-cov>=2.12.1"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["citeindex"]
+
+[tool.ruff.lint]
+
+[tool.ruff.lint.per-file-ignores]
+"citeindex/vertical_llm.py" = ["F811", "F821"]
+"citeindex/ingestion/pipelines/pageindex/*.py" = ["E402", "E722", "F401", "F403", "F405", "F811", "F821"]

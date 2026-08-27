@@ -517,8 +517,6 @@ class ImprovedPageNumberExtractor:
         # For academic papers with page gaps, we need more flexible gap analysis
         
         # Calculate the expected page progression based on PDF structure
-        first_pdf_pages = sorted([k for k in first_sequence.keys()])
-        last_pdf_pages = sorted([k for k in last_sequence.keys()])
         
         # Check if there's a reasonable progression (not necessarily continuous)
         # Allow larger gaps for academic papers that might skip pages

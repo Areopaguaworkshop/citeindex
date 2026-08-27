@@ -22,6 +22,7 @@ import requests
 import trafilatura
 
 from ..models import IngestionConfig, PipelineResult
+from ..url_security import UnsafeUrlError, fetch_text, validate_public_url, MAX_RESPONSE_BYTES
 from .common import (
     attach_evidence_locators,
     build_merkle_for_nodes,
@@ -50,23 +51,34 @@ def _fetch_with_playwright(url: str) -> Optional[str]:
     try:
         from playwright.sync_api import sync_playwright
 
+        validate_public_url(url)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            html = page.content()
-            browser.close()
-            return html
+            try:
+                page = browser.new_page()
+
+                def guard_request(route: Any) -> None:
+                    request_url = route.request.url
+                    if request_url.startswith(("http://", "https://")):
+                        validate_public_url(request_url)
+                    route.continue_()
+
+                page.route("**/*", guard_request)
+                page.goto(url, wait_until="networkidle", timeout=30000)
+                html = page.content()
+                if len(html.encode("utf-8")) > MAX_RESPONSE_BYTES:
+                    raise UnsafeUrlError("rendered page exceeds the configured size limit")
+                return html
+            finally:
+                browser.close()
     except Exception:
         logger.info("Playwright fetch failed or not installed, falling back to requests")
         return None
 
 
 def _fetch_with_requests(url: str) -> str:
-    """Simple HTTP GET fallback."""
-    resp = requests.get(url, timeout=30, headers={"User-Agent": "CiteIndex/0.11"})
-    resp.raise_for_status()
-    return resp.text
+    """Bounded HTTP GET fallback with redirect and address validation."""
+    return fetch_text(url, timeout=30)
 
 
 def _fetch_html(url: str) -> str:

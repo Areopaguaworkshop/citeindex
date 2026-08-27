@@ -2,6 +2,7 @@ import json
 
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.models import IngestionConfig, PipelineResult
+from citeindex.ingestion.storage import csl_folder_name
 import citeindex.ingestion.master as master
 
 
@@ -23,11 +24,11 @@ def test_verification_is_persisted_before_csl_identity_and_markdown(tmp_path, mo
         "source.pdf", IngestionConfig(verify_citations=True),
     )
 
-    document_path = tmp_path / "corpus" / "doe_correct"
+    document_path = tmp_path / "corpus" / csl_folder_name(output["standardized_csl_json"])
     persisted_csl = json.loads((document_path / "csl.json").read_text())
     persisted_report = json.loads((document_path / "citation_verification.json").read_text())
     persisted_output = json.loads((document_path / "ingestion_output.json").read_text())
-    markdown = (tmp_path / "library" / "doe_correct.md").read_text()
+    markdown = (tmp_path / "library" / f"{document_path.name}.md").read_text()
     assert output["standardized_csl_json"]["title"] == persisted_csl["title"] == "Correct"
     assert persisted_report == persisted_output["citation_verification"] == report
     assert "citation_verification: verified" in markdown

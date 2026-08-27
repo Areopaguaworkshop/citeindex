@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from ..models import PipelineResult
+from ..url_security import validate_public_url
 from .common import (
     build_merkle_for_nodes,
     build_nodes,
@@ -48,7 +49,7 @@ def _probe_url_media(url: str) -> Dict[str, Any]:
     metadata: Dict[str, Any] = {"url": url, "title": url}
     cmd = ["yt-dlp", "--dump-single-json", "--no-warnings", url]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, start_new_session=True)
         if proc.returncode == 0 and proc.stdout.strip():
             info = json.loads(proc.stdout)
             metadata.update(
@@ -81,7 +82,7 @@ def _download_media(url: str) -> Optional[str]:
                 "-o", output_template,
                 url,
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, start_new_session=True)
             if proc.returncode != 0:
                 logger.warning("yt-dlp download failed: %s", proc.stderr[:200])
                 return None
@@ -119,7 +120,7 @@ def _extract_audio(media_path: str) -> Optional[str]:
             "-ac", "1",  # mono
             output_path,
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, start_new_session=True)
         if proc.returncode == 0 and os.path.exists(output_path):
             logger.info("Audio extracted to %s", output_path)
             return output_path
@@ -206,6 +207,8 @@ def _diarize_speakers(audio_path: str) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def run(media_ref: str) -> PipelineResult:
+    if _is_url(media_ref):
+        validate_public_url(media_ref)
     source_id = make_source_id(media_ref)
     input_type = "url" if _is_url(media_ref) else "file"
 

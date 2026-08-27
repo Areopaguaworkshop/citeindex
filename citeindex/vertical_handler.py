@@ -1,8 +1,6 @@
 import logging
-import os
-import tempfile
 import fitz  # PyMuPDF
-from paddleocr import PaddleOCR, PPStructureV3
+from paddleocr import PPStructureV3
 import numpy as np
 from typing import Optional, List
 import traceback

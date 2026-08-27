@@ -16,7 +16,7 @@ import statistics
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
-from .common import PAGE_NUMBER_RE, extract_page_number_candidates
+from .common import extract_page_number_candidates
 
 import fitz
 
@@ -212,7 +212,6 @@ def detect_footnotes(
         return list(blocks), []
 
     font_clusters = _compute_font_size_clusters(blocks)
-    median_size = statistics.median(font_sizes)
 
     # Minimum word count — page numbers and short labels are not footnotes.
     # Research (GROBID's repetitivePattern) shows that short, recurring

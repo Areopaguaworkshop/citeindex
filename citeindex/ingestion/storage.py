@@ -1,10 +1,11 @@
 import json
 import os
 import re
-import unicodedata
+import shutil
+import tempfile
 from typing import Any, Dict
 
-from .deterministic import canonical_json_dumps
+from .deterministic import canonical_json_dumps, hash_payload
 
 
 def ensure_dir(path: str) -> None:
@@ -13,9 +14,16 @@ def ensure_dir(path: str) -> None:
 
 def write_json(path: str, data: Any) -> None:
     ensure_dir(os.path.dirname(path))
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(canonical_json_dumps(data))
-        f.write("\n")
+    directory = os.path.dirname(path) or "."
+    fd, temporary_path = tempfile.mkstemp(prefix=".citeindex-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(canonical_json_dumps(data))
+            f.write("\n")
+        os.replace(temporary_path, path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
 
 
 def append_jsonl(path: str, data: Dict[str, Any]) -> None:
@@ -77,7 +85,6 @@ def csl_folder_name(csl_json: Dict[str, Any]) -> str:
         publisher_part = _slugify(raw_publisher[:15])
 
     if not author_part and not title_part:
-        from .deterministic import hash_payload
         return hash_payload(csl_json)[:16]
 
     author_slug = _slugify(author_part)
@@ -86,29 +93,43 @@ def csl_folder_name(csl_json: Dict[str, Any]) -> str:
     segments = [s for s in [author_slug, year_part, no_slug, title_part, publisher_part] if s]
     name = "_".join(segments)
 
-    if len(name) > 80:
-        name = name[:80].rstrip("_")
+    if len(name) > 64:
+        name = name[:64].rstrip("_")
 
-    return name
+    identity = str(csl_json.get("content_hash") or hash_payload(csl_json))
+    return f"{name}_{identity[:12]}"
 
 
 def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: Dict[str, Any]) -> str:
+    if os.path.basename(folder_name) != folder_name or folder_name in {"", ".", ".."}:
+        raise ValueError("folder_name must be a single safe directory name")
     doc_dir = os.path.join(corpus_root, folder_name)
-    ensure_dir(doc_dir)
+    staging_dir = None if os.path.exists(doc_dir) else tempfile.mkdtemp(
+        prefix=f".{folder_name}.", dir=corpus_root,
+    )
+    target_dir = staging_dir or doc_dir
+    ensure_dir(target_dir)
 
-    if artifacts.get("csl_json") is not None:
-        write_json(os.path.join(doc_dir, "csl.json"), artifacts["csl_json"])
-    if artifacts.get("document_json") is not None:
-        write_json(os.path.join(doc_dir, "document.json"), artifacts["document_json"])
-    if artifacts.get("transcript_json") is not None:
-        write_json(os.path.join(doc_dir, "transcript.json"), artifacts["transcript_json"])
-    if artifacts.get("merkle_tree") is not None:
-        write_json(os.path.join(doc_dir, "merkle.json"), artifacts["merkle_tree"])
-    if artifacts.get("media_metadata") is not None:
-        write_json(os.path.join(doc_dir, "media_metadata.json"), artifacts["media_metadata"])
-    if artifacts.get("pageindex_tree") is not None:
-        write_json(os.path.join(doc_dir, "pageindex_tree.json"), artifacts["pageindex_tree"])
-    if artifacts.get("citation_verification") is not None:
-        write_json(os.path.join(doc_dir, "citation_verification.json"), artifacts["citation_verification"])
+    try:
+        if artifacts.get("csl_json") is not None:
+            write_json(os.path.join(target_dir, "csl.json"), artifacts["csl_json"])
+        if artifacts.get("document_json") is not None:
+            write_json(os.path.join(target_dir, "document.json"), artifacts["document_json"])
+        if artifacts.get("transcript_json") is not None:
+            write_json(os.path.join(target_dir, "transcript.json"), artifacts["transcript_json"])
+        if artifacts.get("merkle_tree") is not None:
+            write_json(os.path.join(target_dir, "merkle.json"), artifacts["merkle_tree"])
+        if artifacts.get("media_metadata") is not None:
+            write_json(os.path.join(target_dir, "media_metadata.json"), artifacts["media_metadata"])
+        if artifacts.get("pageindex_tree") is not None:
+            write_json(os.path.join(target_dir, "pageindex_tree.json"), artifacts["pageindex_tree"])
+        if artifacts.get("citation_verification") is not None:
+            write_json(os.path.join(target_dir, "citation_verification.json"), artifacts["citation_verification"])
+        if staging_dir:
+            os.replace(staging_dir, doc_dir)
+            staging_dir = None
+    finally:
+        if staging_dir:
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
     return doc_dir

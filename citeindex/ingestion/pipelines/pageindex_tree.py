@@ -21,7 +21,6 @@ Data flow (URL/Markdown):
          pageindex_to_citeindex_tree()
 """
 
-import json
 import logging
 import os
 import tempfile

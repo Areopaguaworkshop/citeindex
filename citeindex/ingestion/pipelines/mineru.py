@@ -141,6 +141,7 @@ def run_mineru(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
 
         stdout_lines: list[str] = []
@@ -170,7 +171,11 @@ def run_mineru(
             elapsed = int(now - start_time)
 
             if elapsed > total_timeout:
-                process.kill()
+                if os.name == "posix":
+                    import signal
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
                 raise RuntimeError(f"MinerU timed out after {total_timeout}s")
 
             if now - last_log_time >= HEARTBEAT_INTERVAL:

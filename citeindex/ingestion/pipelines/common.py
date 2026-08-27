@@ -1,10 +1,11 @@
 import logging
 import os
 import re
+import re as _re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..deterministic import build_merkle_tree, build_hierarchical_merkle_tree, canonicalize_text, hash_payload
+from ..deterministic import build_merkle_tree, canonicalize_text, hash_payload
 from ..models import IngestionConfig
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,16 @@ def attach_evidence_locators(
         for index, layout in enumerate(page_layouts or [])
         if isinstance(layout.get("page_number", index + 1), int)
     }
+    nodes_by_key: Dict[tuple[Any, str], List[Dict[str, Any]]] = {}
+    for node in nodes:
+        node_text = canonicalize_text(str(node.get("text", "")))
+        if not node_text:
+            continue
+        page = node.get("page")
+        if isinstance(page, int):
+            nodes_by_key.setdefault((page, node_text), []).append(node)
+    node_cursors: Dict[tuple[Any, str], int] = {}
+    layout_cursors: Dict[tuple[Any, str], int] = {}
     for physical_index, page in enumerate(document_structure.get("pages", [])):
         if not isinstance(page, dict):
             continue
@@ -186,21 +197,31 @@ def attach_evidence_locators(
             text = canonicalize_text(paragraph["text"])
             paragraph["char_start"] = 0
             paragraph["char_end"] = len(paragraph["text"])
-            matching_nodes = [
-                node for node in nodes
-                if canonicalize_text(str(node.get("text", ""))) == text
-                and (node.get("page") == page_number or node.get("page") == page["physical_page_index"] + 1)
-            ]
+            matching_nodes: List[Dict[str, Any]] = []
+            for page_key in (page_number, page["physical_page_index"] + 1):
+                candidates = nodes_by_key.get((page_key, text), [])
+                cursor_key = (page_key, text)
+                cursor = node_cursors.get(cursor_key, 0)
+                if cursor < len(candidates):
+                    matching_nodes = [candidates[cursor]]
+                    node_cursors[cursor_key] = cursor + 1
+                    break
             if matching_nodes:
                 paragraph["node_id"] = matching_nodes[0]["node_id"]
             if not paragraph.get("bbox"):
-                matching_layout = next(
-                    (
-                        item for item in layout_paragraphs
-                        if canonicalize_text(str(item.get("text", ""))) == text and item.get("bbox")
-                    ),
-                    None,
+                layout_key = (page["physical_page_index"], text)
+                layout_candidates = [
+                    item for item in layout_paragraphs
+                    if canonicalize_text(str(item.get("text", ""))) == text and item.get("bbox")
+                ]
+                layout_cursor = layout_cursors.get(layout_key, 0)
+                matching_layout = (
+                    layout_candidates[layout_cursor]
+                    if layout_cursor < len(layout_candidates)
+                    else None
                 )
+                if matching_layout:
+                    layout_cursors[layout_key] = layout_cursor + 1
                 if matching_layout:
                     paragraph["bbox"] = matching_layout["bbox"]
 
@@ -421,9 +442,6 @@ enrich_csl_with_llm = enrich_csl_with_citation_cascade
 # Author fallback: filename parsing → interactive prompt
 # ---------------------------------------------------------------------------
 
-import re as _re
-
-
 def parse_author_from_filename(filename: str) -> Optional[Dict[str, Any]]:
     """Try to extract author from a structured PDF filename.
 
@@ -540,7 +558,6 @@ def prompt_author_interactively() -> Optional[Dict[str, Any]]:
 
     Returns a CSL author dict or None if the user skips.
     """
-    import sys
 
     print("\n⚠️  Could not determine the author(s) of this document.")
     print("   You can provide author info now, or press Enter to skip.")

@@ -38,7 +38,7 @@ def get_input_type(input_string: str) -> str:
         result = urlparse(input_string)
         if all([result.scheme, result.netloc]):
             return "URL"
-    except:
+    except (TypeError, ValueError):
         pass
 
     # 2. Check if it's a file and determine its type by extension
@@ -148,7 +148,8 @@ def ensure_searchable_pdf(pdf_path: str, lang: str = "eng+chi_sim") -> str:
 
         logging.info(f"Running command: {' '.join(cmd)}")
         process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=600, start_new_session=True,
         )
 
         if process.returncode == 0:
@@ -608,7 +609,7 @@ def to_csl_json(data: Dict, doc_type: str) -> Dict:
         try:
             date_parts = [int(p) for p in data["date_accessed"].split("-")]
             csl["accessed"] = {"date-parts": [date_parts]}
-        except:
+        except (ValueError, TypeError):
             pass  # Don't add if format is wrong
 
     # 4. Map Fields
@@ -726,45 +727,6 @@ def extract_publisher_from_domain(url: str) -> Optional[str]:
         logging.error(f"Error extracting publisher from domain: {e}")
         return None
 
-
-
-def ensure_searchable_pdf_with_detection(pdf_path: str) -> str:
-    """Ensure PDF is searchable with language detection for horizontal mode."""
-    try:
-        doc = fitz.open(pdf_path)
-        if doc.page_count > 0 and doc[0].get_text().strip():
-            logging.info("PDF appears to be searchable, skipping OCR.")
-            doc.close()
-            return pdf_path
-        doc.close()
-
-        # --- OCR is needed with language detection ---
-        from .ocr_lang_detect import detect_language_from_first_text_page, get_ocr_language_string
-        
-        print("🔍 Performing language detection...")
-        # First, try a quick OCR with basic languages for detection
-        temp_ocr = f"/tmp/detect_{os.path.basename(pdf_path)}"
-        
-        cmd = ["ocrmypdf", "--force-ocr", "-l", "eng+chi_sim+chi_tra", 
-               pdf_path, temp_ocr]
-        
-        process = subprocess.run(cmd, capture_output=True, text=True)
-        detected_lang = None
-        
-        if process.returncode == 0:
-            detected_lang = detect_language_from_first_text_page(temp_ocr)
-            os.remove(temp_ocr)
-        
-        # Get final OCR language string
-        ocr_lang = get_ocr_language_string(detected_lang)
-        print(f"🔍 Using OCR languages: {ocr_lang}")
-        
-        return ensure_searchable_pdf(pdf_path, ocr_lang)
-
-    except Exception as e:
-        logging.error(f"Error in language detection OCR: {e}")
-        # Fallback to basic OCR
-        return ensure_searchable_pdf(pdf_path, "eng+chi_sim")
 
 
 def ensure_searchable_pdf_with_detection(pdf_path: str) -> str:
