@@ -4,6 +4,12 @@ import logging
 import tempfile
 from typing import Optional, List
 
+
+def _temporary_pdf_path(prefix: str, directory: Optional[str] = None) -> str:
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".pdf", dir=directory)
+    os.close(fd)
+    return path
+
 def parse_page_range(page_range_str: str, total_pages: int) -> List[int]:
     """
     Parse a page range string (e.g., "1-5, -3") into a sorted list of 1-based page numbers.
@@ -73,51 +79,52 @@ def convert_to_pdf(file_path: str) -> Optional[str]:
     """
     print(f"⚙️ Converting {os.path.basename(file_path)} to PDF...")
 
-    temp_dir = tempfile.gettempdir()
-    
     # Check if it's a DJVU file - use ddjvu
     if file_path.lower().endswith('.djvu'):
-        return convert_djvu_to_pdf(file_path, temp_dir)
+        return convert_djvu_to_pdf(file_path, tempfile.gettempdir())
     
     # For other office documents, use LibreOffice
     try:
-        # Run LibreOffice in headless mode to perform the conversion
-        cmd = [
-            "soffice",
-            "--headless",
-            "--convert-to",
-            "pdf",
-            file_path,
-            "--outdir",
-            temp_dir,
-        ]
-        
-        process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=600, start_new_session=True,
-        )
+        with tempfile.TemporaryDirectory(prefix="citeindex_office_") as temp_dir:
+            # Run LibreOffice in headless mode to perform the conversion
+            cmd = [
+                "soffice",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                file_path,
+                "--outdir",
+                temp_dir,
+            ]
 
-        if process.returncode != 0:
-            # Check for common error: LibreOffice not found
-            if "command not found" in process.stderr.lower() or "no such file" in process.stderr.lower():
-                logging.error(
-                    "LibreOffice is not installed or not in the system's PATH. "
-                    "Please install it to process Office documents."
-                )
-            else:
-                logging.error(f"Failed to convert file with LibreOffice. Error: {process.stderr}")
-            return None
+            process = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=600, start_new_session=True,
+            )
 
-        # Construct the expected output path
-        base_name, _ = os.path.splitext(os.path.basename(file_path))
-        converted_pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
+            if process.returncode != 0:
+                # Check for common error: LibreOffice not found
+                if "command not found" in process.stderr.lower() or "no such file" in process.stderr.lower():
+                    logging.error(
+                        "LibreOffice is not installed or not in the system's PATH. "
+                        "Please install it to process Office documents."
+                    )
+                else:
+                    logging.error(f"Failed to convert file with LibreOffice. Error: {process.stderr}")
+                return None
 
-        if not os.path.exists(converted_pdf_path):
-            logging.error(f"Conversion appeared to succeed, but the output file was not found at: {converted_pdf_path}")
-            return None
-            
-        logging.info(f"Successfully converted to temporary PDF: {converted_pdf_path}")
-        return converted_pdf_path
+            # Construct the expected output path
+            base_name, _ = os.path.splitext(os.path.basename(file_path))
+            converted_pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
+
+            if not os.path.exists(converted_pdf_path):
+                logging.error(f"Conversion appeared to succeed, but the output file was not found at: {converted_pdf_path}")
+                return None
+
+            output_pdf_path = _temporary_pdf_path("citeindex_office_")
+            os.replace(converted_pdf_path, output_pdf_path)
+            logging.info(f"Successfully converted to temporary PDF: {output_pdf_path}")
+            return output_pdf_path
 
     except FileNotFoundError:
         logging.error(
@@ -135,8 +142,8 @@ def convert_djvu_to_pdf(djvu_path: str, temp_dir: str) -> Optional[str]:
     Returns the path to the temporary PDF, or None if the conversion fails.
     """
     try:
-        base_name, _ = os.path.splitext(os.path.basename(djvu_path))
-        output_pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
+        output_pdf_path = _temporary_pdf_path("citeindex_djvu_", temp_dir)
+        os.remove(output_pdf_path)
         
         # Use ddjvu to convert only first 10 pages of DJVU to PDF
         cmd = ["ddjvu", "-format=pdf", "-page=1-10", djvu_path, output_pdf_path]
@@ -181,9 +188,8 @@ def convert_djvu_to_pdf_range(djvu_path: str, page_range: str, num_pages: int) -
     Returns the path to the temporary PDF, or None if the conversion fails.
     """
     try:
-        base_name, _ = os.path.splitext(os.path.basename(djvu_path))
-        temp_dir = tempfile.gettempdir()
-        output_pdf_path = os.path.join(temp_dir, f"{base_name}_subset.pdf")
+        output_pdf_path = _temporary_pdf_path("citeindex_djvu_subset_")
+        os.remove(output_pdf_path)
 
         # Parse the page range string to get 1-based page numbers
         page_numbers = parse_page_range(page_range, num_pages)
@@ -283,46 +289,40 @@ def count_office_document_pages(doc_path: str) -> int:
     """Count pages in Office documents using LibreOffice."""
     try:
         # Convert to PDF first to get page count, then delete temp file
-        temp_dir = tempfile.gettempdir()
-        base_name, _ = os.path.splitext(os.path.basename(doc_path))
-        
-        cmd = [
-            "soffice",
-            "--headless",
-            "--convert-to",
-            "pdf",
-            doc_path,
-            "--outdir",
-            temp_dir,
-        ]
-        
-        process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=600, start_new_session=True,
-        )
-        
-        if process.returncode != 0:
-            logging.error(f"Failed to convert office document for page counting: {process.stderr}")
-            return 0
-        
-        # The actual output file will have the base name
-        actual_temp_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
-        
-        if not os.path.exists(actual_temp_pdf):
-            logging.error(f"Temp PDF for page counting not found at: {actual_temp_pdf}")
-            return 0
-        
-        # Count pages using PyMuPDF
-        import fitz
-        doc = fitz.open(actual_temp_pdf)
-        num_pages = doc.page_count
-        doc.close()
-        
-        # Clean up temp file
-        os.remove(actual_temp_pdf)
-        
-        logging.info(f"Office document has {num_pages} pages")
-        return num_pages
+        with tempfile.TemporaryDirectory(prefix="citeindex_office_count_") as temp_dir:
+            base_name, _ = os.path.splitext(os.path.basename(doc_path))
+
+            cmd = [
+                "soffice",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                doc_path,
+                "--outdir",
+                temp_dir,
+            ]
+
+            process = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=600, start_new_session=True,
+            )
+
+            if process.returncode != 0:
+                logging.error(f"Failed to convert office document for page counting: {process.stderr}")
+                return 0
+
+            actual_temp_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
+            if not os.path.exists(actual_temp_pdf):
+                logging.error(f"Temp PDF for page counting not found at: {actual_temp_pdf}")
+                return 0
+
+            import fitz
+            doc = fitz.open(actual_temp_pdf)
+            num_pages = doc.page_count
+            doc.close()
+
+            logging.info(f"Office document has {num_pages} pages")
+            return num_pages
         
     except Exception as e:
         logging.error(f"Error counting office document pages: {e}")
@@ -335,9 +335,8 @@ def convert_pymupdf_to_pdf_range(doc_path: str, page_range: str, num_pages: int)
     """
     try:
         import fitz
-        base_name, _ = os.path.splitext(os.path.basename(doc_path))
-        temp_dir = tempfile.gettempdir()
-        output_pdf_path = os.path.join(temp_dir, f"{base_name}_subset.pdf")
+        output_pdf_path = _temporary_pdf_path("citeindex_pymupdf_subset_")
+        os.remove(output_pdf_path)
 
         # Parse the page range string to get 0-based page indices
         page_indices = [p - 1 for p in parse_page_range(page_range, num_pages)]  # Convert to 0-based
@@ -378,64 +377,54 @@ def convert_office_to_pdf_range(doc_path: str, page_range: str, num_pages: int) 
     Returns the path to the temporary PDF, or None if the conversion fails.
     """
     try:
-        base_name, _ = os.path.splitext(os.path.basename(doc_path))
-        temp_dir = tempfile.gettempdir()
-        
-        # First convert entire document to PDF
-        
-        cmd = [
-            "soffice",
-            "--headless",
-            "--convert-to",
-            "pdf",
-            doc_path,
-            "--outdir",
-            temp_dir,
-        ]
-        
-        process = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=600, start_new_session=True,
-        )
-        
-        if process.returncode != 0:
-            logging.error(f"Failed to convert office document to PDF: {process.stderr}")
-            return None
-        
-        # LibreOffice creates file with base name
-        actual_full_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
-        
-        if not os.path.exists(actual_full_pdf):
-            logging.error(f"LibreOffice conversion output not found at: {actual_full_pdf}")
-            return None
-        
-        # Now extract the page range using PyMuPDF
-        output_pdf_path = os.path.join(temp_dir, f"{base_name}_subset.pdf")
-        page_indices = [p - 1 for p in parse_page_range(page_range, num_pages)]  # Convert to 0-based
-        
-        if not page_indices:
-            os.remove(actual_full_pdf)
-            logging.error(f"Invalid or empty page range for office document conversion: {page_range}")
-            return None
-        
-        logging.info(f"Extracting office document pages {[i+1 for i in page_indices]} from converted PDF")
-        
-        import fitz
-        source_doc = fitz.open(actual_full_pdf)
-        target_doc = fitz.open()  # Create empty PDF
-        
-        for page_idx in page_indices:
-            if 0 <= page_idx < source_doc.page_count:
-                target_doc.insert_pdf(source_doc, from_page=page_idx, to_page=page_idx)
-            else:
-                logging.warning(f"Page index {page_idx} out of range for document with {source_doc.page_count} pages")
-        
-        target_doc.save(output_pdf_path)
-        target_doc.close()
-        source_doc.close()
-        
-        # Clean up full PDF
-        os.remove(actual_full_pdf)
+        with tempfile.TemporaryDirectory(prefix="citeindex_office_range_") as temp_dir:
+            base_name, _ = os.path.splitext(os.path.basename(doc_path))
+            cmd = [
+                "soffice",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                doc_path,
+                "--outdir",
+                temp_dir,
+            ]
+
+            process = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=600, start_new_session=True,
+            )
+
+            if process.returncode != 0:
+                logging.error(f"Failed to convert office document to PDF: {process.stderr}")
+                return None
+
+            actual_full_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
+            if not os.path.exists(actual_full_pdf):
+                logging.error(f"LibreOffice conversion output not found at: {actual_full_pdf}")
+                return None
+
+            output_pdf_path = _temporary_pdf_path("citeindex_office_subset_")
+            os.remove(output_pdf_path)
+            page_indices = [p - 1 for p in parse_page_range(page_range, num_pages)]
+            if not page_indices:
+                logging.error(f"Invalid or empty page range for office document conversion: {page_range}")
+                return None
+
+            logging.info(f"Extracting office document pages {[i+1 for i in page_indices]} from converted PDF")
+
+            import fitz
+            source_doc = fitz.open(actual_full_pdf)
+            target_doc = fitz.open()
+
+            for page_idx in page_indices:
+                if 0 <= page_idx < source_doc.page_count:
+                    target_doc.insert_pdf(source_doc, from_page=page_idx, to_page=page_idx)
+                else:
+                    logging.warning(f"Page index {page_idx} out of range for document with {source_doc.page_count} pages")
+
+            target_doc.save(output_pdf_path)
+            target_doc.close()
+            source_doc.close()
 
         if not os.path.exists(output_pdf_path):
             logging.error("Office document page range extraction failed - output file not found")

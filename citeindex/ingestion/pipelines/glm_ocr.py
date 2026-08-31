@@ -9,12 +9,12 @@ import json
 import logging
 import os
 import shutil
-import urllib.error
-import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import fitz
 import numpy as np
+import requests
 
 from ..models import IngestionConfig, PipelineResult
 from .common import make_source_id
@@ -146,23 +146,25 @@ def _clean_ocr_response(text: str) -> str:
 
 
 def _call_ollama_generate(image_bytes: bytes, prompt: str, config: IngestionConfig) -> str:
+    host = urlparse(config.ollama_host)
+    if host.scheme not in {"http", "https"} or not host.hostname or host.username or host.password:
+        raise ValueError("ollama_host must be an HTTP(S) URL without userinfo")
+
     payload = {
         "model": config.ocr_model,
         "prompt": prompt,
         "images": [base64.b64encode(image_bytes).decode("ascii")],
         "stream": False,
     }
-    request = urllib.request.Request(
-        f"{config.ollama_host.rstrip('/')}/api/generate",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.URLError as exc:
+        response = requests.post(
+            f"{config.ollama_host.rstrip('/')}/api/generate",
+            json=payload,
+            timeout=180,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except requests.RequestException as exc:
         raise RuntimeError(f"Failed to reach Ollama at {config.ollama_host}: {exc}") from exc
 
     return _clean_ocr_response(str(body.get("response") or ""))

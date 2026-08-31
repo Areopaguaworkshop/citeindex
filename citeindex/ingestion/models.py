@@ -30,7 +30,7 @@ class IngestionLogEntry:
 @dataclass
 class IngestionConfig:
     """Configuration parameters passed through the ingestion pipeline."""
-    llm_model: str = "ollama/deepseek-v4-flash:cloud"
+    llm_model: str = "ollama/glm-5.3-flash:cloud"
     ocr_engine: str = "mineru"
     ocr_model: str = "glm-ocr:latest"
     ollama_host: str = "http://localhost:11434"
@@ -46,7 +46,7 @@ class IngestionConfig:
     use_layout_analysis: bool = True
     is_primary: bool = False
     use_pageindex: bool = True  # default changed to True
-    pageindex_model: str = "ollama/deepseek-v4-flash:cloud"
+    pageindex_model: str = "ollama/glm-5.3-flash:cloud"
     verify_citations: bool = False
     citation_verifier_model: Optional[str] = None
     crossref_enabled: bool = True

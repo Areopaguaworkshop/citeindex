@@ -72,6 +72,7 @@ def _probe_url_media(url: str) -> Dict[str, Any]:
 
 def _download_media(url: str) -> Optional[str]:
     """Download media from URL using yt-dlp. Returns path to downloaded file."""
+    dst: Optional[str] = None
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_template = os.path.join(tmpdir, "%(title)s.%(ext)s")
@@ -90,12 +91,15 @@ def _download_media(url: str) -> Optional[str]:
             # Find the output file
             for f in os.listdir(tmpdir):
                 src = os.path.join(tmpdir, f)
-                # Copy to persistent temp location
-                dst = os.path.join(tempfile.gettempdir(), f"citeindex_media_{f}")
+                suffix = os.path.splitext(f)[1]
+                fd, dst = tempfile.mkstemp(prefix="citeindex_media_", suffix=suffix)
+                os.close(fd)
                 import shutil
                 shutil.copy2(src, dst)
                 return dst
     except Exception:
+        if dst and os.path.exists(dst):
+            os.remove(dst)
         logger.warning("Media download failed", exc_info=True)
     return None
 
@@ -106,11 +110,10 @@ def _download_media(url: str) -> Optional[str]:
 
 def _extract_audio(media_path: str) -> Optional[str]:
     """Extract audio track from media file using ffmpeg. Returns path to WAV."""
+    output_path: Optional[str] = None
     try:
-        output_path = os.path.join(
-            tempfile.gettempdir(),
-            f"citeindex_audio_{os.path.basename(media_path)}.wav",
-        )
+        fd, output_path = tempfile.mkstemp(prefix="citeindex_audio_", suffix=".wav")
+        os.close(fd)
         cmd = [
             "ffmpeg", "-y",
             "-i", media_path,
@@ -127,6 +130,8 @@ def _extract_audio(media_path: str) -> Optional[str]:
         logger.warning("ffmpeg audio extraction failed: %s", proc.stderr[:200])
     except Exception:
         logger.warning("ffmpeg not available or failed", exc_info=True)
+    if output_path and os.path.exists(output_path):
+        os.remove(output_path)
     return None
 
 

@@ -83,8 +83,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--llm",
-        default="ollama/deepseek-v4-flash:cloud",
-        help="LLM model for citation extraction (default: ollama/deepseek-v4-flash:cloud)",
+        default="ollama/glm-5.3-flash:cloud",
+        help="LLM model for citation extraction (default: ollama/glm-5.3-flash:cloud)",
     )
     parser.add_argument(
         "--ocr-engine",
@@ -177,8 +177,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--pageindex-model",
-        default="ollama/deepseek-v4-flash:cloud",
-        help="LLM model for PageIndex tree building (default: ollama/deepseek-v4-flash:cloud)",
+        default="ollama/glm-5.3-flash:cloud",
+        help="LLM model for PageIndex tree building (default: ollama/glm-5.3-flash:cloud)",
     )
     parser.add_argument(
         "--verify-citations",

@@ -1,11 +1,15 @@
 from types import SimpleNamespace
+import os
 
 import pytest
 
+from citeindex import file_converter
 from citeindex.ingestion.citation_verification import _find_evidence, verify_citation_metadata
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.pipelines.common import attach_evidence_locators
+from citeindex.ingestion.pipelines.glm_ocr import _call_ollama_generate
 from citeindex.ingestion.pipelines.media import run as run_media
+from citeindex.ingestion.models import IngestionConfig
 from citeindex.ingestion.storage import store_corpus_artifacts
 from citeindex.ingestion.url_security import UnsafeUrlError, fetch_text, validate_public_url
 
@@ -33,6 +37,34 @@ def test_private_url_is_rejected_before_routing(tmp_path):
 def test_artifact_folder_name_cannot_escape_corpus(tmp_path):
     with pytest.raises(ValueError):
         store_corpus_artifacts(str(tmp_path), "../outside", {})
+
+
+def test_office_conversion_does_not_reuse_predictable_temp_file(tmp_path, monkeypatch):
+    source = tmp_path / "report.docx"
+    source.write_bytes(b"office")
+    unrelated = tmp_path / "report.pdf"
+    unrelated.write_bytes(b"keep")
+    monkeypatch.setattr(file_converter.tempfile, "tempdir", str(tmp_path))
+
+    def fake_run(command, **kwargs):
+        outdir = command[command.index("--outdir") + 1]
+        with open(os.path.join(outdir, "report.pdf"), "wb") as converted:
+            converted.write(b"converted")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(file_converter.subprocess, "run", fake_run)
+    output = file_converter.convert_to_pdf(str(source))
+
+    assert output and output != str(unrelated)
+    assert unrelated.read_bytes() == b"keep"
+    with open(output, "rb") as converted:
+        assert converted.read() == b"converted"
+    os.remove(output)
+
+
+def test_ollama_host_rejects_non_http_scheme():
+    with pytest.raises(ValueError, match=r"HTTP\(S\)"):
+        _call_ollama_generate(b"image", "prompt", IngestionConfig(ollama_host="file:///tmp"))
 
 
 def test_fetch_text_revalidates_redirects_and_bounds_body():

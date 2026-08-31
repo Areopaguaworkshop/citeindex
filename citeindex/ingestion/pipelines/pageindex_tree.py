@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # Default model for PageIndex operations (local Ollama)
-PAGEINDEX_MODEL = "ollama/deepseek-v4-flash:cloud"
+PAGEINDEX_MODEL = "ollama/glm-5.3-flash:cloud"
 
 
 def run_pageindex_tree(

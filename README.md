@@ -2,8 +2,8 @@
 
 CiteIndex, ingest sources with proper citation. PDF, URL, media, Office, DJVU.
 
-Deterministic citation extraction, Merkle-verified integrity, CJK-first OCR.
-Every claim is traced, verified, and cited — no hallucinations.
+Evidence-backed citation metadata, Merkle-verified integrity, CJK-first OCR.
+Optional verification traces accepted metadata corrections to source evidence.
 
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/citeindex?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=RED&left_text=downloads)](https://pepy.tech/projects/citeindex)
 
@@ -43,7 +43,8 @@ citeindex paper.pdf --llm ollama/qwen3 --type thesis --is-primary
 citeindex paper.pdf --text-direction vertical --vertical-lang ch
 citeindex scanned.pdf --ocr-engine mineru --lang auto --page-range "1-10"
 citeindex paper.pdf --no-layout  # disable column/footnote detection
-citeindex -v paper.pdf           # verbose/debug logging
+citeindex paper.pdf --force-ocr  # override PDF classification
+citeindex -q paper.pdf           # disable default debug logging
 
 # Evidence-backed citation verification (Crossref exact DOI lookup)
 citeindex paper.pdf --verify-citations --registry-contact-email you@example.org
@@ -80,6 +81,14 @@ config = IngestionConfig(
 result = ingest("paper.pdf", corpus_root="my_corpus", config=config)
 ```
 
+## Code Structure
+
+- `citeindex/cli.py` maps CLI options into `IngestionConfig`.
+- `citeindex/ingestion/master.py` detects input types, routes pipelines, verifies metadata, and persists results.
+- `citeindex/ingestion/pipelines/` contains the digital PDF, scanned PDF, URL, media, GROBID, PageIndex, and metadata-extraction implementations.
+- `citeindex/ingestion/storage.py` and `markdown_export.py` write corpus artifacts and companion library Markdown.
+- `.agents/`, `.claude/`, `.codex/`, `.opencode/`, and `.pi/` expose the optional citation-evidence audit to supported agent harnesses.
+
 ## Ingestion Pipelines
 
 CiteIndex automatically detects the input type and routes to the correct pipeline:
@@ -87,16 +96,16 @@ CiteIndex automatically detects the input type and routes to the correct pipelin
 ### Digital PDF
 
 ```
-PDF → PyMuPDF (text + images) → GROBID / DSPy citation enrichment
-    → page-paragraph document structure
-    → PageIndex tree (default, LLM-driven)
-    → section_tree + heading injection for document.json / library markdown
-    → Merkle tree → store to corpus/
+PDF → PyMuPDF4LLM layout/text (PyMuPDF fallback) + image extraction
+    → page-paragraph document structure → GROBID references
+    → PageIndex tree (default) → GROBID metadata / DSPy fallback
+    → Merkle tree → section_tree + heading injection
+    → store document.json and library Markdown
 ```
 
-- **GROBID** extracts metadata and references deterministically
-- **PyMuPDF** extracts page text directly from digital PDFs and pulls embedded images
-- **DSPy** reconciles GROBID output with pattern extraction as fallback
+- **PyMuPDF4LLM** performs layout-aware extraction when enabled; raw **PyMuPDF** is the fallback
+- **GROBID** extracts metadata and references when its service is available
+- **DSPy** extracts citation metadata only when GROBID metadata is unavailable
 - Builds page-based document structure and augments it with PageIndex section headings
 - **PageIndex** builds LLM-driven section hierarchy, persists it to corpus, and feeds library markdown headings
 
@@ -106,14 +115,14 @@ PDF → PyMuPDF (text + images) → GROBID / DSPy citation enrichment
 PDF → scanned backend selector
     → MinerU (default) OR GLM-OCR + PaddleOCR LayoutDetection
     → normalized content_list / markdown / extracted figures
-    → DSPy-backed metadata extraction
-    → document structure + PageIndex tree (default)
-    → Merkle tree → store only CiteIndex-native artifacts to corpus/
+    → pattern extraction with DSPy-priority metadata
+    → document structure → Merkle tree → PageIndex tree (default)
+    → store only CiteIndex-native artifacts to corpus/
 ```
 
 - **MinerU** is the default scanned backend
 - **GLM-OCR** is an optional backend that runs through local **Ollama** using the native `/api/generate` endpoint
-- **PaddleOCR LayoutDetection** (`PP-DocLayoutV3` / `PP-DocLayout_plus-L`) supplies external region proposals for GLM-OCR from the start
+- **PaddleOCR LayoutDetection** (`PP-DocLayout_plus-L`) supplies external region proposals for GLM-OCR from the start
 - Scanned PDFs do **not** use GROBID; metadata is extracted from structured backend output via DSPy-backed extraction
 - DSPy is allowed to overwrite pattern-extracted metadata fields for scanned documents
 - **PageIndex** runs by default for scanned PDFs, just like digital PDFs
@@ -159,7 +168,7 @@ URL → Playwright/requests (fetch) → trafilatura/readability (content)
 ### Media
 
 ```
-URL/File → yt-dlp (download) → ffmpeg (audio) → WhisperX (transcription)
+Recognized media URL/local file → yt-dlp or local copy → ffmpeg (audio) → WhisperX (transcription)
         → pyannote (diarization, optional) → CSL JSON
         → chunking → hashes → Merkle tree → store to corpus/
 ```
@@ -168,18 +177,22 @@ URL/File → yt-dlp (download) → ffmpeg (audio) → WhisperX (transcription)
 - **WhisperX** transcribes with word-level timestamps
 - **pyannote** speaker diarization (optional)
 - Supports audio (`.mp3`, `.wav`, `.m4a`) and video (`.mp4`, `.mkv`, `.webm`)
+- Remote media routing recognizes YouTube, Vimeo, podcast, SoundCloud, and `youtu.be` hosts; other URLs use the article pipeline
 
 ### Office & DJVU
 
-Office documents (`.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp`) are converted to PDF via **LibreOffice**, and DJVU (`.djvu`) via **ddjvu**, then routed to the digital or scanned PDF pipeline.
+Office documents (`.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp`) are converted to PDF via **LibreOffice**, and DJVU (`.djvu`) via **ddjvu**, then routed to the digital or scanned PDF pipeline. Default DJVU conversion is limited to the first 10 pages.
 
 ### Citation Enrichment Cascade
 
-For PDF inputs, CiteIndex enriches metadata through a priority cascade:
+For digital PDF inputs, CiteIndex enriches metadata through a priority cascade:
 
 1. **GROBID** — deterministic metadata + references (primary)
 2. **LLM extraction** — DSPy-based citation parsing (fallback)
 3. **PDF metadata** — basic file metadata only (last resort)
+
+Scanned PDFs do not use GROBID. Their structured OCR output is parsed with
+document-specific patterns, then DSPy values take priority when available.
 
 With `--verify-citations`, the finalized draft follows this additional
 evidence-first stage before CSL IDs, hashes, filenames, and Markdown are
@@ -195,13 +208,11 @@ candidate CSL → DOI extraction → exact Crossref lookup
 Registry-only values are never applied automatically. They must also appear in
 the original source evidence; otherwise CiteIndex records `needs_review`.
 
-For web pages with ambiguous metadata, a local Perplexica search API can fill missing citation fields (title, author, publisher).
-
 ## Configuration Reference
 
 | Option | CLI Flag | Default | Description |
 |--------|----------|---------|-------------|
-| `llm_model` | `--llm` | `ollama/deepseek-v4-flash:cloud` | LLM model (`ollama/name` or `gemini/name`) |
+| `llm_model` | `--llm` | `ollama/glm-5.3-flash:cloud` | LLM model (`ollama/name` or `gemini/name`) |
 | `ocr_engine` | `--ocr-engine` | `mineru` | Scanned PDF OCR backend: `mineru` or `glm-ocr` |
 | `ocr_model` | `--ocr-model` | `glm-ocr:latest` | Ollama model name used by model-backed OCR engines such as GLM-OCR |
 | `ollama_host` | `--ollama-host` | `http://localhost:11434` | Ollama base URL for GLM-OCR requests |
@@ -216,7 +227,8 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 | `use_layout_analysis` | `--no-layout` | `True` | Disable column/footnote detection |
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
 | `use_pageindex` | `--no-pageindex` | `True` | PageIndex hierarchy is enabled by default; pass `--no-pageindex` to disable it |
-| `pageindex_model` | `--pageindex-model` | `ollama/deepseek-v4-flash:cloud` | LLM for PageIndex tree building |
+| `pageindex_model` | `--pageindex-model` | `ollama/glm-5.3-flash:cloud` | LLM for PageIndex tree building |
+| `force_pdf_kind` | `--force-ocr`, `--force-digital` | auto | Override automatic PDF classification |
 | `verify_citations` | `--verify-citations` | `False` | Enable evidence-backed metadata verification |
 | `citation_verifier_model` | `--citation-verifier-model` | none | Provider-qualified model used only for unresolved conflicts |
 | `crossref_enabled` | `--no-crossref` | `True` | Disable exact DOI Crossref lookup |
@@ -227,17 +239,18 @@ For web pages with ambiguous metadata, a local Perplexica search API can fill mi
 | `schema_version` | `--schema-version` | `1.0.0` | Output schema version tag |
 | (CLI only) | `--crawl-depth` | `2` | Max BFS crawl depth for `--all-url-article` |
 | (CLI only) | `--crawl-max-pages` | `100` | Max pages for `--all-url-article` |
-| (CLI only) | `--verbose`, `-v` | off | Enable verbose/debug logging |
+| (CLI only) | `--verbose`, `-v` | on | Enable verbose/debug logging |
+| (CLI only) | `--quiet`, `-q` | off | Disable verbose/debug logging |
 
 ## Output
 
-Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) and a companion library markdown file:
+Each ingestion produces a content-addressed corpus folder (for example, `corpus/Author_2024_Title_a1b2c3d4e5f6/`) and a companion library Markdown file.
 
-### Corpus artifacts (`corpus/Author_2024_Title/`)
+### Corpus artifacts (`corpus/Author_2024_Title_<12-char-hash>/`)
 
 | File | Description |
 |------|-------------|
-| `csl.json` | Citation metadata (CSL-JSON with `ci_*` extensions: `content_hash`, `merkle_root`, `source_type`, `ingestion_timestamp`) |
+| `csl.json` | Citation metadata (CSL-JSON with CiteIndex fields: `content_hash`, `merkle_root`, `source_type`, `ingestion_timestamp`) |
 | `document.json` | Structured document tree — pages, paragraphs, and `section_tree` for URL articles and PageIndex-augmented PDFs |
 | `pageindex_tree.json` | Persisted CiteIndex/PageIndex hierarchy with page ranges and summaries when PageIndex runs |
 | `merkle.json` | SHA-256 Merkle tree for integrity verification |
@@ -245,8 +258,10 @@ Each ingestion produces a corpus folder (e.g., `corpus/Author_2024_Title/`) and 
 | `media_metadata.json` | Source media metadata (media only) |
 | `ingestion_output.json` | Full ingestion result with all pipeline outputs |
 | `citation_verification.json` | Evidence, Crossref provenance/digest, accepted corrections, and `needs_review` items (when verification is enabled) |
+| `source.html` | Fetched HTML snapshot used as URL evidence (URL articles only) |
+| `images/` | Extracted figures and illustrations when available |
 
-### Library markdown (`library/Author_2024_Title.md`)
+### Library markdown (`library/Author_2024_Title_<12-char-hash>.md`)
 
 Human-readable markdown with YAML front-matter, inline citation, page/section/timestamp headers with CSL-level detail, full extracted text, and footnotes. When PageIndex is available, digital PDFs emit section headings into the markdown instead of only flat page labels. Written to `library/` (sibling of `corpus/`).
 
@@ -334,7 +349,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.12.0). MIT. https://github.com/ajia/citeindex
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.13.0). MIT. https://github.com/ajia/citeindex
 
 **BibTeX:**
 
@@ -342,7 +357,7 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.12.1},
+  version = {0.13.0},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},
