@@ -1,9 +1,4 @@
-"""Pattern-based and DSPy metadata extraction from MinerU content_list.json.
-
-Primary path: deterministic regex extraction from content_list items.
-Fallback: DSPy/LLM extraction when pattern matching misses title or author.
-Reconciliation: merge GROBID metadata with pattern+DSPy results.
-"""
+"""Pattern-based and DSPy metadata extraction from document source text."""
 
 import logging
 import re
@@ -16,6 +11,26 @@ from ..models import IngestionConfig
 from .common import PAGE_NUMBER_PATTERNS as _PAGE_NUM_PATTERNS
 
 logger = logging.getLogger(__name__)
+
+
+def select_source_evidence(source_text: str, budget: int = 8000) -> str:
+    """Select front matter plus later identity-bearing regions within a budget."""
+    if len(source_text) <= budget:
+        return source_text
+    chunks = [source_text[: min(4000, budget)]]
+    remaining = budget - len(chunks[0])
+    markers = ("isbn", "copyright", "published", "university press", "doi", "cite this")
+    lowered = source_text.casefold()
+    for marker in markers:
+        start = lowered.find(marker)
+        if start < 0:
+            continue
+        excerpt = source_text[max(0, start - 500): start + 1500]
+        if excerpt not in chunks and remaining > 0:
+            excerpt = excerpt[:remaining]
+            chunks.append(excerpt)
+            remaining -= len(excerpt)
+    return "\n\n[additional source evidence]\n\n".join(chunks)
 
 
 # ---------------------------------------------------------------------------
@@ -56,15 +71,10 @@ def _is_cjk_dominant(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 class ExtractDocumentMetadata(dspy.Signature):
-    """Extract document metadata from MinerU-parsed academic text.
+    """Extract a document's own metadata from source text, never its references."""
 
-    The text comes from MinerU's markdown output which preserves layout
-    structure (headings, tables, figures, footnotes). Extract the document's
-    own metadata — not the cited references.
-    """
-
-    mineru_text = dspy.InputField(
-        desc="First ~3000 chars of MinerU markdown output (cover, title page, copyright page)."
+    source_text = dspy.InputField(
+        desc="Source text from title, imprint/copyright, or first-article-page blocks. It may include layout labels. Do not use bibliography entries as host metadata."
     )
     doc_type = dspy.InputField(
         desc="Document type: 'book', 'journal', 'thesis', or 'bookchapter'."
@@ -74,13 +84,7 @@ class ExtractDocumentMetadata(dspy.Signature):
         desc="Document title. For journals, the article title (not the journal name)."
     )
     subtitle = dspy.OutputField(desc="Subtitle if present. Return empty if not found.")
-    author = dspy.OutputField(
-        desc=(
-            "Author(s). CRITICAL for Chinese names: do NOT split multi-character names. "
-            '"程俊英" is ONE author. Separate multiple authors with semicolons. '
-            "Include dynasty/role indicators (e.g., '【明】王陽明撰')."
-        )
-    )
+    author = dspy.OutputField(desc="Author(s), semicolon-separated in printed order. Preserve CJK names as one name; never invent an author.")
     editor = dspy.OutputField(desc="Editor(s), semicolon-separated. Return empty if not found.")
     translator = dspy.OutputField(desc="Translator(s), semicolon-separated. Return empty if not found.")
     series = dspy.OutputField(desc="Series or collection title. Return empty if not found.")
@@ -89,11 +93,15 @@ class ExtractDocumentMetadata(dspy.Signature):
         desc="Journal name or book title containing this chapter. Empty if standalone book."
     )
     publisher = dspy.OutputField(desc="Publisher name. Return empty if not found.")
+    publisher_place = dspy.OutputField(
+        desc="Publisher place. Return empty if not explicitly printed."
+    )
     publication_year = dspy.OutputField(desc="Publication year (YYYY). Return empty if not found.")
     volume = dspy.OutputField(desc="Volume number. Return empty if not found.")
     issue = dspy.OutputField(desc="Issue number. Return empty if not found.")
     page_numbers = dspy.OutputField(desc="Page range (e.g., '20-41'). Return empty if not found.")
     doi = dspy.OutputField(desc="DOI. Return empty if not found.")
+    isbn = dspy.OutputField(desc="ISBN. Return empty if not found.")
     abstract = dspy.OutputField(desc="Abstract text. Return empty if not found.")
 
 
@@ -601,11 +609,11 @@ def extract_metadata_with_dspy_fallback(
 
 
 def _run_dspy_extraction(
-    mineru_markdown: str,
+    source_text: str,
     doc_type: str,
     config: Optional[IngestionConfig] = None,
 ) -> Dict[str, Any]:
-    """Run DSPy LLM extraction on MinerU markdown."""
+    """Run DSPy extraction on evidence-bearing source text."""
     cfg = config or IngestionConfig()
 
     try:
@@ -614,23 +622,25 @@ def _run_dspy_extraction(
         logger.warning("LLM not available for DSPy extraction")
         return {}
 
-    truncated = mineru_markdown[:3000] if len(mineru_markdown) > 3000 else mineru_markdown
+    truncated = select_source_evidence(source_text)
     if not truncated.strip():
         return {}
 
     try:
         with dspy.context(lm=lm):
             predictor = dspy.Predict(ExtractDocumentMetadata)
-            result = predictor(mineru_text=truncated, doc_type=doc_type)
+            result = predictor(source_text=truncated, doc_type=doc_type)
 
         csl: Dict[str, Any] = {}
         _set_if_present(csl, "title", result.title)
         _set_if_present(csl, "subtitle", result.subtitle)
         _set_if_present(csl, "publisher", result.publisher)
+        _set_if_present(csl, "publisher-place", result.publisher_place)
         _set_if_present(csl, "volume", result.volume)
         _set_if_present(csl, "issue", result.issue)
         _set_if_present(csl, "page", result.page_numbers)
         _set_if_present(csl, "DOI", result.doi)
+        _set_if_present(csl, "ISBN", result.isbn)
         _set_if_present(csl, "abstract", result.abstract)
         _set_if_present(csl, "collection-title", result.series)
         _set_if_present(csl, "edition", result.edition)

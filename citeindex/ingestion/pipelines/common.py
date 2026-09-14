@@ -378,15 +378,7 @@ def enrich_csl_with_citation_cascade(
     num_pages: int,
     config: Optional[IngestionConfig] = None,
 ) -> Dict[str, Any]:
-    """Enrich a basic CSL JSON dict using the citation extraction cascade.
-
-    Cascade order (per migration plan Phase 1.3):
-      1. GROBID (deterministic, primary)
-      2. LLM extraction (probabilistic, fallback)
-      3. PDF metadata only (last resort — base_csl as-is)
-
-    Merges extracted fields into base_csl, preferring extracted values.
-    """
+    """Enrich a basic CSL dict with the explicitly selected citation engine."""
     cfg = config or IngestionConfig()
 
     # Determine document type
@@ -399,25 +391,22 @@ def enrich_csl_with_citation_cascade(
 
     logger.info("Document type determined: %s (pages=%d)", doc_type, num_pages)
 
-    # --- Cascade ---
     extracted_csl: Dict[str, Any] = {}
     extraction_method = "metadata-only"
 
-    # 1. Try GROBID
-    if pdf_path:
+    if cfg.citation_engine == "grobid" and pdf_path:
         extracted_csl = _extract_citation_grobid(pdf_path)
         if extracted_csl:
             extraction_method = "grobid"
+    elif cfg.citation_engine == "dspy":
+        from .dspy_extract import _run_dspy_extraction
 
-    # 2. Fallback to LLM
-    if not extracted_csl:
-        extracted_csl = extract_citation_with_llm(ordered_text, doc_type, cfg)
+        extracted_csl = _run_dspy_extraction(ordered_text, doc_type, cfg)
         if extracted_csl:
-            extraction_method = "llm"
+            extraction_method = "dspy"
 
-    # 3. Last resort: base_csl as-is
     if not extracted_csl:
-        logger.info("Citation cascade: using metadata-only (no enrichment)")
+        logger.info("Citation extraction produced no metadata (engine=%s)", cfg.citation_engine)
         return base_csl
 
     logger.info("Citation cascade: using %s extraction", extraction_method)
@@ -486,7 +475,6 @@ def validate_authors(
     Heuristics to detect garbage author extraction:
       - Author names that are overly long (> 80 chars)
       - Author names containing common non-name words (e.g. "is a", "the", "that")
-      - More than 5 authors (likely extraction artifacts)
       - Single-word "family" names that are common English words
 
     Returns cleaned author list, or None if all authors are suspicious.
@@ -544,11 +532,6 @@ def validate_authors(
 
     if not cleaned:
         return None
-
-    # If more than 5 authors, likely extraction artifacts
-    if len(cleaned) > 5:
-        logger.warning("Too many authors (%d), keeping first 3", len(cleaned))
-        cleaned = cleaned[:3]
 
     return cleaned
 

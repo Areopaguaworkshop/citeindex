@@ -143,7 +143,10 @@ def test_searchable_book_digital_pipeline_preserves_text_without_ocr(tmp_path, m
 
     monkeypatch.setattr(document_layout, "select_ocr_function", unexpected_ocr)
     monkeypatch.setattr(scanned_pdf, "run", unexpected_ocr)
-    monkeypatch.setattr(digital_pdf, "_run_grobid", lambda path: ({}, {}))
+    def unexpected_grobid(*args, **kwargs):
+        pytest.fail("DSPy is the default digital-PDF citation engine")
+
+    monkeypatch.setattr(digital_pdf, "_run_grobid", unexpected_grobid)
     monkeypatch.setattr(digital_pdf, "extract_pdf_images", lambda *args: [])
     monkeypatch.setattr(common, "enrich_csl_with_citation_cascade", lambda **kwargs: kwargs["base_csl"])
     orchestrator = CiteIndexIngestionOrchestrator(str(tmp_path / "corpus"))

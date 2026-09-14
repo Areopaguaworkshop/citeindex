@@ -27,10 +27,7 @@ def _text_or_none(element: Optional[etree._Element]) -> Optional[str]:
     """Return stripped text content of an element, or None."""
     if element is None:
         return None
-    text = element.text
-    if text is None:
-        # Collect all inner text (handles mixed content)
-        text = "".join(element.itertext())
+    text = "".join(element.itertext())
     text = text.strip()
     return text if text else None
 
@@ -40,7 +37,9 @@ def _parse_author(author_el: etree._Element) -> Optional[Dict[str, str]]:
     # Personal name
     persname = author_el.find("tei:persName", _NS)
     if persname is not None:
-        given = _text_or_none(persname.find("tei:forename", _NS))
+        given = " ".join(
+            value for value in (_text_or_none(node) for node in persname.findall("tei:forename", _NS)) if value
+        ) or None
         family = _text_or_none(persname.find("tei:surname", _NS))
         if family:
             name: Dict[str, str] = {"family": family}
@@ -73,7 +72,7 @@ def _parse_date_parts(date_el: Optional[etree._Element]) -> Optional[List[List[i
 
 def _parse_bibl_struct(bibl: etree._Element) -> Dict[str, Any]:
     """Convert a single <biblStruct> element to a CSL JSON dict."""
-    csl: Dict[str, Any] = {"type": "article-journal"}
+    csl: Dict[str, Any] = {"type": "article-journal", "parse_status": "partial"}
 
     # --- analytic level (article title, authors) ---
     analytic = bibl.find("tei:analytic", _NS)
@@ -109,6 +108,12 @@ def _parse_bibl_struct(bibl: etree._Element) -> Dict[str, Any]:
         # Date
         imprint = monogr.find("tei:imprint", _NS)
         if imprint is not None:
+            publisher = _text_or_none(imprint.find("tei:publisher", _NS))
+            if publisher:
+                csl["publisher"] = publisher
+            place = _text_or_none(imprint.find("tei:pubPlace", _NS))
+            if place:
+                csl["publisher-place"] = place
             date_parts = _parse_date_parts(imprint.find("tei:date", _NS))
             if date_parts:
                 csl["issued"] = {"date-parts": date_parts}
@@ -145,6 +150,9 @@ def _parse_bibl_struct(bibl: etree._Element) -> Dict[str, Any]:
         elif id_type == "ISBN":
             csl["ISBN"] = value
 
+    if analytic is None and monogr is not None:
+        csl["type"] = "book"
+    csl["parse_status"] = "parsed" if csl.get("title") else "untitled"
     return csl
 
 
@@ -170,8 +178,9 @@ def _parse_tei_references(tei_xml: str) -> List[Dict[str, Any]]:
     references: List[Dict[str, Any]] = []
     for bibl in bibl_structs:
         ref = _parse_bibl_struct(bibl)
-        if ref.get("title"):
-            references.append(ref)
+        ref["tei_id"] = bibl.get("{http://www.w3.org/XML/1998/namespace}id")
+        ref["raw"] = _text_or_none(bibl) or ""
+        references.append(ref)
 
     return references
 

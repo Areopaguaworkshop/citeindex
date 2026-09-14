@@ -249,7 +249,9 @@ def verify_citation_metadata(
     """Verify registry metadata; one unresolved conflict prevents all CSL changes."""
     original, proposed = dict(csl_json), dict(csl_json)
     evidence = _evidence(document_json, resource_type, extra)
-    doi = normalize_doi(original.get("DOI")) or next((found for item in evidence if (found := extract_doi(item["quote"]))), None)
+    # A DOI in the bibliography belongs to a cited work unless host identity
+    # has already established it. Do not borrow the first DOI in body text.
+    doi = normalize_doi(original.get("DOI"))
     registry = lookup_crossref_doi(doi, crossref_enabled=config.crossref_enabled, offline_verification=config.offline_verification, contact_email=config.registry_contact_email)
     corrections: list[Dict[str, Any]] = []
     needs_review: list[Dict[str, Any]] = []
@@ -291,6 +293,19 @@ def verify_citation_metadata(
                 corrections.append({"field": field, "value": decision["selected_value"], "quote": decision["quote"], "locator": decision["locator"], "confidence": decision["confidence"], "rationale": decision["rationale"], "provenance": {"provider": "model", "model": config.citation_verifier_model}})
         needs_review = unresolved
 
+    field_states = {}
+    for field in _RECONCILABLE_FIELDS:
+        if original.get(field) is None:
+            field_states[field] = "missing"
+        elif _find_evidence(original[field], evidence):
+            field_states[field] = "source-supported"
+        else:
+            field_states[field] = "unverified"
+    for correction in corrections:
+        field_states[correction["field"]] = "source-supported"
+    for conflict in needs_review:
+        field_states[conflict["field"]] = "conflicting"
+
     registry_status = registry.get("status")
     if registry_status == "found":
         status = "verified" if not needs_review else "needs_review"
@@ -313,5 +328,6 @@ def verify_citation_metadata(
         "needs-review": needs_review,
         "needs_review": needs_review,
         "model_review": model_review,
+        "field_states": field_states,
     }
     return (proposed if not needs_review else original), report

@@ -83,8 +83,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--llm",
-        default="ollama/glm-5.3-flash:cloud",
-        help="LLM model for citation extraction (default: ollama/glm-5.3-flash:cloud)",
+        default="ollama/deepseek-v4.1-flash:cloud",
+        help="LLM model for DSPy extraction (default: ollama/deepseek-v4.1-flash:cloud)",
+    )
+    parser.add_argument(
+        "--citation-engine",
+        choices=["dspy", "grobid"],
+        default="dspy",
+        help="Digital-PDF citation engine; grobid requires a running GROBID service (default: dspy)",
     )
     parser.add_argument(
         "--ocr-engine",
@@ -177,8 +183,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--pageindex-model",
-        default="ollama/glm-5.3-flash:cloud",
-        help="LLM model for PageIndex tree building (default: ollama/glm-5.3-flash:cloud)",
+        default="ollama/deepseek-v4.1-flash:cloud",
+        help="LLM model for PageIndex tree building (default: ollama/deepseek-v4.1-flash:cloud)",
     )
     parser.add_argument(
         "--verify-citations",
@@ -258,6 +264,7 @@ def main() -> None:
 
     config = IngestionConfig(
         llm_model=args.llm,
+        citation_engine=args.citation_engine,
         ocr_engine=args.ocr_engine,
         ocr_model=args.ocr_model,
         ollama_host=args.ollama_host,

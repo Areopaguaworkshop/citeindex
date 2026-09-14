@@ -126,3 +126,14 @@ def test_print_date_source_wins_over_conflicting_online_registry_date(monkeypatc
     assert result["issued"] == {"date-parts": [[2019]]}
     assert report["status"] == "needs_review"
     assert report["needs_review"][0]["source_value"] == {"date-parts": [[2019]]}
+
+
+def test_bibliography_doi_is_not_used_as_host_doi(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda doi, **_: captured.setdefault("doi", doi) or {"status": "skipped", "candidate": {}, "provenance": {}})
+    document = {"structure": {"pages": [{"paragraphs": [{"node_id": "n1", "text": "References: Example. doi:10.1000/cited-work"}]}]}}
+
+    _, report = citation_verification.verify_citation_metadata({"title": "Host"}, document, "digital_pdf", {}, _config())
+
+    assert captured["doi"] is None
+    assert report["field_states"]["title"] == "unverified"

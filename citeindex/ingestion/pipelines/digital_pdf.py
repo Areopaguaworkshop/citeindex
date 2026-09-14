@@ -564,10 +564,7 @@ def run(
         except Exception:
             logger.warning("Layout analysis failed", exc_info=True)
 
-    # ── Step 4: GROBID ──────────────────────────────────────────────
-    grobid_metadata, grobid_references = _run_grobid(pdf_path)
-
-    # ── Step 5: PageIndex tree (default, uses PDF directly) ─────────
+    # ── Step 4: PageIndex tree (default, uses PDF directly) ─────────
     pageindex_tree_json = None
     if cfg.use_pageindex:
         try:
@@ -581,17 +578,25 @@ def run(
         except Exception:
             logger.warning("PageIndex failed, using flat structure", exc_info=True)
 
-    # ── Step 6: Citation extraction ─────────────────────────────────
+    # ── Step 5: Citation extraction ─────────────────────────────────
     from .common import enrich_csl_with_citation_cascade
 
     base_csl = make_basic_csl(
         source_id=source_id, title=title, csl_type="book",
         extra={"genre": source_type},
     )
-    enriched_csl = enrich_csl_with_citation_cascade(
-        base_csl=base_csl, ordered_text=ordered_text,
-        pdf_path=pdf_path, num_pages=num_pages, config=cfg,
-    )
+    grobid_references: Dict[str, Any] = {}
+    if cfg.citation_engine == "grobid":
+        grobid_metadata, grobid_references = _run_grobid(pdf_path)
+        enriched_csl = dict(base_csl)
+        enriched_csl.update(grobid_metadata)
+        if grobid_metadata:
+            enriched_csl["_extraction_method"] = "grobid"
+    else:
+        enriched_csl = enrich_csl_with_citation_cascade(
+            base_csl=base_csl, ordered_text=ordered_text,
+            pdf_path=pdf_path, num_pages=num_pages, config=cfg,
+        )
 
     csl = dict(base_csl)
     for key, value in enriched_csl.items():
@@ -603,7 +608,7 @@ def run(
     if grobid_references.get("references"):
         csl["_cited_references"] = grobid_references["references"]
 
-    # ── Step 7: Nodes + Merkle ─────────────────────────────────────
+    # ── Step 6: Nodes + Merkle ─────────────────────────────────────
     nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
     merkle_tree = build_merkle_for_nodes(nodes)
     if document_structure.get("pages"):
@@ -623,7 +628,7 @@ def run(
         "nodes": nodes,
     }
 
-    # ── Step 8: Extra (PageIndex tree + images) ─────────────────────
+    # ── Step 7: Extra (PageIndex tree + images) ─────────────────────
     extra: Dict[str, Any] = {}
     if pageindex_tree_json is not None:
         from .pageindex_tree import pageindex_to_citeindex_tree
