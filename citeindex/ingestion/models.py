@@ -56,6 +56,11 @@ class IngestionConfig:
     force_pdf_kind: Optional[str] = None  # 'force_ocr', 'force_digital', or None for auto-detect
     strip_existing_ocr: bool = False  # optionally reject existing OCR layers during classification
     repair_proposal: Optional[str] = None  # JSON proposal file; applied through normal finalization
+    media_asr_backend: str = "whisperx"  # whisperx or opt-in wenbi
+    wenbi_asr_provider: str = "funasr"  # explicit; never Wenbi auto/implicit cloud
+    wenbi_whisper_model: str = "large-v3-turbo"
+    wenbi_speaker_labels: bool = False
+    wenbi_python: Optional[str] = None  # optional isolated Wenbi environment interpreter
 
 
 @dataclass

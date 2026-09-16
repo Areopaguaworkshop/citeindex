@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import math
+import calendar
 from typing import Any, Dict, Iterable
 
 from .metadata_registry import extract_doi, lookup_crossref_doi, normalize_doi
@@ -16,36 +18,7 @@ _RECONCILABLE_FIELDS = (
 )
 _LOCATOR_KEYS = ("node_id", "char_start", "char_end", "bbox")
 
-# Host-source metadata only; references cited by the source are not CSL fields here.
-HOST_FIELDS = ("type", "title", "subtitle", "author", "editor", "translator", "issued",
-               "publisher", "publisher-place", "container-title", "collection-title",
-               "edition", "volume", "issue", "page", "DOI", "ISBN", "ISSN", "URL",
-               "language", "abstract")
-
-
-def valid_host_value(field: str, value: Any) -> bool:
-    if field not in HOST_FIELDS:
-        return False
-    if field == "type":
-        return isinstance(value, str) and value in {
-            "article", "article-journal", "article-magazine", "article-newspaper", "book", "chapter",
-            "thesis", "paper-conference", "report", "manuscript", "document", "webpage", "post-weblog",
-            "speech", "interview", "broadcast", "motion_picture", "song", "dataset", "entry-encyclopedia",
-        }
-    if field in {"author", "editor", "translator"}:
-        return isinstance(value, list) and bool(value) and all(
-            isinstance(name, dict) and bool(name.get("literal") or name.get("family"))
-            and set(name) <= {"literal", "family", "given", "suffix", "dropping-particle", "non-dropping-particle"}
-            and all(isinstance(part, str) and part.strip() for part in name.values())
-            for name in value)
-    if field == "issued":
-        parts = value.get("date-parts") if isinstance(value, dict) else None
-        return (isinstance(parts, list) and len(parts) == 1 and isinstance(parts[0], list)
-                and 1 <= len(parts[0]) <= 3 and all(type(n) is int for n in parts[0])
-                and 1 <= parts[0][0] <= 9999
-                and (len(parts[0]) < 2 or 1 <= parts[0][1] <= 12)
-                and (len(parts[0]) < 3 or 1 <= parts[0][2] <= 31))
-    return isinstance(value, str) and bool(value.strip())
+from .csl import HOST_FIELDS, NAME_FIELDS, valid_host_value
 
 
 def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[dict]) -> dict | None:
@@ -56,13 +29,41 @@ def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[
     block = next((b for b in blocks if b.get("id") == evidence.get("block_id")), None)
     if not isinstance(quote, str) or not quote.strip() or not block or quote not in block["text"]:
         return None
+    if field in NAME_FIELDS and block.get("metadata_key") in {"uploader", "channel", "platform"}:
+        return None
+    if field == "publisher" and block.get("metadata_key") == "platform":
+        return None
+    if field == "accessed" and block.get("metadata_key") != "accessed":
+        return None
+    metadata_key = str(block.get("metadata_key", "")).casefold()
+    if field == "issued" and ("modified" in metadata_key or metadata_key in {"event-date", "event_date"}):
+        return None
     # CSL type is a classification, not a literal phrase printed in every source.
     if field != "type" and not _find_evidence(value, [{"quote": quote}]):
         return None
     start = block["text"].index(quote)
-    locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index") if k in block}
+    locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index", "segment_id", "start_seconds", "end_seconds", "metadata_key", "snapshot_artifact", "source_digest") if k in block}
     locator.update(block_id=block["id"], char_start=start, char_end=start + len(quote))
+    if not valid_source_locator(locator):
+        return None
     return {"block_id": block["id"], "quote": quote, "locator": locator}
+
+
+def valid_source_locator(locator: Any) -> bool:
+    """Validate block coordinates without conflating PDF pages with media time."""
+    if not isinstance(locator, dict):
+        return False
+    if "segment_id" in locator:
+        start, end = locator.get("start_seconds"), locator.get("end_seconds")
+        return (isinstance(locator["segment_id"], str) and bool(locator["segment_id"])
+                and type(start) in (int, float) and type(end) in (int, float)
+                and math.isfinite(start) and math.isfinite(end) and 0 <= start < end)
+    if "metadata_key" in locator:
+        return (isinstance(locator["metadata_key"], str) and bool(locator["metadata_key"])
+                and bool(locator.get("snapshot_artifact")) and bool(locator.get("source_digest")))
+    if "section_index" in locator:
+        return type(locator["section_index"]) is int and locator["section_index"] >= 1
+    return type(locator.get("physical_page_index")) is int and locator["physical_page_index"] >= 0
 
 
 def _locator(data: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
@@ -136,6 +137,12 @@ def _text_items(document_json: Dict[str, Any] | None, resource_type: str) -> Ite
 
 def _evidence(document_json: Dict[str, Any] | None, resource_type: str, extra: Dict[str, Any]) -> list[Dict[str, Any]]:
     items = list(_text_items(document_json, resource_type))
+    for block in extra.get("source_blocks", []):
+        if isinstance(block.get("text"), str):
+            locator = {k: v for k, v in block.items() if k not in {"text", "role", "id"}}
+            locator.update(block_id=block["id"], node_id=block["id"], char_start=0, char_end=len(block["text"]))
+            if valid_source_locator(locator):
+                items.append({"quote": block["text"], "locator": locator})
     snapshot_path = extra.get("source_snapshot_path")
     if resource_type == "url_article" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
         with open(snapshot_path, "rb") as source:
@@ -143,7 +150,8 @@ def _evidence(document_json: Dict[str, Any] | None, resource_type: str, extra: D
         digest = hashlib.sha256(raw).hexdigest()
         html = raw.decode("utf-8", "replace")
         for item in items:
-            item["locator"].update(snapshot_artifact="source.html", source_digest=digest)
+            item["locator"].setdefault("snapshot_artifact", "source.html")
+            item["locator"].setdefault("source_digest", digest)
             start = html.casefold().find(item["quote"].casefold())
             if start >= 0:
                 item["locator"].update(snapshot_char_start=start, snapshot_char_end=start + len(item["quote"]))
@@ -160,7 +168,7 @@ def _valid_locator(locator: Any) -> bool:
         return False
     if not isinstance(locator.get("char_start"), int) or not isinstance(locator.get("char_end"), int):
         return False
-    return locator.get("physical_page_index") is not None or locator.get("section_index") is not None
+    return valid_source_locator(locator)
 
 
 def _evidence_rank(item: Dict[str, Any]) -> int:
@@ -183,7 +191,15 @@ def _value_strings(value: Any) -> list[str]:
                 return []
             raw = [str(part) for part in parts]
             padded = [raw[0]] + [part.zfill(2) for part in raw[1:]]
-            candidates = {"-".join(raw), "-".join(padded), "/".join(raw), " ".join(raw)}
+            candidates = {"-".join(raw), "-".join(padded), "/".join(raw), "/".join(padded), " ".join(raw), "".join(padded)}
+            if len(parts) >= 2 and 1 <= parts[1] <= 12:
+                month = calendar.month_name[parts[1]]
+                candidates.add(f"{parts[0]}年{parts[1]}月" + (f"{parts[2]}日" if len(parts) == 3 else ""))
+                if len(parts) == 3:
+                    for name in (month, calendar.month_abbr[parts[1]]):
+                        candidates.update((f"{name} {parts[2]}, {parts[0]}", f"{parts[2]} {name} {parts[0]}"))
+                else:
+                    candidates.add(f"{month} {parts[0]}")
             return sorted(candidates, key=len, reverse=True)
         name = " ".join(str(value.get(key, "")).strip() for key in ("given", "family")).strip()
         return [name] if name else []
@@ -218,7 +234,7 @@ def _same_value(field: str, left: Any, right: Any) -> bool:
 
 
 def _source_digest(document_json: Dict[str, Any] | None, resource_type: str, extra: Dict[str, Any], evidence: list[Dict[str, Any]]) -> str:
-    path = extra.get("source_snapshot_path") if resource_type == "url_article" else (document_json or {}).get("metadata", {}).get("source_path")
+    path = extra.get("source_snapshot_path") or extra.get("source_path") or (document_json or {}).get("metadata", {}).get("source_path")
     if isinstance(path, str) and os.path.isfile(path):
         with open(path, "rb") as source:
             return hashlib.sha256(source.read()).hexdigest()
@@ -342,7 +358,7 @@ def verify_citation_metadata(
         needs_review = unresolved
 
     field_states = {}
-    for field in _RECONCILABLE_FIELDS:
+    for field in HOST_FIELDS:
         if original.get(field) is None:
             field_states[field] = "missing"
         elif _find_evidence(original[field], evidence):

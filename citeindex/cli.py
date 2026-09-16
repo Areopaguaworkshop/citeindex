@@ -213,6 +213,32 @@ def main() -> None:
         help="JSON evidence-backed repair proposal; corrections are applied through normal re-finalization",
     )
     parser.add_argument(
+        "--media-asr-backend",
+        choices=["whisperx", "wenbi"],
+        default="whisperx",
+        help="Media transcription adapter (default: whisperx)",
+    )
+    parser.add_argument(
+        "--wenbi-asr-provider",
+        choices=["funasr", "whisper", "gladia"],
+        default="funasr",
+        help="Explicit Wenbi ASR provider; Gladia may upload audio (default: funasr)",
+    )
+    parser.add_argument(
+        "--wenbi-whisper-model",
+        default="large-v3-turbo",
+        help="Whisper model when Wenbi provider is whisper (default: large-v3-turbo)",
+    )
+    parser.add_argument(
+        "--wenbi-speaker-labels",
+        action="store_true",
+        help="Ask the selected Wenbi provider for speaker labels when supported",
+    )
+    parser.add_argument(
+        "--wenbi-python",
+        help="Python interpreter from an isolated Wenbi environment",
+    )
+    parser.add_argument(
         "--registry-contact-email",
         type=_contact_email,
         help="Contact email for polite registry requests",
@@ -291,6 +317,11 @@ def main() -> None:
         registry_contact_email=args.registry_contact_email,
         force_pdf_kind=force_pdf_kind,
         repair_proposal=args.repair_proposal,
+        media_asr_backend=args.media_asr_backend,
+        wenbi_asr_provider=args.wenbi_asr_provider,
+        wenbi_whisper_model=args.wenbi_whisper_model,
+        wenbi_speaker_labels=args.wenbi_speaker_labels,
+        wenbi_python=args.wenbi_python,
     )
 
     orchestrator = CiteIndexIngestionOrchestrator(

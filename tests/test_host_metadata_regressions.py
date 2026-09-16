@@ -89,6 +89,21 @@ def test_retry_preserves_history_and_records_blocked(tmp_path, monkeypatch):
     assert rows[1]["status"] == "failed" and rows[1]["error"] == "service unavailable"
 
 
+def test_runner_accepts_stdout_warning_before_cli_json():
+    ingest = benchmark_module("ingest")
+    payload = {"status": "ok", "standardized_csl_json": {"title": "Host"}}
+    assert ingest.parse_cli_output("warning: deprecated API\n" + json.dumps(payload, indent=2)) == payload
+    with pytest.raises(ValueError, match="does not contain"):
+        ingest.parse_cli_output("warning only")
+
+
+def test_digital_pdf_doc_type_is_not_shadowed():
+    from citeindex.ingestion.pipelines import digital_pdf
+    assert callable(digital_pdf.determine_doc_type)
+    assert callable(digital_pdf.doc_type_to_csl_type)
+    assert "determine_doc_type" not in digital_pdf.run.__code__.co_varnames
+
+
 def test_timeout_and_output_lock(tmp_path):
     import fcntl
     ingest = benchmark_module("ingest")

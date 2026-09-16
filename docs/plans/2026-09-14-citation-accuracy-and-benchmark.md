@@ -71,8 +71,26 @@ literal printed string; its evidence is still an attribution judgment.
 Pattern, filename and embedded-PDF fallbacks remain unverified candidates.
 OCR mistakes cannot be repaired merely by matching an OCR quote. Scanned
 PageIndex markdown structure is navigation; do not pretend line numbers are
-physical PDF pages. Media/URL routes retain their existing extractors and
-verification contracts rather than inheriting PDF-specific assumptions.
+physical PDF pages. Web and media use separate DSPy signatures and original
+HTML/metadata or timed-transcript evidence, not the PDF extraction contract.
+Each uses one call with a 12,000-character source-text budget. HTML script/JSON-LD
+content is not included in native evidence blocks; provider candidates may
+still expose that metadata as unverified. Contributor attribution still needs review.
+
+### Modality contracts implemented (2026-09-16)
+
+- [x] Web subtype, personal/corporate names, site versus publisher, full issued
+  date precision, observed URL/accessed date, and revision-date exclusion.
+- [x] Media subtype and contributor roles; uploader/platform are not authorship
+  or publisher defaults. Event date and upload/publication date remain separate.
+- [x] Observed duration/medium and separate timestamp quotation items; no fake
+  transcript on transcription failure. Unknown recording subtype is `document`.
+- [x] Shared typed field/evidence validation and re-finalization repair support
+  web metadata locations and media segments as well as PDF pages.
+- [x] Preserve enriched `csl.json`; add supported-subset `csl-export.json` item
+  array with internal fields in `custom`. Existing Chicago style configuration
+  remains unchanged; this is not a new citation-style renderer.
+- [x] Source-type-aware benchmark profiles and offline role/date/locator tests.
 
 Scanned PageIndex headings are reused for OCR-block ranking before extraction;
 their markdown ranges are deliberately not used as physical-page coordinates.
@@ -99,9 +117,14 @@ pages, no invented DSPy values, bounded calls, retained failed attempts,
 concurrent writer rejection, timeout cleanup, and consistent final artifacts.
 Passing fixtures is implementation evidence, **not citation accuracy**.
 
-Validation on 2026-09-16: 84 offline tests passed (2 warnings); Python compile
+Validation on 2026-09-16 before modality-contract additions: 84 offline tests passed (2 warnings); Python compile
 check, git diff whitespace check, runner help, and audit skill validation passed.
 No real source ingestion or paid model call was used for this validation.
+
+After modality-contract additions: 92 offline tests passed (2 warnings), including
+separate signatures, precise dates, contributor roles, media repair, CSL export,
+empty failed transcripts, snapshot digests and forged timestamp rejection.
+Compile and whitespace checks passed. These fixtures do not measure live accuracy.
 
 User explicitly deferred live benchmarking until code is finished. Do not
 start ingestion, deploy GROBID, invent human reviews, or publish numerical

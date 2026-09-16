@@ -15,6 +15,21 @@ from pathlib import Path
 import psutil
 
 
+def parse_cli_output(text: str) -> dict:
+    """Accept one JSON object with harmless stdout warnings before it."""
+    decoder = json.JSONDecoder()
+    for offset, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            value, end = decoder.raw_decode(text[offset:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and not text[offset + end:].strip():
+            return value
+    raise ValueError("CLI output does not contain one JSON object")
+
+
 def run_source(command: list[str], timeout: float, stdout_path: Path, stderr_path: Path) -> tuple[int, str | None]:
     """Track descendants (including MinerU's separate session) and bound cleanup."""
     children = {}
@@ -55,7 +70,9 @@ def run_source(command: list[str], timeout: float, stdout_path: Path, stderr_pat
 
 
 def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
-         timeout_seconds: int = 5400, citation_engine: str | None = None) -> None:
+         timeout_seconds: int = 5400, citation_engine: str | None = None,
+         media_asr_backend: str | None = None, wenbi_asr_provider: str = "funasr",
+         wenbi_python: str | None = None, wenbi_speaker_labels: bool = False) -> None:
     if timeout_seconds <= 0:
         raise ValueError("timeout must be positive")
     rows = [json.loads(line) for line in Path(manifest_path).read_text().splitlines() if line.strip()]
@@ -90,6 +107,16 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                     if "--citation-engine" in cli_args:
                         raise ValueError("set engine in the manifest or on the runner, not both")
                     cli_args += ["--citation-engine", citation_engine]
+                if row.get("modality") == "media" and media_asr_backend:
+                    if "--media-asr-backend" in cli_args:
+                        raise ValueError("set media ASR in the manifest or on the runner, not both")
+                    cli_args += ["--media-asr-backend", media_asr_backend]
+                    if media_asr_backend == "wenbi":
+                        cli_args += ["--wenbi-asr-provider", wenbi_asr_provider]
+                        if wenbi_python:
+                            cli_args += ["--wenbi-python", wenbi_python]
+                        if wenbi_speaker_labels:
+                            cli_args.append("--wenbi-speaker-labels")
                 command = [sys.executable, "-m", "citeindex.cli", source_path,
                            "--corpus-root", str(work / "corpus"), *cli_args]
                 started = time.monotonic()
@@ -103,9 +130,7 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                     returncode, error = run_source(command, deadline, work / "stdout.json", work / "stderr.log")
                     if not error:
                         try:
-                            result = json.loads((work / "stdout.json").read_text())
-                            if not isinstance(result, dict):
-                                raise ValueError("CLI output must be an object")
+                            result = parse_cli_output((work / "stdout.json").read_text())
                         except ValueError as exc:
                             error = f"invalid CLI JSON: {exc}; see {work / 'stderr.log'}"
                 except KeyboardInterrupt:
@@ -148,8 +173,13 @@ if __name__ == "__main__":
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=5400)
     parser.add_argument("--citation-engine", choices=("dspy", "grobid"))
+    parser.add_argument("--media-asr-backend", choices=("whisperx", "wenbi"))
+    parser.add_argument("--wenbi-asr-provider", choices=("funasr", "whisper", "gladia"), default="funasr")
+    parser.add_argument("--wenbi-python")
+    parser.add_argument("--wenbi-speaker-labels", action="store_true")
     args = parser.parse_args()
     def stop(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop)
-    main(args.manifest, args.predictions, args.retry_failed, args.timeout_seconds, args.citation_engine)
+    main(args.manifest, args.predictions, args.retry_failed, args.timeout_seconds, args.citation_engine,
+         args.media_asr_backend, args.wenbi_asr_provider, args.wenbi_python, args.wenbi_speaker_labels)

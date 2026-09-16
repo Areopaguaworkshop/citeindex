@@ -22,6 +22,8 @@ import requests
 import trafilatura
 
 from ..models import IngestionConfig, PipelineResult
+from ..csl import valid_host_value, evaluation_fields
+from .multimodal_metadata import extract_multimodal_metadata, web_source_blocks, metadata_blocks
 from ..url_security import UnsafeUrlError, fetch_text, validate_public_url, MAX_RESPONSE_BYTES
 from .common import (
     attach_evidence_locators,
@@ -146,6 +148,9 @@ def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
             if items and isinstance(items, list) and items[0]:
                 item = items[0]
                 meta: Dict[str, Any] = {}
+                meta["type"] = {"journalArticle": "article-journal", "newspaperArticle": "article-newspaper",
+                                "magazineArticle": "article-magazine", "blogPost": "post-weblog",
+                                "book": "book", "bookSection": "chapter", "interview": "interview"}.get(item.get("itemType"), "webpage")
                 if item.get("title"):
                     meta["title"] = item["title"]
                 if item.get("creators"):
@@ -155,7 +160,11 @@ def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
                             name: Dict[str, str] = {"family": c["lastName"]}
                             if c.get("firstName"):
                                 name["given"] = c["firstName"]
-                            authors.append(name)
+                            role = c.get("creatorType", "author")
+                            if role == "author":
+                                authors.append(name)
+                            elif role in {"editor", "translator", "interviewer", "director", "producer"}:
+                                meta.setdefault(role, []).append(name)
                     if authors:
                         meta["author"] = authors
                 if item.get("date"):
@@ -164,6 +173,9 @@ def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
                     meta["container-title"] = item["publicationTitle"]
                 if item.get("language"):
                     meta["language"] = item["language"]
+                for key in ("DOI", "ISBN", "ISSN", "volume", "issue", "publisher"):
+                    if item.get(key):
+                        meta[key] = item[key]
                 return meta
     except Exception:
         logger.info("zotero-translator not available, falling back to trafilatura metadata")
@@ -336,6 +348,15 @@ def _parse_date_string(date_str: str) -> Optional[Dict[str, Any]]:
         }
         return {"date-parts": [[int(m.group(3)), months[m.group(1).lower()], int(m.group(2))]]}
 
+    # Preserve month precision when the source has no day.
+    m = re.search(r"(\d{4})(?:[-/]|\s*年\s*)(\d{1,2})(?:月)?(?!\d)", date_str)
+    if m:
+        return {"date-parts": [[int(m.group(1)), int(m.group(2))]]}
+    m = re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})", date_str, re.IGNORECASE)
+    if m:
+        import calendar
+        month = next(i for i in range(1, 13) if calendar.month_name[i].casefold() == m.group(1).casefold())
+        return {"date-parts": [[int(m.group(2)), month]]}
     # Year only: 2025
     m = re.search(r"(\d{4})", date_str)
     if m:
@@ -550,11 +571,12 @@ def run(
     date = metadata.get("date")
 
     # ── Step 4-5: Find & parse in-page citation guidance ──────────
-    guidance_csl = _extract_citation_from_guidance(markdown_text, cfg)
-
-    # Also try from raw HTML for JS-rendered cite sections
-    if not guidance_csl:
-        guidance_csl = _extract_citation_from_guidance(html, cfg)
+    # Keep regex candidates, but use the dedicated web signature for model work.
+    cite_text = _find_citation_guidance(markdown_text) or _find_citation_guidance(html)
+    guidance_csl = _parse_citation_string(cite_text) if cite_text else {}
+    source_blocks = web_source_blocks(html)
+    retrieval_metadata = {"URL": url, "accessed": now.date().isoformat()}
+    source_blocks += metadata_blocks(retrieval_metadata, "retrieval_metadata.json")
 
     # ── Step 6: Reconcile — citation guidance wins ────────────────
     csl_extra: Dict[str, Any] = {
@@ -571,9 +593,13 @@ def run(
         else:
             csl_extra["author"] = [{"literal": author}]
 
-    if date:
-        if isinstance(date, str) and len(date) >= 4 and date[:4].isdigit():
-            csl_extra["issued"] = {"date-parts": [[int(date[:4])]]}
+    if isinstance(date, str):
+        parsed_date = _parse_date_string(date)
+        if valid_host_value("issued", parsed_date):
+            csl_extra["issued"] = parsed_date
+    for key, value in metadata.items():
+        if key not in {"title", "author", "date", "type"} and valid_host_value(key, value):
+            csl_extra[key] = value
 
     container_title = metadata.get("container-title")
     if container_title:
@@ -598,7 +624,20 @@ def run(
             csl_extra["collection-title"] = guidance_csl["collection-title"]
         csl_extra["_citation_source"] = guidance_csl.get("_citation_source", "in_page_guidance")
 
-    csl_json = make_basic_csl(source_id, title, "webpage", csl_extra)
+    extracted = extract_multimodal_metadata("web", source_blocks, cfg)
+    csl_extra.update({key: value for key, value in extracted.items() if key not in {"type", "title"}})
+    title = extracted.get("title") or title
+    source_type = extracted.get("type") or metadata.get("type") or "webpage"
+    if not valid_host_value("type", source_type):
+        source_type = "webpage"
+    csl_json = make_basic_csl(source_id, title, source_type, csl_extra)
+    csl_json["_field_status"] = {
+        field: ("source-supported" if field in extracted.get("_field_evidence", {}) else
+                "unverified" if csl_json.get(field) is not None else "missing")
+        for field in evaluation_fields(csl_json, "url_article")
+    }
+    csl_json["_field_status"]["accessed"] = "observed"
+    csl_json["_field_status"]["URL"] = "observed"
 
     # ── Step 7: Build section-hierarchical structure ───────────────
     pages, section_tree, page_paragraphs = _parse_markdown_sections(markdown_text, url)
@@ -612,6 +651,9 @@ def run(
     extra: Dict[str, Any] = {
         "source_snapshot_path": _write_html_snapshot(html),
         "cleanup_source_snapshot": True,
+        "source_blocks": source_blocks,
+        "web_metadata": metadata,
+        "retrieval_metadata": retrieval_metadata,
     }
     if cfg.use_pageindex and markdown_text.strip():
         from .pageindex_tree import run_pageindex_md_tree, pageindex_to_citeindex_tree

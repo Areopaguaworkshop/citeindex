@@ -30,6 +30,13 @@ updated [pilot checklist](../../docs/plans/2026-09-14-multimodal-citation-benchm
 for the required field_status, independent reviewers, source checksums and
 frozen work-family split. Unreviewed manifests cannot produce accuracy scores.
 
+Scorer `host-v3-modality` requires annotation statuses for the source's CSL-type
+profile plus explicitly annotated fields. A URL journal article is not a generic
+webpage; a media record does not require book ISBN fields. Evidence validation
+supports PDF pages, HTML sections, metadata snapshots and timed transcript
+segments. Profile-excluded fields are not evaluated. Recording duration and
+quotation timestamps are distinct. Use the same scorer version for comparisons.
+
 The POSIX runner uses installed psutil for descendant cleanup. It preserves
 attempt history, locks the output, logs each source separately and prints a
 30-second heartbeat. Default timeout is 5400 seconds; override with
@@ -38,3 +45,8 @@ attempt, not to erase failures. Use a new predictions filename for each engine
 or configuration. Stop any older unlocked runner before starting this version.
 Unknown token usage or priced cost remains null. No live pilot has been run as
 part of this implementation, and no valid accuracy measurement is published.
+
+To use Wenbi only for media rows, pass `--media-asr-backend wenbi` plus an
+explicit provider. `--wenbi-python ../wenbi/.venv/bin/python` keeps Wenbi's
+dependencies isolated from MinerU. The runner records the resulting CLI arguments
+per attempt. Do not select Gladia unless uploading audio is explicitly approved.

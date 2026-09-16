@@ -36,6 +36,18 @@ character offsets. For URLs retain snapshot and section location; for media
 retain a timestamp or original descriptive metadata location. Differing but
 valid evidence is flagged for attribution review, not silently called wrong.
 
+Scorer `host-v3-modality` selects annotation fields by CSL type, not just input
+format: a URL journal article still uses article fields; a podcast uses host,
+guest, episode/season and duration fields rather than book ISBN/edition fields.
+Additional explicitly annotated fields are also scored. Fields outside the
+profile and annotations are not evaluated; report that scope. Mark runtime
+`accessed` dates outside_scope when not fixed by the experiment.
+
+Media evidence uses segment_id plus start_seconds/end_seconds, or metadata_key
+plus snapshot_artifact/source_digest. Duration is CSL `dimensions`; quotation
+timestamps belong to separate citation items in `quotation_locators.json`.
+Retain role distinctions and separate `event-date` from `issued` during review.
+
 ## Checklist and sequence
 
 ### Code readiness

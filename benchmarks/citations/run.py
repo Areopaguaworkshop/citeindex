@@ -7,9 +7,16 @@ import sys
 import unicodedata
 from pathlib import Path
 
-FIELDS = ("type", "title", "subtitle", "author", "editor", "translator", "issued",
-          "publisher", "publisher-place", "container-title", "collection-title",
-          "edition", "volume", "issue", "page", "DOI", "ISBN", "URL")
+from citeindex.ingestion.csl import HOST_FIELDS, evaluation_fields
+from citeindex.ingestion.citation_verification import validate_block_evidence
+
+FIELDS = HOST_FIELDS
+
+
+def evaluated_fields(row: dict) -> set[str]:
+    return (evaluation_fields(row.get("csl", {}), row.get("modality", ""))
+            | set(row.get("field_status", {}))
+            | (set(row.get("csl", {})) & set(FIELDS)))
 
 
 def _norm(value: object, field: str = "") -> object:
@@ -31,7 +38,7 @@ def _score_values(gold: dict, predictions: dict, field: str) -> dict:
     tp = fp = fn = evaluated = 0
     for source_id, item in gold.items():
         state = item.get("field_status", {}).get(field)
-        if state in {"illegible", "outside_scope"}:
+        if field not in evaluated_fields(item) or state in {"illegible", "outside_scope"}:
             continue
         evaluated += 1
         expected = item.get("csl", {}).get(field)
@@ -72,7 +79,7 @@ def score(gold: dict, predictions: dict, attempts: list[dict]) -> dict:
     report["exact_record_accuracy"] = sum(
         predictions.get(key, {}).get("status") == "ok" and all(
             _norm(row.get("csl", {}).get(field), field) == _norm(predictions[key].get("csl", {}).get(field), field)
-            for field in FIELDS if row.get("field_status", {}).get(field) not in {"illegible", "outside_scope"})
+            for field in evaluated_fields(row) if row.get("field_status", {}).get(field) not in {"illegible", "outside_scope"})
         for key, row in gold.items()) / len(gold) if gold else None
     evidence = {"supplied": 0, "valid_span": 0, "invalid_span": 0,
                 "matches_reviewed_attribution": 0, "needs_attribution_review": 0}
@@ -80,14 +87,8 @@ def score(gold: dict, predictions: dict, attempts: list[dict]) -> dict:
         blocks = {block["id"]: block for block in prediction.get("source_blocks", [])}
         for field, item in prediction.get("csl", {}).get("_field_evidence", {}).items():
             evidence["supplied"] += 1
-            locator = item.get("locator", {})
-            block = blocks.get(item.get("block_id"), {})
-            start, end = locator.get("char_start"), locator.get("char_end")
-            valid = (bool(block) and locator.get("block_id") == block.get("id")
-                     and type(start) is int and type(end) is int and 0 <= start < end <= len(block.get("text", ""))
-                     and block["text"][start:end] == item.get("quote")
-                     and any(k in block for k in ("physical_page_index", "section_index"))
-                     and all(locator.get(k) == block.get(k) for k in ("physical_page_index", "section_index")))
+            resolved = validate_block_evidence(field, prediction.get("csl", {}).get(field), item, list(blocks.values()))
+            valid = resolved is not None and resolved["locator"] == item.get("locator")
             evidence["valid_span" if valid else "invalid_span"] += 1
             reviewed = gold[key].get("field_evidence", {}).get(field)
             matches = (valid and item == reviewed and
@@ -116,7 +117,7 @@ def main(manifest_path: str, predictions_path: str) -> None:
         raise SystemExit(f"prediction source digest differs from reviewed source: {mismatched}")
     report = score(gold, predictions, attempts)
     report["manifest_sha256"] = hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()
-    report["scorer_version"] = "host-v2"
+    report["scorer_version"] = "host-v3-modality"
     report["by_modality"] = {modality: score({k: r for k, r in gold.items() if r["modality"] == modality}, predictions, attempts)
                              for modality in sorted({r["modality"] for r in rows})}
     print(json.dumps(report, indent=2, sort_keys=True))

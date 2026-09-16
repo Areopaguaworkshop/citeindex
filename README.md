@@ -15,6 +15,7 @@ uv pip install citeindex
 
 # Or pip
 pip install citeindex
+
 ```
 
 ## CLI
@@ -25,6 +26,13 @@ citeindex paper.pdf
 
 # Ingest a scanned PDF with the default MinerU backend
 citeindex scanned.pdf --ocr-engine mineru
+
+# Opt in to Wenbi raw ASR with an explicit local provider
+citeindex lecture.mp4 --media-asr-backend wenbi --wenbi-asr-provider funasr
+
+# Or keep Wenbi dependencies isolated in Wenbi's own environment
+citeindex lecture.mp4 --media-asr-backend wenbi --wenbi-asr-provider funasr \
+  --wenbi-python ../wenbi/.venv/bin/python
 
 # Use the optional GLM-OCR backend via local Ollama
 citeindex scanned.pdf --ocr-engine glm-ocr --ocr-model glm-ocr:latest
@@ -209,7 +217,7 @@ citeindex scanned.pdf --ocr-engine glm-ocr --ollama-host http://localhost:11434
 
 ```
 URL → Playwright/requests (fetch) → trafilatura/readability (content)
-    → Zotero (metadata) → in-page citation guidance (regex → DSPy fallback)
+    → Zotero / in-page citation guidance (candidates) → web-specific DSPy + source evidence
     → section-hierarchical paragraphs → PageIndex tree (optional)
     → hashes → Merkle tree → store to corpus/
 ```
@@ -218,21 +226,24 @@ URL → Playwright/requests (fetch) → trafilatura/readability (content)
 - **trafilatura** extracts clean markdown with heading structure (fallback to **readability-lxml**)
 - **Zotero** extracts citation metadata via translation-server (title, authors, date, DOI)
 - Discovers in-page citation guidance: 若要引用 / 引用格式 / Cite this / Zitierweise / Pour citer
-- Parses citation strings with regex first, DSPy fallback for unparseable formats
-- Citation guidance overrides Zotero/trafilatura metadata (more authoritative)
+- Web-specific DSPy uses original HTML text/metadata, preserves bibliographic subtype and date precision, and requires field quotations.
+- Regex/provider candidates remain unverified without evidence; access and revision dates are not publication dates.
 - Supports batch crawling with `--all-url-article` and `--update-url-article`
 
 ### Media
 
 ```
 Recognized media URL/local file → yt-dlp or local copy → ffmpeg (audio) → WhisperX (transcription)
-        → pyannote (diarization, optional) → CSL JSON
+        → pyannote (diarization, optional) → media-specific DSPy + source evidence → CSL JSON
         → chunking → hashes → Merkle tree → store to corpus/
 ```
 
 - **yt-dlp** downloads from YouTube, Vimeo, podcasts, etc.
 - **WhisperX** transcribes with word-level timestamps
 - **pyannote** speaker diarization (optional)
+- Preserves speaker/interviewee, interviewer, host, director and producer roles; uploader is not automatically author, nor platform publisher.
+- Recording duration (`dimensions`) is separate from quotation timestamps. Failed transcription leaves an empty transcript, not invented quotation text.
+- Each web/media extraction uses one bounded DSPy call (12,000 source-text characters); unsupported metadata stays missing or unverified. No live accuracy claim follows from this contract.
 - Supports audio (`.mp3`, `.wav`, `.m4a`) and video (`.mp4`, `.mkv`, `.webm`)
 - Remote media routing recognizes YouTube, Vimeo, podcast, SoundCloud, and `youtu.be` hosts; other URLs use the article pipeline
 
@@ -311,6 +322,10 @@ Each ingestion produces a content-addressed corpus folder (for example, `corpus/
 | File | Description |
 |------|-------------|
 | `csl.json` | Citation metadata (CSL-JSON with CiteIndex fields: `content_hash`, `merkle_root`, `source_type`, `ingestion_timestamp`) |
+| `csl-export.json` | CSL item array for processors; supported fields at top level, internal/unsupported data under `custom`, subtitle composed into title |
+| `source_blocks.json` | Web/media evidence blocks with source coordinates |
+| `web_metadata.json`, `retrieval_metadata.json` | Provider candidates and observed retrieval metadata, when applicable |
+| `quotation_locators.json` | Media quotation items with final citation ID and timestamp locator; not recording duration |
 | `document.json` | Structured document tree — pages, paragraphs, and `section_tree` for URL articles and PageIndex-augmented PDFs |
 | `pageindex_tree.json` | Persisted CiteIndex/PageIndex hierarchy with page ranges and summaries when PageIndex runs |
 | `merkle.json` | SHA-256 Merkle tree for integrity verification |
@@ -319,6 +334,7 @@ Each ingestion produces a content-addressed corpus folder (for example, `corpus/
 | `ingestion_output.json` | Full ingestion result with all pipeline outputs |
 | `citation_verification.json` | Evidence, Crossref provenance/digest, accepted corrections, and `needs_review` items (when verification is enabled) |
 | `source.html` | Fetched HTML snapshot used as URL evidence (URL articles only) |
+| `source.media` | Retained downloaded media asset for remote media, when available |
 | `images/` | Extracted figures and illustrations when available |
 
 ### Library markdown (`library/Author_2024_Title_<12-char-hash>.md`)

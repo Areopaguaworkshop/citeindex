@@ -114,6 +114,9 @@ class CiteIndexIngestionOrchestrator:
             candidate_csl = dict(sub_result.csl_json)
             existing_authors = candidate_csl.get("author", [])
             validated_authors = validate_authors(existing_authors, input_ref) if existing_authors else None
+            if resource_type in {"url_article", "media"}:
+                from .csl import valid_host_value
+                validated_authors = existing_authors if valid_host_value("author", existing_authors) else None
 
             if validated_authors:
                 # Keep the cleaned authors
@@ -123,7 +126,7 @@ class CiteIndexIngestionOrchestrator:
                 # All authors were garbage — clear them and try fallback
                 candidate_csl.pop("author", None)
 
-            if not candidate_csl.get("author"):
+            if not candidate_csl.get("author") and resource_type in {"digital_pdf", "scanned_pdf"}:
                 # 1. Try parsing from filename
                 author_from_filename = parse_author_from_filename(input_ref)
                 if author_from_filename:
@@ -156,6 +159,8 @@ class CiteIndexIngestionOrchestrator:
 
             # Finalize every embedded citation copy before any artifact is persisted.
             sub_result.csl_json = standardized_csl
+            for quotation in sub_result.extra.get("quotation_locators", []):
+                quotation["citation_item"]["id"] = standardized_csl["id"]
             if sub_result.document_json:
                 sub_result.document_json.setdefault("metadata", {})["title"] = standardized_csl.get("title")
             tree = sub_result.extra.get("pageindex_tree")
@@ -173,6 +178,8 @@ class CiteIndexIngestionOrchestrator:
             snapshot_path = sub_result.extra.get("source_snapshot_path")
             if resource_type == "url_article" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
                 shutil.copy2(snapshot_path, os.path.join(document_path, "source.html"))
+            elif resource_type == "media" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
+                shutil.copy2(snapshot_path, os.path.join(document_path, "source.media"))
             log_entry = self.log_ingestion(input_ref, resource_type, standardized_csl, sub_result)
 
             # ── Copy extracted images to corpus dir ─────────────────
@@ -289,6 +296,8 @@ class CiteIndexIngestionOrchestrator:
             if not proposal.get("reason"):
                 raise ValueError("repair requires a reason identifying the host source")
             repaired[field] = value
+            if "_field_status" in repaired:
+                repaired["_field_status"] = {**repaired["_field_status"], field: "source-supported"}
             repaired.setdefault("_field_evidence", {})
             repaired["_field_evidence"] = dict(repaired["_field_evidence"])
             repaired["_field_evidence"][field] = {"quote": quote, "locator": locator}
@@ -411,7 +420,7 @@ class CiteIndexIngestionOrchestrator:
             return url_article.run(normalized_input, config=config)
         if resource_type == "media":
             from .pipelines import media
-            return media.run(normalized_input)
+            return media.run(normalized_input, config=config)
         raise ValueError(f"No route for resource type: {resource_type}")
 
     def standardize_csl_json(

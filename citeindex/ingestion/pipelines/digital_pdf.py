@@ -28,6 +28,7 @@ from .common import (
     build_merkle_for_nodes,
     build_nodes_with_granularity,
     determine_doc_type,
+    doc_type_to_csl_type,
     make_basic_csl,
     make_source_id,
     split_paragraphs,
@@ -583,7 +584,7 @@ def run(
             logger.warning("PageIndex failed, using flat structure", exc_info=True)
 
     # ── Step 5: Citation extraction ─────────────────────────────────
-    from .common import enrich_csl_with_citation_cascade, determine_doc_type, doc_type_to_csl_type
+    from .common import enrich_csl_with_citation_cascade
 
     base_csl = make_basic_csl(
         source_id=source_id, title=title,

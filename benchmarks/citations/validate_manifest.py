@@ -9,7 +9,8 @@ from pathlib import Path
 
 
 def validate_rows(rows: list[dict]) -> list[str]:
-    from run import FIELDS
+    from run import evaluated_fields
+    from citeindex.ingestion.csl import valid_host_value
     errors: list[str] = []
     if not rows:
         errors.append("manifest is empty")
@@ -39,13 +40,15 @@ def validate_rows(rows: list[dict]) -> list[str]:
         if not isinstance(csl, dict) or not csl.get("title") or not isinstance(evidence, dict) or not isinstance(states, dict):
             errors.append(f"row {index}: nonempty CSL title and evidence/status objects required")
             continue
-        for field in FIELDS:
+        if not valid_host_value("type", csl.get("type")):
+            errors.append(f"row {index}: supported bibliographic type required")
+        for field in evaluated_fields(row):
             state = states.get(field)
             if state not in {"present", "absent", "illegible", "outside_scope"}:
                 errors.append(f"row {index}: missing status for {field}")
             if state == "present":
                 item = evidence.get(field, {})
-                if csl.get(field) is None or not item.get("quote") or not item.get("locator"):
+                if not valid_host_value(field, csl.get(field)) or not item.get("quote") or not item.get("locator"):
                     errors.append(f"row {index}: {field} needs value, quote and locator")
             elif state == "absent" and csl.get(field) is not None:
                 errors.append(f"row {index}: absent {field} has a value")
