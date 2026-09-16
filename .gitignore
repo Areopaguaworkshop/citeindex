@@ -16,6 +16,10 @@ wheels/
 # Corpus (user data, never committed)
 corpus/**/*
 library/**/*
+benchmarks/citations/input/
+benchmarks/citations/predictions/
+benchmarks/citations/reports/
+benchmarks/citations/manifest.jsonl
 
 # Test output
 test_output/

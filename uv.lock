@@ -856,7 +856,7 @@ wheels = [
 
 [[package]]
 name = "citeindex"
-version = "0.13.0"
+version = "0.13.2"
 source = { editable = "." }
 dependencies = [
     { name = "citeproc-py" },

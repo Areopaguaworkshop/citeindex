@@ -51,6 +51,9 @@ citeindex paper.pdf --verify-citations --registry-contact-email you@example.org
 
 # Ask a stronger provider-qualified model only to resolve remaining conflicts
 citeindex paper.pdf --verify-citations --citation-verifier-model openai/gpt-5
+
+# Explicit alternative engine for digital PDFs; requires a running GROBID service
+citeindex paper.pdf --citation-engine grobid
 ```
 
 Verification is opt-in. Crossref receives only an exact DOI, never document
@@ -62,6 +65,46 @@ review. Use `--no-crossref` to disable registry lookup or
 An independent harness audit is available only through an explicit Codex,
 Claude Code, OpenCode, or Pi skill/command; running `citeindex` directly does
 not auto-trigger one.
+
+## Benchmarking
+
+The pilot benchmark measures extraction and evidence verification only; it
+does not evaluate document question answering. Keep reviewed source manifests,
+predictions, reports, and copied source files local because they may contain
+private or licensed material.
+
+```bash
+# First create candidate rows; this does not invent gold labels.
+python benchmarks/citations/prepare_manifest.py \
+  /home/ajiap/Downloads/Orthodox-China \
+  benchmarks/citations/manifest.jsonl --limit 40
+
+# Run all manifest rows serially; every attempted source becomes a prediction row.
+python benchmarks/citations/ingest.py benchmarks/citations/manifest.jsonl \
+  benchmarks/citations/predictions/dspy.jsonl
+
+# Score host metadata against the human-reviewed labels.
+python benchmarks/citations/run.py benchmarks/citations/manifest.jsonl \
+  benchmarks/citations/predictions/dspy.jsonl
+```
+
+The 40-source pilot composition, annotation contract, modality-specific
+controls, and reporting gates are documented in
+[`docs/plans/2026-09-14-multimodal-citation-benchmark.md`](docs/plans/2026-09-14-multimodal-citation-benchmark.md).
+Validate independent reviewers before scoring with
+`python benchmarks/citations/validate_manifest.py manifest.jsonl`; create a
+reproducible split with `python benchmarks/citations/split.py manifest.jsonl
+split-manifest.jsonl`; compare saved reports with
+`python benchmarks/citations/compare.py baseline.json candidate.json`.
+After a reviewed run, this section will be updated with the commit, corpus
+denominators, per-modality results, evidence-validity rate, failure rate, and
+cost/latency summary; it will not publish source-private rows.
+
+Current result: **no valid accuracy measurement yet**. Human-reviewed labels,
+adjudication, and live baseline/candidate runs remain pending. The runner keeps
+append-only attempts, locks each output file, defaults to 5,400 seconds per
+source, and supports `--retry-failed`. Missing token/cost telemetry is reported
+as unknown, never zero. Do not interpret JSONL line counts as unique sources.
 
 ## Python API
 
@@ -111,15 +154,15 @@ also disables automatic OCR in PyMuPDF4LLM.
 
 ```
 PDF → PyMuPDF4LLM layout/text (PyMuPDF fallback) + image extraction
-    → page-paragraph document structure → GROBID references
-    → PageIndex tree (default) → GROBID metadata / DSPy fallback
+    → page-paragraph document structure → DSPy citation extraction
+    → PageIndex tree (default) → optional explicit GROBID engine
     → Merkle tree → section_tree + heading injection
     → store document.json and library Markdown
 ```
 
 - **PyMuPDF4LLM** performs layout-aware extraction when enabled; raw **PyMuPDF** is the fallback
-- **GROBID** extracts metadata and references when its service is available
-- **DSPy** extracts citation metadata only when GROBID metadata is unavailable
+- **DSPy** is the default citation metadata engine for digital PDFs
+- **GROBID** is an explicitly selected alternative requiring a separate service
 - Builds page-based document structure and augments it with PageIndex section headings
 - **PageIndex** builds LLM-driven section hierarchy, persists it to corpus, and feeds library markdown headings
 
@@ -199,11 +242,14 @@ Office documents (`.docx`, `.doc`, `.rtf`, `.odt`, `.pptx`, `.ppt`, `.odp`) are 
 
 ### Citation Enrichment Cascade
 
-For digital PDF inputs, CiteIndex enriches metadata through a priority cascade:
+For digital PDF inputs, CiteIndex uses DSPy citation extraction by default. A
+separately installed GROBID service is available only when explicitly selected
+with `--citation-engine grobid`; it is never an automatic fallback.
 
-1. **GROBID** — deterministic metadata + references (primary)
-2. **LLM extraction** — DSPy-based citation parsing (fallback)
-3. **PDF metadata** — basic file metadata only (last resort)
+Extraction targets the ingested source's own citation metadata—not works cited
+inside it. DSPy uses original source blocks and validates quote spans; this
+does not by itself prove correct work/edition attribution. PDF metadata remains
+a last-resort, unverified identity hint.
 
 Scanned PDFs do not use GROBID. Their structured OCR output is parsed with
 document-specific patterns, then DSPy values take priority when available.

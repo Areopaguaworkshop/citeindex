@@ -206,6 +206,7 @@ def extract_citations_grobid(
             resp = requests.post(
                 f"{grobid_url}/api/processFulltextDocument",
                 files={"input": (pdf_path, fh, "application/pdf")},
+                data={"includeRawCitations": "1", "teiCoordinates": "ref"},
                 timeout=60,
             )
         if resp.status_code != 200:
@@ -223,6 +224,26 @@ def extract_citations_grobid(
     except Exception:
         logger.error("Unexpected error during GROBID citation extraction", exc_info=True)
         return {}
+
+
+def extract_document_bundle_grobid(
+    pdf_path: str,
+    grobid_url: str = "http://localhost:8070",
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Extract host metadata and references from one TEI full-text request."""
+    with open(pdf_path, "rb") as fh:
+        resp = requests.post(
+            f"{grobid_url}/api/processFulltextDocument",
+            files={"input": (pdf_path, fh, "application/pdf")},
+            data={"includeRawCitations": "1", "teiCoordinates": "ref"},
+            timeout=120,
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(f"GROBID fulltext request failed with status {resp.status_code}")
+    root = etree.fromstring(resp.text.encode("utf-8"))
+    metadata = _extract_metadata_from_tei(root)
+    references = _parse_tei_references(resp.text)
+    return metadata, ({"references": references} if references else {})
 
 
 def _parse_ris_csl(ris_text: str) -> Dict[str, Any]:
@@ -355,6 +376,7 @@ def _try_grobid_fulltext(pdf_path: str, grobid_url: str) -> Dict[str, Any]:
             resp = requests.post(
                 f"{grobid_url}/api/processFulltextDocument",
                 files={"input": (pdf_path, fh, "application/pdf")},
+                data={"includeRawCitations": "1", "teiCoordinates": "ref"},
                 timeout=120,
             )
         if resp.status_code != 200:

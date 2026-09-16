@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +60,14 @@ _LEVEL3_RE = re.compile(r"^\s*\d+\.\s")
 
 def _resolve_mineru_cli() -> Optional[str]:
     """Return the available MinerU CLI executable name, if any."""
+    # Prefer the CLI installed alongside the running Python interpreter.  A
+    # globally installed MinerU can belong to a different virtualenv and fail
+    # with confusing import/runtime errors.
+    venv_bin = Path(sys.executable).absolute().parent
+    for cli_name in ("magic-pdf", "mineru"):
+        candidate = venv_bin / cli_name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
     for cli_name in ("magic-pdf", "mineru"):
         if shutil.which(cli_name):
             return cli_name

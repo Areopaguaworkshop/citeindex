@@ -16,6 +16,54 @@ _RECONCILABLE_FIELDS = (
 )
 _LOCATOR_KEYS = ("node_id", "char_start", "char_end", "bbox")
 
+# Host-source metadata only; references cited by the source are not CSL fields here.
+HOST_FIELDS = ("type", "title", "subtitle", "author", "editor", "translator", "issued",
+               "publisher", "publisher-place", "container-title", "collection-title",
+               "edition", "volume", "issue", "page", "DOI", "ISBN", "ISSN", "URL",
+               "language", "abstract")
+
+
+def valid_host_value(field: str, value: Any) -> bool:
+    if field not in HOST_FIELDS:
+        return False
+    if field == "type":
+        return isinstance(value, str) and value in {
+            "article", "article-journal", "article-magazine", "article-newspaper", "book", "chapter",
+            "thesis", "paper-conference", "report", "manuscript", "document", "webpage", "post-weblog",
+            "speech", "interview", "broadcast", "motion_picture", "song", "dataset", "entry-encyclopedia",
+        }
+    if field in {"author", "editor", "translator"}:
+        return isinstance(value, list) and bool(value) and all(
+            isinstance(name, dict) and bool(name.get("literal") or name.get("family"))
+            and set(name) <= {"literal", "family", "given", "suffix", "dropping-particle", "non-dropping-particle"}
+            and all(isinstance(part, str) and part.strip() for part in name.values())
+            for name in value)
+    if field == "issued":
+        parts = value.get("date-parts") if isinstance(value, dict) else None
+        return (isinstance(parts, list) and len(parts) == 1 and isinstance(parts[0], list)
+                and 1 <= len(parts[0]) <= 3 and all(type(n) is int for n in parts[0])
+                and 1 <= parts[0][0] <= 9999
+                and (len(parts[0]) < 2 or 1 <= parts[0][1] <= 12)
+                and (len(parts[0]) < 3 or 1 <= parts[0][2] <= 31))
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[dict]) -> dict | None:
+    """Resolve exact source spans. This establishes support, not host attribution."""
+    if not valid_host_value(field, value) or not isinstance(evidence, dict):
+        return None
+    quote = evidence.get("quote")
+    block = next((b for b in blocks if b.get("id") == evidence.get("block_id")), None)
+    if not isinstance(quote, str) or not quote.strip() or not block or quote not in block["text"]:
+        return None
+    # CSL type is a classification, not a literal phrase printed in every source.
+    if field != "type" and not _find_evidence(value, [{"quote": quote}]):
+        return None
+    start = block["text"].index(quote)
+    locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index") if k in block}
+    locator.update(block_id=block["id"], char_start=start, char_end=start + len(quote))
+    return {"block_id": block["id"], "quote": quote, "locator": locator}
+
 
 def _locator(data: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
     """Keep stable source coordinates when an extractor provides them."""

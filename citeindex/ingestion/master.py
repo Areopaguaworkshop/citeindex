@@ -1,4 +1,5 @@
 import json
+import hashlib
 import logging
 import os
 import shutil
@@ -141,11 +142,27 @@ class CiteIndexIngestionOrchestrator:
                     candidate_csl, sub_result.document_json, resource_type, sub_result.extra, cfg,
                 )
 
+            if cfg.repair_proposal:
+                candidate_csl = self._apply_repair_proposal(
+                    candidate_csl, cfg.repair_proposal, input_ref, sub_result,
+                )
+                if citation_verification:
+                    citation_verification["status"] = "needs_review"
+                    citation_verification["verified"] = False
             standardized_csl = self.standardize_csl_json(
                 candidate_csl, sub_result.merkle_tree or {}, resource_type,
             )
             logger.info("Standardized CSL JSON for: %s", standardized_csl.get("title", "unknown"))
 
+            # Finalize every embedded citation copy before any artifact is persisted.
+            sub_result.csl_json = standardized_csl
+            if sub_result.document_json:
+                sub_result.document_json.setdefault("metadata", {})["title"] = standardized_csl.get("title")
+            tree = sub_result.extra.get("pageindex_tree")
+            if tree:
+                from .pipelines.pageindex_tree import _build_level0
+                tree["level_0"] = _build_level0(standardized_csl, sub_result.source_id,
+                                               (sub_result.merkle_tree or {}).get("root"))
             artifacts = sub_result.to_dict()
             artifacts["csl_json"] = standardized_csl
             if citation_verification:
@@ -220,6 +237,66 @@ class CiteIndexIngestionOrchestrator:
                 error_message=str(e),
                 next_action="Inspect stack trace and input file health",
             )
+
+    def _apply_repair_proposal(
+        self,
+        csl: Dict[str, Any],
+        proposal_path: str,
+        input_ref: str,
+        sub_result: PipelineResult,
+    ) -> Dict[str, Any]:
+        """Apply only quote-backed proposals, then use normal finalization."""
+        with open(proposal_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        from .citation_verification import valid_host_value, validate_block_evidence, _text_items, _find_evidence
+        if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
+            raise ValueError("repair proposal must contain a proposals array")
+        source_path = sub_result.extra.get("source_snapshot_path") or input_ref
+        if not os.path.isfile(source_path):
+            raise ValueError("repair requires an available original source or URL snapshot")
+        digest = hashlib.sha256()
+        with open(source_path, "rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if payload.get("source_sha256") != digest.hexdigest():
+            raise ValueError("repair proposal source digest does not match input")
+        repaired, applied = dict(csl), []
+        blocks = sub_result.extra.get("source_blocks", [])
+        for proposal in payload["proposals"]:
+            if not isinstance(proposal, dict) or proposal.get("status") != "proposed":
+                raise ValueError("each repair entry must have status=proposed")
+            field, value = proposal.get("field"), proposal.get("proposed_value")
+            if not valid_host_value(field, value):
+                raise ValueError("invalid host metadata field or value")
+            if "old_value" not in proposal or proposal["old_value"] != csl.get(field):
+                raise ValueError("repair old_value does not match current extraction")
+            locator, quote = proposal.get("locator"), proposal.get("quote")
+            if not isinstance(locator, dict) or not isinstance(quote, str) or not quote.strip():
+                raise ValueError("repair requires a quote and exact locator")
+            if locator.get("block_id"):
+                evidence = validate_block_evidence(field, value, {
+                    "block_id": locator["block_id"], "quote": quote}, blocks)
+                supported = evidence is not None and evidence["locator"] == locator
+            else:
+                # URL/document locators must resolve to actual text, never metadata or summaries.
+                supported = any(
+                    item["quote"] == quote and item["locator"] == locator
+                    and _find_evidence(value, [item])
+                    for item in _text_items(sub_result.document_json, sub_result.resource_type)
+                )
+            if not supported:
+                raise ValueError("repair quote/value/locator does not match original source evidence")
+            if not proposal.get("reason"):
+                raise ValueError("repair requires a reason identifying the host source")
+            repaired[field] = value
+            repaired.setdefault("_field_evidence", {})
+            repaired["_field_evidence"] = dict(repaired["_field_evidence"])
+            repaired["_field_evidence"][field] = {"quote": quote, "locator": locator}
+            if locator.get("block_id"):
+                repaired["_field_evidence"][field]["block_id"] = locator["block_id"]
+            applied.append(proposal)
+        sub_result.extra["citation_repair"] = {"source_sha256": digest.hexdigest(), "applied": applied}
+        return repaired
 
     def detect_resource_type(self, input_ref: str, config: Optional[IngestionConfig] = None) -> tuple[str, str]:
         parsed = urlparse(input_ref)

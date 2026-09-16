@@ -425,22 +425,26 @@ def _annotate_document_with_pageindex(
 # Step 3: GROBID extraction
 # ---------------------------------------------------------------------------
 
-def _run_grobid(pdf_path: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Run GROBID on raw PDF. Returns (metadata_csl, references_dict)."""
+def _run_grobid(pdf_path: str) -> Dict[str, Any]:
+    """Run the explicitly selected GROBID host-metadata engine only."""
     try:
         from .grobid import (
-            extract_citations_grobid,
-            extract_document_metadata_grobid,
             is_grobid_available,
         )
         if not is_grobid_available():
-            return {}, {}
+            raise RuntimeError(
+                "GROBID engine selected but service is unavailable at http://localhost:8070; "
+                "start GROBID or rerun with --citation-engine dspy"
+            )
+        from .grobid import extract_document_metadata_grobid
         metadata = extract_document_metadata_grobid(pdf_path)
-        references = extract_citations_grobid(pdf_path)
-        return metadata, references
-    except Exception:
-        logger.warning("GROBID extraction failed", exc_info=True)
-        return {}, {}
+        if not metadata:
+            raise RuntimeError("GROBID returned no host metadata; no engine fallback was attempted")
+        return metadata
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError("GROBID host extraction failed; no engine fallback was attempted") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -579,23 +583,33 @@ def run(
             logger.warning("PageIndex failed, using flat structure", exc_info=True)
 
     # ── Step 5: Citation extraction ─────────────────────────────────
-    from .common import enrich_csl_with_citation_cascade
+    from .common import enrich_csl_with_citation_cascade, determine_doc_type, doc_type_to_csl_type
 
     base_csl = make_basic_csl(
-        source_id=source_id, title=title, csl_type="book",
+        source_id=source_id, title=title,
+        csl_type=doc_type_to_csl_type(cfg.doc_type_override or determine_doc_type(pdf_path, num_pages)),
         extra={"genre": source_type},
     )
-    grobid_references: Dict[str, Any] = {}
+    from .dspy_extract import build_source_blocks, select_candidate_regions
+    # Use original PyMuPDF blocks before layout cleanup removes imprint text.
+    source_blocks = build_source_blocks([(p["page_number"], [b[4] for b in p["blocks"] if len(b) > 4 and isinstance(b[4], str)]) for p in raw_pages])
+    candidate_regions = select_candidate_regions(pageindex_tree_json)
     if cfg.citation_engine == "grobid":
-        grobid_metadata, grobid_references = _run_grobid(pdf_path)
+        grobid_metadata = _run_grobid(pdf_path)
         enriched_csl = dict(base_csl)
         enriched_csl.update(grobid_metadata)
         if grobid_metadata:
             enriched_csl["_extraction_method"] = "grobid"
     else:
+        region_hints = []
+        if pageindex_tree_json:
+            from .dspy_extract import select_candidate_regions
+            region_hints = [r.get("heading", "") for r in select_candidate_regions(pageindex_tree_json) if r.get("heading")]
         enriched_csl = enrich_csl_with_citation_cascade(
             base_csl=base_csl, ordered_text=ordered_text,
             pdf_path=pdf_path, num_pages=num_pages, config=cfg,
+            region_hints=region_hints, source_blocks=source_blocks,
+            candidate_regions=candidate_regions,
         )
 
     csl = dict(base_csl)
@@ -604,9 +618,6 @@ def run(
             continue
         if value is not None:
             csl[key] = value
-
-    if grobid_references.get("references"):
-        csl["_cited_references"] = grobid_references["references"]
 
     # ── Step 6: Nodes + Merkle ─────────────────────────────────────
     nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
@@ -630,8 +641,12 @@ def run(
 
     # ── Step 7: Extra (PageIndex tree + images) ─────────────────────
     extra: Dict[str, Any] = {}
+    from .dspy_extract import build_source_blocks
+    extra["source_blocks"] = source_blocks
     if pageindex_tree_json is not None:
         from .pageindex_tree import pageindex_to_citeindex_tree
+        from .dspy_extract import select_candidate_regions
+        extra["candidate_regions"] = select_candidate_regions(pageindex_tree_json)
         ci_tree = pageindex_to_citeindex_tree(
             pi_result=pageindex_tree_json,
             doc_id=source_id,

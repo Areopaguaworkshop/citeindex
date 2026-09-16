@@ -1,5 +1,6 @@
 """Pattern-based and DSPy metadata extraction from document source text."""
 
+import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -13,16 +14,20 @@ from .common import PAGE_NUMBER_PATTERNS as _PAGE_NUM_PATTERNS
 logger = logging.getLogger(__name__)
 
 
-def select_source_evidence(source_text: str, budget: int = 8000) -> str:
+def select_source_evidence(
+    source_text: str,
+    budget: int = 8000,
+    region_hints: Optional[List[str]] = None,
+) -> str:
     """Select front matter plus later identity-bearing regions within a budget."""
     if len(source_text) <= budget:
         return source_text
     chunks = [source_text[: min(4000, budget)]]
     remaining = budget - len(chunks[0])
-    markers = ("isbn", "copyright", "published", "university press", "doi", "cite this")
+    markers = ("isbn", "copyright", "published", "university press", "doi", "cite this", *(region_hints or []))
     lowered = source_text.casefold()
     for marker in markers:
-        start = lowered.find(marker)
+        start = lowered.find(marker.casefold())
         if start < 0:
             continue
         excerpt = source_text[max(0, start - 500): start + 1500]
@@ -31,6 +36,76 @@ def select_source_evidence(source_text: str, budget: int = 8000) -> str:
             chunks.append(excerpt)
             remaining -= len(excerpt)
     return "\n\n[additional source evidence]\n\n".join(chunks)
+
+
+def build_source_blocks(page_paragraphs: List[Any]) -> List[Dict[str, Any]]:
+    """Create physical-page blocks; printed page labels never replace coordinates."""
+    blocks: List[Dict[str, Any]] = []
+    for physical_page_index, paragraphs in enumerate(page_paragraphs):
+        page_index = physical_page_index + 1
+        if isinstance(paragraphs, tuple) and len(paragraphs) == 2:
+            page_index, paragraphs = paragraphs
+        values = paragraphs.get("paragraphs", []) if isinstance(paragraphs, dict) else paragraphs
+        for paragraph_index, paragraph in enumerate(values or [], start=1):
+            text = paragraph.get("text", "") if isinstance(paragraph, dict) else str(paragraph)
+            if not text.strip():
+                continue
+            blocks.append({
+                "id": f"p{physical_page_index + 1}_b{paragraph_index}",
+                "physical_page_index": physical_page_index,
+                "printed_page_label": str(page_index),
+                "text": text.strip(),
+                "page": page_index,
+                "role": "heading" if isinstance(paragraph, dict) and paragraph.get("type") == "heading" else "body",
+            })
+    return blocks
+
+
+def gather_evidence_candidates(source_blocks: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
+    """Gather source blocks and rank them lexically; no extra model call required."""
+    terms = {term.casefold() for term in re.findall(r"[\w\u3400-\u9fff]+", query) if len(term) > 2}
+    candidates = []
+    for block in source_blocks:
+        text = block.get("text", "")
+        lowered = text.casefold()
+        score = sum(lowered.count(term) for term in terms)
+        if isinstance(block.get("physical_page_index"), int) and block["physical_page_index"] < 4:
+            score += 8
+        if any(marker in lowered for marker in ("bibliography", "references", "参考文献", "书目")):
+            score -= 20
+        if any(marker in lowered for marker in ("title", "copyright", "isbn", "doi", "版权", "出版")):
+            score += 1
+        candidates.append({**block, "score": score})
+    return sorted(candidates, key=lambda item: (-item["score"], item.get("page", 0), item["id"]))
+
+
+def select_candidate_regions(pageindex_result: Optional[Dict[str, Any]], max_regions: int = 12) -> List[Dict[str, Any]]:
+    """Flatten PageIndex ranges into retrieval hints without treating summaries as evidence."""
+    if not pageindex_result:
+        return []
+    regions: List[Dict[str, Any]] = []
+
+    def visit(nodes: Any) -> None:
+        for node in nodes or []:
+            if not isinstance(node, dict):
+                continue
+            heading = node.get("heading") or node.get("title") or ""
+            start = node.get("start_page") or node.get("start_index")
+            end = node.get("end_page") or node.get("end_index")
+            lowered = str(heading).casefold()
+            role = "section"
+            if any(term in lowered for term in ("bibliograph", "reference", "参考文献", "书目")):
+                role = "bibliography"
+            elif any(term in lowered for term in ("copyright", "imprint", "colophon", "版权", "出版")):
+                role = "imprint"
+            elif any(term in lowered for term in ("introduction", "title", "前言", "序")):
+                role = "front_matter"
+            if start is not None or end is not None or role in {"imprint", "front_matter"}:
+                regions.append({"heading": heading, "start_page": start, "end_page": end, "role": role})
+            visit(node.get("children") or node.get("nodes"))
+
+    visit(pageindex_result.get("level_1") or pageindex_result.get("structure"))
+    return sorted(regions, key=lambda r: r["role"] not in {"imprint", "front_matter"})[:max_regions]
 
 
 # ---------------------------------------------------------------------------
@@ -71,38 +146,17 @@ def _is_cjk_dominant(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 class ExtractDocumentMetadata(dspy.Signature):
-    """Extract a document's own metadata from source text, never its references."""
-
-    source_text = dspy.InputField(
-        desc="Source text from title, imprint/copyright, or first-article-page blocks. It may include layout labels. Do not use bibliography entries as host metadata."
-    )
-    doc_type = dspy.InputField(
-        desc="Document type: 'book', 'journal', 'thesis', or 'bookchapter'."
-    )
-
-    title = dspy.OutputField(
-        desc="Document title. For journals, the article title (not the journal name)."
-    )
-    subtitle = dspy.OutputField(desc="Subtitle if present. Return empty if not found.")
-    author = dspy.OutputField(desc="Author(s), semicolon-separated in printed order. Preserve CJK names as one name; never invent an author.")
-    editor = dspy.OutputField(desc="Editor(s), semicolon-separated. Return empty if not found.")
-    translator = dspy.OutputField(desc="Translator(s), semicolon-separated. Return empty if not found.")
-    series = dspy.OutputField(desc="Series or collection title. Return empty if not found.")
-    edition = dspy.OutputField(desc="Edition information. Return empty if not found.")
-    container_title = dspy.OutputField(
-        desc="Journal name or book title containing this chapter. Empty if standalone book."
-    )
-    publisher = dspy.OutputField(desc="Publisher name. Return empty if not found.")
-    publisher_place = dspy.OutputField(
-        desc="Publisher place. Return empty if not explicitly printed."
-    )
-    publication_year = dspy.OutputField(desc="Publication year (YYYY). Return empty if not found.")
-    volume = dspy.OutputField(desc="Volume number. Return empty if not found.")
-    issue = dspy.OutputField(desc="Issue number. Return empty if not found.")
-    page_numbers = dspy.OutputField(desc="Page range (e.g., '20-41'). Return empty if not found.")
-    doi = dspy.OutputField(desc="DOI. Return empty if not found.")
-    isbn = dspy.OutputField(desc="ISBN. Return empty if not found.")
-    abstract = dspy.OutputField(desc="Abstract text. Return empty if not found.")
+    """Extract ONLY the ingested source's own citation metadata, never its works cited.
+    Use supplied original blocks, not summaries. Distinguish author/editor/translator.
+    Preserve name order and CJK literal names. Do not infer publisher place or dates.
+    Omit unknown fields. For each value cite a block_id and exact supporting quote.
+    A quoted reference to another work is NOT evidence of the host's identity.
+    """
+    source_blocks: List[Dict[str, Any]] = dspy.InputField()
+    doc_type: str = dspy.InputField(desc="Heuristic hint, not authoritative classification.")
+    missing_fields: List[str] = dspy.InputField()
+    csl: Dict[str, Any] = dspy.OutputField(desc="CSL metadata: typed name arrays, issued date-parts, other fields strings.")
+    field_evidence: Dict[str, Dict[str, str]] = dspy.OutputField(desc="CSL field -> {block_id, quote}. No invented IDs or quotations.")
 
 
 class ReconcileMetadata(dspy.Signature):
@@ -612,62 +666,65 @@ def _run_dspy_extraction(
     source_text: str,
     doc_type: str,
     config: Optional[IngestionConfig] = None,
+    region_hints: Optional[List[str]] = None,
+    source_blocks: Optional[List[Dict[str, Any]]] = None,
+    candidate_regions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Run DSPy extraction on evidence-bearing source text."""
+    """Gather/rank original blocks; extract and validate; at most one refinement."""
+    from ..citation_verification import HOST_FIELDS, validate_block_evidence
     cfg = config or IngestionConfig()
-
+    blocks = source_blocks if source_blocks is not None else [
+        {"id": f"text_{i}", "text": text, "char_start": start}
+        for i, (start, text) in enumerate(
+            ((m.start(), m.group()) for m in re.finditer(r"[^\n]+", source_text))
+        ) if text.strip()
+    ]
+    if not blocks:
+        return {}
+    ranked = gather_evidence_candidates(blocks, " ".join(region_hints or []))
+    for block in ranked:
+        physical = block.get("physical_page_index")
+        for region in candidate_regions or []:
+            start, end = region.get("start_page"), region.get("end_page")
+            if isinstance(physical, int) and isinstance(start, int) and isinstance(end, int) and start <= physical + 1 <= end:
+                block["score"] += 12 if region["role"] in {"imprint", "front_matter"} else -20 if region["role"] == "bibliography" else 0
+    ranked.sort(key=lambda block: -block["score"])
+    accepted, evidence, used = {}, {}, set()
     try:
         lm = get_llm_model(cfg.llm_model, temperature=0.1)
+        predictor = dspy.Predict(ExtractDocumentMetadata)
+        for attempt in range(2):
+            selected, remaining = [], 12000
+            for block in ranked:
+                if block["id"] in used or block["score"] < 0:
+                    continue
+                text = block["text"][:remaining]
+                if not text:
+                    break
+                selected.append({**block, "text": text})
+                used.add(block["id"])
+                remaining -= len(text)
+            if not selected:
+                break
+            with dspy.context(lm=lm):
+                result = predictor(source_blocks=selected, doc_type=doc_type,
+                                   missing_fields=[f for f in ("title", "author", "issued") if f not in accepted])
+            values, citations = result.csl, result.field_evidence
+            if not isinstance(values, dict) or not isinstance(citations, dict):
+                continue
+            for field in HOST_FIELDS:
+                if field in accepted or field not in values:
+                    continue
+                supported = validate_block_evidence(field, values[field], citations.get(field), selected)
+                if supported:
+                    accepted[field], evidence[field] = values[field], supported
+            if all(field in accepted for field in ("title", "author", "issued")):
+                break
     except Exception:
-        logger.warning("LLM not available for DSPy extraction")
-        return {}
-
-    truncated = select_source_evidence(source_text)
-    if not truncated.strip():
-        return {}
-
-    try:
-        with dspy.context(lm=lm):
-            predictor = dspy.Predict(ExtractDocumentMetadata)
-            result = predictor(source_text=truncated, doc_type=doc_type)
-
-        csl: Dict[str, Any] = {}
-        _set_if_present(csl, "title", result.title)
-        _set_if_present(csl, "subtitle", result.subtitle)
-        _set_if_present(csl, "publisher", result.publisher)
-        _set_if_present(csl, "publisher-place", result.publisher_place)
-        _set_if_present(csl, "volume", result.volume)
-        _set_if_present(csl, "issue", result.issue)
-        _set_if_present(csl, "page", result.page_numbers)
-        _set_if_present(csl, "DOI", result.doi)
-        _set_if_present(csl, "ISBN", result.isbn)
-        _set_if_present(csl, "abstract", result.abstract)
-        _set_if_present(csl, "collection-title", result.series)
-        _set_if_present(csl, "edition", result.edition)
-
-        if result.container_title and result.container_title.strip():
-            csl["container-title"] = result.container_title.strip()
-
-        if result.author and result.author.strip():
-            csl["author"] = _parse_authors(result.author)
-        if result.editor and result.editor.strip():
-            csl["editor"] = _parse_authors(result.editor)
-        if result.translator and result.translator.strip():
-            csl["translator"] = _parse_authors(result.translator)
-
-        if result.publication_year and result.publication_year.strip():
-            try:
-                year = int(result.publication_year.strip()[:4])
-                csl["issued"] = {"date-parts": [[year]]}
-            except ValueError:
-                pass
-
-        logger.info("DSPy extraction produced %d fields", len(csl))
-        return csl
-
-    except Exception:
-        logger.warning("DSPy extraction failed", exc_info=True)
-        return {}
+        logger.warning("DSPy host metadata extraction failed", exc_info=True)
+    if accepted:
+        accepted["_field_evidence"] = evidence
+    return accepted
 
 
 # ---------------------------------------------------------------------------
@@ -689,14 +746,26 @@ def extract_metadata_with_dspy_priority(
     doc_type: str,
     config: Optional[IngestionConfig] = None,
     discarded_blocks: Optional[List[Dict]] = None,
+    source_blocks: Optional[List[Dict[str, Any]]] = None,
+    candidate_regions: Optional[List[Dict[str, Any]]] = None,
+    region_hints: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Pattern extraction followed by DSPy, allowing DSPy to overwrite fields.
 
     This is intended for scanned-document backends where structured OCR output
     is authoritative and DSPy should be allowed to refine deterministic parsing.
     """
-    pattern_csl = extract_metadata_from_content_list(content_list, discarded_blocks)
-    dspy_csl = _run_dspy_extraction(normalized_markdown, doc_type, config)
+    # Restrict heuristic fallbacks to front matter; body DOIs belong to cited works.
+    front = [item for item in content_list if 0 <= item.get("page_idx", 999) < 4]
+    pattern_csl = extract_metadata_from_content_list(front, discarded_blocks)
+    blocks = source_blocks or [
+        {"id": f"ocr_{i}", "text": _get_text(item), "physical_page_index": item.get("page_idx"),
+         "role": item.get("type", "text")}
+        for i, item in enumerate(content_list) if _get_text(item)
+    ]
+    dspy_csl = _run_dspy_extraction(normalized_markdown, doc_type, config,
+                                    source_blocks=blocks, candidate_regions=candidate_regions,
+                                    region_hints=region_hints)
     if not dspy_csl:
         pattern_csl.setdefault("_extraction_method", pattern_csl.get("_extraction_method", "pattern"))
         return pattern_csl

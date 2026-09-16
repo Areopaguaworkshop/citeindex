@@ -371,12 +371,20 @@ def _extract_citation_grobid(pdf_path: str) -> Dict[str, Any]:
         return {}
 
 
+def doc_type_to_csl_type(doc_type: str) -> str:
+    return {"book": "book", "thesis": "thesis", "journal": "article-journal",
+            "bookchapter": "chapter"}.get(doc_type, "document")
+
+
 def enrich_csl_with_citation_cascade(
     base_csl: Dict[str, Any],
     ordered_text: str,
     pdf_path: Optional[str],
     num_pages: int,
     config: Optional[IngestionConfig] = None,
+    region_hints: Optional[List[str]] = None,
+    source_blocks: Optional[List[Dict[str, Any]]] = None,
+    candidate_regions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Enrich a basic CSL dict with the explicitly selected citation engine."""
     cfg = config or IngestionConfig()
@@ -401,7 +409,12 @@ def enrich_csl_with_citation_cascade(
     elif cfg.citation_engine == "dspy":
         from .dspy_extract import _run_dspy_extraction
 
-        extracted_csl = _run_dspy_extraction(ordered_text, doc_type, cfg)
+        extracted_csl = (
+            _run_dspy_extraction(ordered_text, doc_type, cfg, region_hints=region_hints,
+                                 source_blocks=source_blocks, candidate_regions=candidate_regions)
+            if region_hints or source_blocks is not None
+            else _run_dspy_extraction(ordered_text, doc_type, cfg)
+        )
         if extracted_csl:
             extraction_method = "dspy"
 
@@ -542,10 +555,13 @@ def prompt_author_interactively() -> Optional[Dict[str, Any]]:
     Returns a CSL author dict or None if the user skips.
     """
 
-    print("\n⚠️  Could not determine the author(s) of this document.")
-    print("   You can provide author info now, or press Enter to skip.")
+    import sys
+    if not sys.stdin.isatty():
+        return None
+    print("\nCould not determine author(s). Enter names or leave blank to skip.", file=sys.stderr)
     try:
-        raw = input("   Author (e.g. 'Chatonnet, Françoise Briquel' or '张三'): ").strip()
+        print("Author (Family, Given; or literal name): ", end="", file=sys.stderr, flush=True)
+        raw = input().strip()
     except (EOFError, KeyboardInterrupt):
         return None
 

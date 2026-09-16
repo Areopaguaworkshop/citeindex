@@ -14,6 +14,7 @@ def test_verification_is_persisted_before_csl_identity_and_markdown(tmp_path, mo
         csl_json={"title": "Draft", "author": [{"family": "Doe"}], "type": "book"},
         document_json={"structure": {"pages": []}},
         merkle_tree={"root": "root"},
+        extra={"pageindex_tree": {"level_0": {"title": "Draft"}, "level_1": []}},
     )
     report = {"status": "verified", "corrections": [{"field": "title"}], "needs_review": []}
     monkeypatch.setattr(master.CiteIndexIngestionOrchestrator, "detect_resource_type", lambda *_args, **_kwargs: ("digital_pdf", "source.pdf"))
@@ -32,3 +33,7 @@ def test_verification_is_persisted_before_csl_identity_and_markdown(tmp_path, mo
     assert output["standardized_csl_json"]["title"] == persisted_csl["title"] == "Correct"
     assert persisted_report == persisted_output["citation_verification"] == report
     assert "citation_verification: verified" in markdown
+    assert persisted_output["sub_pipeline_outputs"]["csl_json"] == persisted_csl
+    tree = json.loads((document_path / "pageindex_tree.json").read_text())
+    assert tree["level_0"]["title"] == "Correct"
+    assert tree["level_0"]["id"] == persisted_csl["id"]

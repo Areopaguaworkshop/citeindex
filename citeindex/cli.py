@@ -209,6 +209,10 @@ def main() -> None:
         help="Block registry and verifier-model requests during citation verification",
     )
     parser.add_argument(
+        "--repair-proposal",
+        help="JSON evidence-backed repair proposal; corrections are applied through normal re-finalization",
+    )
+    parser.add_argument(
         "--registry-contact-email",
         type=_contact_email,
         help="Contact email for polite registry requests",
@@ -286,6 +290,7 @@ def main() -> None:
         offline_verification=args.offline_verification,
         registry_contact_email=args.registry_contact_email,
         force_pdf_kind=force_pdf_kind,
+        repair_proposal=args.repair_proposal,
     )
 
     orchestrator = CiteIndexIngestionOrchestrator(

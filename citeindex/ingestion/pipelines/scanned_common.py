@@ -10,6 +10,7 @@ from .common import (
     build_merkle_for_nodes,
     build_nodes_with_granularity,
     determine_doc_type,
+    doc_type_to_csl_type,
     make_basic_csl,
     make_source_id,
 )
@@ -22,16 +23,6 @@ from .mineru import _infer_heading_level
 from .pageindex_tree import pageindex_to_citeindex_tree, run_pageindex_md_tree
 
 logger = logging.getLogger(__name__)
-
-
-def doc_type_to_csl_type(doc_type: str) -> str:
-    mapping = {
-        "book": "book",
-        "thesis": "thesis",
-        "journal": "article-journal",
-        "bookchapter": "chapter",
-    }
-    return mapping.get(doc_type, "document")
 
 
 def build_page_number_map_from_content_list(content_list: List[Dict[str, Any]]) -> Dict[int, int]:
@@ -166,12 +157,29 @@ def build_scanned_pipeline_result(
     page_number_map = build_page_number_map_from_content_list(content_list)
     normalized_markdown = markdown_text or content_list_to_markdown(content_list, page_number_map)
 
+    from .dspy_extract import select_candidate_regions
+    source_blocks = [
+        {"id": f"ocr_{i}", "text": item["text"], "physical_page_index": item.get("page_idx"),
+         "role": item.get("type", "text")}
+        for i, item in enumerate(content_list) if isinstance(item.get("text"), str) and item["text"].strip()
+    ]
+    pi_result = None
+    if config.use_pageindex and normalized_markdown.strip():
+        try:
+            pi_result = run_pageindex_md_tree(normalized_markdown, model=config.pageindex_model)
+        except Exception:
+            logger.warning("PageIndex failed; using OCR blocks without tree hints", exc_info=True)
+    regions = select_candidate_regions(pi_result)
+    # Markdown indices are not PDF coordinates. Use only headings to rank OCR text.
+    region_hints = [r["heading"] for r in regions if r["role"] in {"imprint", "front_matter"}]
     logger.info("[%s] Extracting metadata via DSPy...", backend_name)
     extracted_csl = extract_metadata_with_dspy_priority(
         content_list=content_list,
         normalized_markdown=normalized_markdown,
         doc_type=doc_type,
         config=config,
+        source_blocks=source_blocks,
+        region_hints=region_hints,
     )
     initial_title = extracted_csl.get("title") or os.path.basename(pdf_path)
     csl = make_basic_csl(
@@ -195,10 +203,10 @@ def build_scanned_pipeline_result(
         merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
 
     extra: Dict[str, Any] = {}
+    extra["source_blocks"] = source_blocks
     if config.use_pageindex and normalized_markdown.strip():
         try:
             logger.info("[%s] Running PageIndex tree generation...", backend_name)
-            pi_result = run_pageindex_md_tree(normalized_markdown, model=config.pageindex_model)
             if pi_result and pi_result.get("structure"):
                 ci_tree = pageindex_to_citeindex_tree(
                     pi_result=pi_result,
@@ -209,6 +217,7 @@ def build_scanned_pipeline_result(
                     page_layouts=None,  # scanned PDFs don't have layout analysis
                 )
                 extra["pageindex_tree"] = ci_tree
+                extra["candidate_regions"] = [{"heading": r["heading"], "role": r["role"]} for r in regions]
                 if not document_structure.get("section_tree"):
                     _annotate_document_with_pageindex(document_structure, ci_tree)
         except Exception:
