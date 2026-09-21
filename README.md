@@ -283,7 +283,7 @@ the original source evidence; otherwise CiteIndex records `needs_review`.
 
 | Option | CLI Flag | Default | Description |
 |--------|----------|---------|-------------|
-| `llm_model` | `--llm` | `ollama/glm-5.3-flash:cloud` | LLM model (`ollama/name` or `gemini/name`) |
+| `llm_model` | `--llm` | `ollama/deepseek-v4.1-flash:cloud` | LLM model (`ollama/name` or `gemini/name`) |
 | `ocr_engine` | `--ocr-engine` | `mineru` | Scanned PDF OCR backend: `mineru` or `glm-ocr` |
 | `ocr_model` | `--ocr-model` | `glm-ocr:latest` | Ollama model name used by model-backed OCR engines such as GLM-OCR |
 | `ollama_host` | `--ollama-host` | `http://localhost:11434` | Ollama base URL for GLM-OCR requests |
@@ -298,7 +298,7 @@ the original source evidence; otherwise CiteIndex records `needs_review`.
 | `use_layout_analysis` | `--no-layout` | `True` | Disable column/footnote detection |
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
 | `use_pageindex` | `--no-pageindex` | `True` | PageIndex hierarchy is enabled by default; pass `--no-pageindex` to disable it |
-| `pageindex_model` | `--pageindex-model` | `ollama/glm-5.3-flash:cloud` | LLM for PageIndex tree building |
+| `pageindex_model` | `--pageindex-model` | `ollama/deepseek-v4.1-flash:cloud` | LLM for PageIndex tree building |
 | `force_pdf_kind` | `--force-ocr`, `--force-digital` | auto | Override automatic PDF classification |
 | `verify_citations` | `--verify-citations` | `False` | Enable evidence-backed metadata verification |
 | `citation_verifier_model` | `--citation-verifier-model` | none | Provider-qualified model used only for unresolved conflicts |
