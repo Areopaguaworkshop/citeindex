@@ -460,11 +460,9 @@ def write_library_markdown(
     md_filename = f"{folder_name}.md"
     md_path = os.path.join(library_root, md_filename)
 
-    # ── Rewrite image paths to be relative from library/ to corpus/<slug>/images/ ──
-    # markdown is at library/<slug>.md, images at corpus/<slug>/images/<file>
-    # relative path: ../corpus/<slug>/images/<file>
+    # Rewrite image paths relative to the actual configured corpus directory.
     if document_json:
-        image_prefix = f"../corpus/{folder_name}/"
+        image_prefix = os.path.relpath(os.path.join(corpus_root, folder_name), library_root) + os.sep
         _rewrite_image_paths(document_json, image_prefix)
 
     content = generate_library_markdown(
@@ -486,8 +484,8 @@ def _rewrite_image_paths(document_json: Dict[str, Any], prefix: str) -> None:
     """Rewrite image_path fields in document_json paragraphs to use relative paths.
 
     The image paths stored by the pipeline are like ``images/filename.jpeg``
-    (relative to the corpus/<slug>/ directory).  We need them relative to
-    the library/ directory instead, so we prepend ``../corpus/<slug>/``.
+    (relative to the corpus document directory).  We prepend its path relative
+    to the library directory.
     """
     structure = document_json.get("structure", {})
     for page in structure.get("pages", []):

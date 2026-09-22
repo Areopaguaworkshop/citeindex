@@ -430,8 +430,10 @@ class CiteIndexIngestionOrchestrator:
         source_type: str,
     ) -> Dict[str, Any]:
         standardized = dict(csl_json)
-        content_hash = hash_payload(csl_json)
         merkle_root = merkle_tree.get("root")
+        # Artifact identity must follow the source content as well as its
+        # citation metadata, otherwise a revised file overwrites its evidence.
+        content_hash = hash_payload({"csl": csl_json, "merkle_root": merkle_root, "source_type": source_type})
 
         standardized["id"] = content_hash[:16]
         standardized["content_hash"] = content_hash
@@ -572,7 +574,7 @@ class CiteIndexIngestionOrchestrator:
         self._save_content_hashes(stored_hashes)
 
         summary = {
-            "status": "ok",
+            "status": "blocked" if failed_count else "ok",
             "root_url": root_url,
             "discovered": len(discovered),
             "ingested": ingested_count,

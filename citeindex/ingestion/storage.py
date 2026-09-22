@@ -111,6 +111,22 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: Dict[s
     ensure_dir(target_dir)
 
     try:
+        # A re-ingestion replaces this artifact set.  Remove optional sidecars
+        # first so disabled pipeline stages cannot leave stale evidence behind.
+        optional_files = (
+            "source_blocks.json", "web_metadata.json", "retrieval_metadata.json",
+            "citation_repair.json", "quotation_locators.json", "document.json",
+            "transcript.json", "merkle.json", "media_metadata.json",
+            "pageindex_tree.json", "citation_verification.json", "source.html",
+            "source.media",
+        )
+        for filename in optional_files:
+            path = os.path.join(target_dir, filename)
+            if os.path.isfile(path):
+                os.remove(path)
+        images_dir = os.path.join(target_dir, "images")
+        if os.path.isdir(images_dir):
+            shutil.rmtree(images_dir)
         if artifacts.get("csl_json") is not None:
             write_json(os.path.join(target_dir, "csl.json"), artifacts["csl_json"])
             from .csl import export_csl

@@ -137,3 +137,31 @@ def test_bibliography_doi_is_not_used_as_host_doi(monkeypatch):
 
     assert captured["doi"] is None
     assert report["field_states"]["title"] == "unverified"
+
+
+def test_registry_match_without_source_evidence_is_not_verified(monkeypatch):
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda *args, **kwargs: {
+        "status": "found", "candidate": {"DOI": "10.1000/example", "title": "Host"}, "provenance": {},
+    })
+
+    _, report = citation_verification.verify_citation_metadata(
+        {"DOI": "10.1000/example", "title": "Host"}, {}, "digital_pdf", {}, _config(),
+    )
+
+    assert report["status"] == "needs_review"
+    assert report["verified"] is False
+
+
+def test_registry_does_not_treat_modified_metadata_as_issued(monkeypatch):
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda *args, **kwargs: {
+        "status": "found", "candidate": {"issued": {"date-parts": [[2024, 2, 3]]}}, "provenance": {},
+    })
+    block = {"id": "modified", "text": "2024-02-03", "metadata_key": "article:modified_time",
+             "snapshot_artifact": "source.html", "source_digest": "digest"}
+
+    result, report = citation_verification.verify_citation_metadata(
+        {"DOI": "10.1000/example"}, {}, "url_article", {"source_blocks": [block]}, _config(),
+    )
+
+    assert "issued" not in result
+    assert report["status"] == "needs_review"

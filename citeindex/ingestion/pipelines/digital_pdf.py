@@ -470,11 +470,13 @@ def run(
     logger.info("Document type: %s (pages=%d)", doc_type, num_pages)
 
     page_layouts: Optional[List[Dict[str, Any]]] = None
+    # Keep raw PyMuPDF blocks for citation evidence.  The layout path replaces
+    # page text with classified body paragraphs, which deliberately omit them.
+    source_pages = _extract_pages(pdf_path)
 
     # ── Step 1: Text extraction + Layout analysis ─────────────────
     # When layout analysis is enabled and pymupdf4llm is installed,
-    # we use the GNN-classified blocks for both text extraction and
-    # layout analysis in a single pass (no duplicate fitz.open()).
+    # we use the GNN-classified blocks for text extraction and layout analysis.
     # Falls back to raw PyMuPDF extraction + heuristic layout otherwise.
     if cfg.use_layout_analysis:
         try:
@@ -506,7 +508,7 @@ def run(
 
     if page_layouts is None:
         # Fallback: raw PyMuPDF extraction (no layout classification)
-        raw_pages = _extract_pages(pdf_path)
+        raw_pages = source_pages
         page_paragraphs = _extract_page_paragraphs(raw_pages)
         ordered_text = "\n\n".join(p["text"] for p in raw_pages)
 
@@ -593,7 +595,7 @@ def run(
     )
     from .dspy_extract import build_source_blocks, select_candidate_regions
     # Use original PyMuPDF blocks before layout cleanup removes imprint text.
-    source_blocks = build_source_blocks([(p["page_number"], [b[4] for b in p["blocks"] if len(b) > 4 and isinstance(b[4], str)]) for p in raw_pages])
+    source_blocks = build_source_blocks([(p["page_number"], [b[4] for b in p["blocks"] if len(b) > 4 and isinstance(b[4], str)]) for p in source_pages])
     candidate_regions = select_candidate_regions(pageindex_tree_json)
     if cfg.citation_engine == "grobid":
         grobid_metadata = _run_grobid(pdf_path)

@@ -225,6 +225,18 @@ def _find_evidence(value: Any, evidence: Iterable[Dict[str, Any]]) -> Dict[str, 
     return None
 
 
+def _supported_evidence(field: str, value: Any, evidence: Iterable[Dict[str, Any]], blocks: list[dict]) -> Dict[str, Any] | None:
+    """Find evidence and apply metadata-role rules when it comes from a block."""
+    source = _find_evidence(value, evidence)
+    if not source:
+        return None
+    locator = source.get("locator", {})
+    block_id = locator.get("block_id")
+    if block_id is None:
+        return source
+    return source if validate_block_evidence(field, value, {"block_id": block_id, "quote": source["quote"]}, blocks) else None
+
+
 def _same_value(field: str, left: Any, right: Any) -> bool:
     if field == "DOI":
         return normalize_doi(left) == normalize_doi(right)
@@ -313,6 +325,7 @@ def verify_citation_metadata(
     """Verify registry metadata; one unresolved conflict prevents all CSL changes."""
     original, proposed = dict(csl_json), dict(csl_json)
     evidence = _evidence(document_json, resource_type, extra)
+    blocks = [block for block in extra.get("source_blocks", []) if isinstance(block, dict)]
     # A DOI in the bibliography belongs to a cited work unless host identity
     # has already established it. Do not borrow the first DOI in body text.
     doi = normalize_doi(original.get("DOI"))
@@ -324,8 +337,8 @@ def verify_citation_metadata(
         value = candidate.get(field)
         if value is None or _same_value(field, original.get(field), value):
             continue
-        source = _find_evidence(value, evidence)
-        existing_source = _find_evidence(original.get(field), evidence)
+        source = _supported_evidence(field, value, evidence, blocks)
+        existing_source = _supported_evidence(field, original.get(field), evidence, blocks)
         if source and existing_source and field != "DOI" and _evidence_rank(existing_source) >= _evidence_rank(source):
             needs_review.append({"field": field, "draft_value": original.get(field), "registry_value": value, "source_value": original.get(field), "provenance": registry["provenance"]})
         elif source and _valid_locator(source["locator"]):
@@ -361,7 +374,7 @@ def verify_citation_metadata(
     for field in HOST_FIELDS:
         if original.get(field) is None:
             field_states[field] = "missing"
-        elif _find_evidence(original[field], evidence):
+        elif _supported_evidence(field, original[field], evidence, blocks):
             field_states[field] = "source-supported"
         else:
             field_states[field] = "unverified"
@@ -371,8 +384,10 @@ def verify_citation_metadata(
         field_states[conflict["field"]] = "conflicting"
 
     registry_status = registry.get("status")
+    registry_fields = [field for field in _RECONCILABLE_FIELDS if candidate.get(field) is not None]
+    source_supported = all(field_states.get(field) == "source-supported" for field in registry_fields)
     if registry_status == "found":
-        status = "verified" if not needs_review else "needs_review"
+        status = "verified" if not needs_review and source_supported else "needs_review"
     elif registry_status == "not_found":
         status = "needs_review"
     else:
