@@ -182,9 +182,8 @@ def _transcribe_whisperx(audio_path: str) -> List[Dict[str, Any]]:
         logger.info("WhisperX transcription produced %d segments", len(segments))
         return segments
 
-    except ImportError:
-        logger.info("whisperx not installed, skipping transcription")
-        return []
+    except ImportError as exc:
+        raise RuntimeError("WhisperX unavailable; install citeindex[media] or select --media-asr-backend wenbi") from exc
     except Exception:
         logger.warning("WhisperX transcription failed", exc_info=True)
         return []

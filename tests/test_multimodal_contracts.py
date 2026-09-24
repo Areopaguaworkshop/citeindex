@@ -80,6 +80,113 @@ def test_modification_date_is_not_publication_date():
     assert supported(blocks, "issued", {"date-parts": [[2025, 5, 6]]}, "2025-05-06") is None
 
 
+@pytest.mark.parametrize("guidance,title", [
+    ("若要引用本文，袁永甲，《题名》（伦敦：光从东方来，2026年08月19日），本网页网址，引用日期。", "题名"),
+    ("Cite this article: Jane Doe, 'Example Article,' Example Journal, May 6, 2025.", "Example Article"),
+])
+def test_web_guidance_and_jsonld_survive_text_budget(monkeypatch, guidance, title):
+    html = ('<script type="application/ld+json">'
+            '{"@type":"https://schema.org/Article","author":{"name":"Jane Doe"},'
+            '"datePublished":"2025-05-06","dateModified":"2025-06-01"}'
+            '</script><p>' + 'body ' * 3000 + '</p><p>' + guidance + '</p>')
+    blocks = contracts.web_source_blocks(html)
+    assert any(b.get("metadata_key") == "jsonld:author" for b in blocks)
+    assert any(b.get("metadata_key") == "jsonld:datePublished" for b in blocks)
+    assert not any("2025-06-01" in b["text"] for b in blocks)
+
+    def response(selected):
+        assert sum(len(b["text"]) for b in selected) <= 12000
+        block = next(b for b in selected if guidance in b["text"])
+        return SimpleNamespace(csl={"title": title}, field_evidence={
+            "title": {"block_id": block["id"], "quote": title}})
+
+    calls = fake_predictor(monkeypatch, response)
+    result = contracts.extract_multimodal_metadata("web", blocks, IngestionConfig())
+    assert result["title"] == title
+    assert calls == [contracts.ExtractWebMetadata]
+
+
+def test_chinese_page_citation_overrides_conflicting_model(monkeypatch):
+    guidance = "若要引用本文，ephremyuan，《神父马克西姆：认信者圣马克西姆的生平与教导》（伦敦：光从东方来，2026年08月19日），本网页网址，引用日期。"
+    monkeypatch.setattr(url_article, "_fetch_html", lambda url: f"<p>{guidance}</p>")
+    monkeypatch.setattr(url_article, "_extract_markdown", lambda html: guidance)
+    monkeypatch.setattr(url_article, "_extract_metadata", lambda *a: {"title": "Wrong metadata title"})
+    monkeypatch.setattr(url_article, "extract_multimodal_metadata", lambda *a: {
+        "title": "Wrong model title", "author": [{"literal": "Wrong author"}],
+        "issued": {"date-parts": [[2025]]}, "_field_evidence": {"title": {"quote": "Wrong model title"}},
+    })
+    result = url_article.run("https://example.org/post", IngestionConfig(use_pageindex=False))
+    try:
+        csl = result.csl_json
+        assert csl["title"] == "神父马克西姆：认信者圣马克西姆的生平与教导"
+        assert csl["author"] == [{"literal": "ephremyuan"}]
+        assert csl["issued"] == {"date-parts": [[2026, 8, 19]]}
+        assert csl["publisher"] == "光从东方来" and csl["publisher-place"] == "伦敦"
+        assert "title" not in csl.get("_field_evidence", {})
+        assert csl["_field_status"]["title"] == "unverified"
+    finally:
+        Path(result.extra["source_snapshot_path"]).unlink()
+
+
+def test_observed_gcdfl_and_ctcfol_guidance_forms():
+    # Source wording: gcdfl.org/posts/ajia/2025-10-22-syriac1-origin/
+    series = "若要引用本文，袁永甲，《叙利亚教会的起源》，教会历史第二季之叙利亚传统第一课（伦敦：光从东方来，2025年10月22日），本网页网址，引用日期。"
+    assert url_article._parse_citation_string(url_article._find_citation_guidance(series))["collection-title"] == "教会历史第二季之叙利亚传统第一课"
+
+    # Source wording: gcdfl.org/posts/lectures/2024-05-03-liquan1-liuxiaofeng/
+    lecture = "若要引用本文，请参考以下格式：李泉《受难英雄的盼望——再思刘小枫的超越基督论讲座》，2024年5月3日（伦敦：光从东方来），本页网址，引用讲座的具体时段，引用日期。"
+    assert url_article._find_citation_guidance(lecture).startswith("李泉《受难英雄")
+
+    # Source wording: gcdfl.org/categories/基督信仰/ (article excerpt)
+    copyright_guidance = "版权声明：若要转载或引用此文，请用以下格式：Lydia博士《圣经中的立约与基督徒的生命》，（伦敦：光从东方来，2026年03月13日网上讲座），附上网页+引用日期。"
+    assert url_article._find_citation_guidance(copyright_guidance).startswith("Lydia博士")
+
+    # Source wording: ctcfol.org/posts/academic/1-brock-2017-introduction-syriac-studies-11-34_draft
+    translation = "版权申明：若要引用，请采用以下格式：S. Brock,《叙利亚「教会传统」研究导论1》，袁永甲中译（伦敦：教父原文中译计划，2026年4月22日），某年某月某日引用，本文网址。"
+    parsed = url_article._parse_citation_string(url_article._find_citation_guidance(translation))
+    assert parsed["author"] == [{"literal": "S. Brock"}]
+    assert parsed["translator"] == [{"literal": "袁永甲"}]
+    assert parsed["issued"] == {"date-parts": [[2026, 4, 22]]}
+    assert "collection-title" not in parsed
+
+    # Source wording: ctcfol.org/posts/philokalia/philimon
+    next_line = "版权申明：若要引用此文，请按以下格式\n\n袁永甲译，《阿爸腓利门传记》in《爱神集导读版》（伦敦：教父原文中译计划，2024年12月08日），本页网址，引用日期。"
+    citation = url_article._find_citation_guidance(next_line)
+    assert citation.startswith("袁永甲译")
+    parsed = url_article._parse_citation_string(citation)
+    assert parsed["translator"] == [{"literal": "袁永甲"}]
+    assert parsed["title"] == "阿爸腓利门传记"
+    assert parsed["container-title"] == "爱神集导读版"
+    assert "author" not in parsed
+
+    # Source wording: ctcfol.org/posts/academic/神父马克西姆被提狂喜与神圣空间
+    translated_work = "若参考了这篇中译，请注明引用格式如下：神父马克西姆康斯坦斯，《被提，狂喜与神圣空间的建构》，关家胜译（伦敦：教父原文中译计划，2023年7月22日），引用日期，附上本中译链接。"
+    parsed = url_article._parse_citation_string(url_article._find_citation_guidance(translated_work))
+    assert parsed["author"] == [{"literal": "神父马克西姆康斯坦斯"}]
+    assert parsed["translator"] == [{"literal": "关家胜"}]
+
+
+@pytest.mark.parametrize("heading,intro,citation,title", [
+    ("Cite this article", "", "Seavill, P.W. Alkaline earth metal-based perovskite ferroelectrics. Nat. Synth 4, 1020 (2025).", "Alkaline earth metal-based perovskite ferroelectrics"),
+    ("Cite this work", "This article can be cited as:", "Max Roser (2019) - “We won the Lovie Award!” Published online at OurWorldinData.org.", "We won the Lovie Award!"),
+])
+def test_english_citation_after_heading_survives_budget(monkeypatch, heading, intro, citation, title):
+    # Source wording: nature.com/articles/s44160-025-00881-w and ourworldindata.org/we-won-the-lovie-award
+    html = "<p>" + "body " * 3000 + "</p><h2>" + heading + "</h2><p>" + intro + "</p><p>" + citation + "</p>"
+    blocks = contracts.web_source_blocks(html)
+
+    def response(selected):
+        block = next(b for b in selected if citation in b["text"])
+        return SimpleNamespace(csl={"title": title}, field_evidence={
+            "title": {"block_id": block["id"], "quote": title}})
+
+    calls = fake_predictor(monkeypatch, response)
+    assert contracts.extract_multimodal_metadata("web", blocks, IngestionConfig())["title"] == title
+    if intro:
+        assert url_article._find_citation_guidance(f"{heading}\n\n{intro}\n\n`{citation}`") == citation
+    assert calls == [contracts.ExtractWebMetadata]
+
+
 def test_media_roles_and_timestamp_evidence(monkeypatch):
     blocks = contracts.metadata_blocks({"uploader": "Channel", "platform": "YouTube", "description": "Interview with Alice. Interviewer Bob. Podcast Test."})
     blocks += contracts.transcript_blocks([{"start": 12.5, "end": 20.25, "text": "My name is Alice."}])

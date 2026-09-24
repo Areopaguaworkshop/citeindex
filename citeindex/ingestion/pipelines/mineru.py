@@ -59,23 +59,17 @@ _LEVEL3_RE = re.compile(r"^\s*\d+\.\s")
 # ---------------------------------------------------------------------------
 
 def _resolve_mineru_cli() -> Optional[str]:
-    """Return the available MinerU CLI executable name, if any."""
-    # Prefer the CLI installed alongside the running Python interpreter.  A
-    # globally installed MinerU can belong to a different virtualenv and fail
-    # with confusing import/runtime errors.
+    """Return the MinerU CLI installed with this interpreter, if any."""
     venv_bin = Path(sys.executable).absolute().parent
     for cli_name in ("magic-pdf", "mineru"):
         candidate = venv_bin / cli_name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    for cli_name in ("magic-pdf", "mineru"):
-        if shutil.which(cli_name):
-            return cli_name
     return None
 
 
 def is_mineru_available() -> bool:
-    """Check whether a supported MinerU CLI is on PATH."""
+    """Check whether a supported MinerU CLI is installed with this interpreter."""
     return _resolve_mineru_cli() is not None
 
 
@@ -115,7 +109,7 @@ def run_mineru(
     """
     mineru_cli = _resolve_mineru_cli()
     if not mineru_cli:
-        raise RuntimeError("MinerU CLI not found on PATH (expected 'magic-pdf' or 'mineru')")
+        raise RuntimeError("MinerU CLI unavailable; install citeindex[ocr-mineru]")
 
     pdf_path = os.path.abspath(pdf_path)
     if not os.path.isfile(pdf_path):

@@ -98,7 +98,7 @@ def test_orchestrator_honors_text_reuse_and_explicit_rejection(tmp_path):
 def test_layout_recovers_text_when_model_returns_empty_boxes(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from citeindex.ingestion.pipelines import layout
-    from pymupdf4llm.helpers import document_layout
+    document_layout = pytest.importorskip("pymupdf4llm.helpers.document_layout")
 
     path = make_pdf(tmp_path / "book.pdf", [(BODY, True, True), ("", True, False)])
 
@@ -120,7 +120,7 @@ def test_layout_recovers_text_when_model_returns_empty_boxes(tmp_path, monkeypat
 def test_layout_recovers_missing_pages(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from citeindex.ingestion.pipelines import layout
-    from pymupdf4llm.helpers import document_layout
+    document_layout = pytest.importorskip("pymupdf4llm.helpers.document_layout")
 
     path = make_pdf(tmp_path / "book.pdf", [(BODY, True, True), ("", True, False)])
     monkeypatch.setattr(document_layout, "parse_document", lambda *args, **kwargs: SimpleNamespace(pages=[]))
@@ -133,7 +133,7 @@ def test_searchable_book_digital_pipeline_preserves_text_without_ocr(tmp_path, m
     from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
     from citeindex.ingestion.models import IngestionConfig
     from citeindex.ingestion.pipelines import common, digital_pdf, scanned_pdf
-    from pymupdf4llm.helpers import document_layout
+    document_layout = pytest.importorskip("pymupdf4llm.helpers.document_layout")
 
     pages = [(f"Chapter {i + 1}. " + BODY, True, True) for i in range(9)]
     path = make_pdf(tmp_path / "book.pdf", pages + [("", True, False)])

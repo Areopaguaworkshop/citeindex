@@ -10,13 +10,19 @@ Optional verification traces accepted metadata corrections to source evidence.
 ## Install
 
 ```bash
-# Using uv (recommended)
-uv pip install citeindex
-
-# Or pip
 pip install citeindex
-
+# Add only the engines you use, for example:
+pip install 'citeindex[ocr-mineru,layout]'
 ```
+
+The default install handles digital PDFs and ordinary HTML URLs. Scanned PDFs
+need `ocr-mineru` (MinerU's pipeline backend) or `ocr-paddle` with
+`--ocr-engine glm-ocr`. Media transcription with WhisperX needs `media`; the
+separate Wenbi environment needs only `media-wenbi` here. JavaScript-rendered
+pages need `web-browser` plus `playwright install chromium`, while
+`--all-url-article` needs `crawl`. The legacy OCR helpers need `ocr-legacy`.
+Enhanced PDF layout extraction uses `layout`; otherwise it falls back to the
+built-in heuristic. Install several extras together as needed.
 
 ## CLI
 

@@ -3,6 +3,7 @@
 Normalizes layout-aware OCR output into the same MinerU-like ``content_list``
 shape consumed by the shared scanned-document pipeline builder.
 """
+from __future__ import annotations
 
 import base64
 import json
@@ -13,7 +14,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import fitz
-import numpy as np
 import requests
 
 from ..models import IngestionConfig, PipelineResult
@@ -36,7 +36,7 @@ def _get_layout_detector() -> Any:
     except ImportError as exc:
         raise RuntimeError(
             "GLM-OCR backend requires paddleocr LayoutDetection support. "
-            "Install the PaddleOCR layout extras first."
+            "Install citeindex[ocr-paddle] first."
         ) from exc
 
     return LayoutDetection(model_name=_LAYOUT_MODEL_NAME)
@@ -220,6 +220,8 @@ def _extract_page_items(
     images_tmpdir: str,
     promote_title: bool,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], bool]:
+    import numpy as np
+
     zoom = 2.0
     pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
     image_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)

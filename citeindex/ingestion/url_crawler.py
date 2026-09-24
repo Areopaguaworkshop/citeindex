@@ -63,7 +63,10 @@ async def _discover_urls_async(
 ) -> List[str]:
     """Use crawl4ai BFS to discover article URLs from a root page."""
     validate_public_url(root_url)
-    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+    try:
+        from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+    except ImportError as exc:
+        raise RuntimeError("Website crawling requires citeindex[crawl]") from exc
     from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
     from crawl4ai.deep_crawling.filters import FilterChain, ContentTypeFilter
 

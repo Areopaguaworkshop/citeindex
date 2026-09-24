@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 from ..models import IngestionConfig, PipelineResult
 
@@ -8,18 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_backend(name: str) -> Callable[[str, str, Optional[IngestionConfig]], PipelineResult]:
-    backends: Dict[str, Callable[[str, str, Optional[IngestionConfig]], PipelineResult]] = {}
-
-    from . import mineru
-    from . import glm_ocr
-
-    backends["mineru"] = mineru.run
-    backends["glm-ocr"] = glm_ocr.run
-
-    try:
-        return backends[name]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported scanned OCR engine: {name}") from exc
+    if name == "mineru":
+        from . import mineru
+        return mineru.run
+    if name == "glm-ocr":
+        from . import glm_ocr
+        return glm_ocr.run
+    raise ValueError(f"Unsupported scanned OCR engine: {name}")
 
 
 def run(

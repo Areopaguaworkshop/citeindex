@@ -203,11 +203,13 @@ def _extract_metadata(html: str, url: str) -> Dict[str, Any]:
 
 # Patterns to find citation guidance blocks
 _CITE_GUIDANCE_PATTERNS = [
-    # Chinese: 若要引用本文 / 若要引用本文，请按以下格式
+    # Chinese: 若要引用本文 / 若要引用此文 / 若要引用，请采用以下格式
     re.compile(
-        r"若要引用本文[，,]?\s*(?:请按以下格式[：:]?\s*)?(.*?)(?:[。]|也请参考|$)",
+        r"若要引用(?:本文|此文)?[，,]?\s*(?:请(?:按|参考|采用)以下格式[：:]?\s*)?(.*?)(?:[。]|也请参考|$)",
         re.DOTALL,
     ),
+    re.compile(r"若要转载或引用此文[，,]?\s*请用以下格式[：:]?\s*(.*?)(?:[。]|$)", re.DOTALL),
+    re.compile(r"若参考了这篇中译[，,]?\s*请注明引用格式如下[：:]?\s*(.*?)(?:[。]|$)", re.DOTALL),
     # Chinese: 引用格式
     re.compile(r"引用格式\s*[：:]\s*(.*?)(?:[。]|$)", re.DOTALL),
     # Chinese: 版权申明.*转载.*
@@ -220,6 +222,10 @@ _CITE_GUIDANCE_PATTERNS = [
         r"Cite\s+this\s+(?:article|entry)\s*[：:\n]\s*(.*?)(?:\n\n|\n##|\Z)",
         re.DOTALL | re.IGNORECASE,
     ),
+    re.compile(
+        r"This\s+(?:article|work|topic page)\s+can\s+be\s+cited\s+as[：:]\s*`?([^\n`]+)",
+        re.IGNORECASE,
+    ),
     # German: Zitierweise
     re.compile(r"Zitierweise\s*[：:]\s*(.*?)(?:\n\n|\Z)", re.DOTALL),
     # French: Pour citer
@@ -230,8 +236,13 @@ _CITE_GUIDANCE_PATTERNS = [
 #   Author，《Title》，Series（Place：Publisher，Date）
 #   Author译《Title》（Place：Publisher，Year）
 # Two patterns: 《》 (guillemets, may contain inner <>) and bare <>
+_CN_TRANSLATION_IN_RE = re.compile(
+    r"^\s*(?P<translator>[^，,《]+?)译[，,]\s*《(?P<title>[^》]+)》\s*in\s*《(?P<container>[^》]+)》\s*"
+    r"[（(](?P<place>[^：:）)]+)[：:](?P<publisher>[^，,）)]+)[，,](?P<date>[^）)]+)[）)]",
+    re.IGNORECASE,
+)
 _CN_CITE_BOOK_RE = re.compile(
-    r"(?P<author>[^，,《]+?)[，,]\s*"
+    r"^\s*(?P<author>[^，,《]+?)[，,]\s*"
     r"(?:译\s*)?"
     r"《(?P<title>.+?)》[，,]\s*"
     r"(?P<series>.+?)"
@@ -239,7 +250,7 @@ _CN_CITE_BOOK_RE = re.compile(
     r"(?P<date>[^）)]+)[）)]"
 )
 _CN_CITE_SIMPLE_RE = re.compile(
-    r"(?P<author>[^，,《<]+?)[，,]?\s*"
+    r"^\s*(?P<author>[^，,《<]+?)[，,]?\s*"
     r"(?:译\s*)?"
     r"[《<](?P<title>[^》>]+)[》>]\s*"
     r"[（(](?P<place>[^：:）)]+)[：:](?P<publisher>[^，,）)]+)[，,]"
@@ -272,6 +283,15 @@ def _find_citation_guidance(text: str) -> Optional[str]:
 
 def _parse_citation_string(cite_str: str) -> Dict[str, Any]:
     """Parse a citation guidance string into CSL fields (regex first)."""
+    m = _CN_TRANSLATION_IN_RE.search(cite_str)
+    if m:
+        result = {"translator": [{"literal": m.group("translator").strip()}],
+                  "title": m.group("title").strip(), "container-title": m.group("container").strip(),
+                  "publisher-place": m.group("place").strip(), "publisher": m.group("publisher").strip()}
+        issued = _parse_date_string(m.group("date"))
+        if issued:
+            result["issued"] = issued
+        return result
     # Try Chinese format — book style with series (《Title》，Series（Place：Publisher，Date）)
     m = _CN_CITE_BOOK_RE.search(cite_str)
     if not m:
@@ -289,7 +309,13 @@ def _parse_citation_string(cite_str: str) -> Dict[str, Any]:
         try:
             series = m.group("series")
             if series and series.strip():
-                result["collection-title"] = series.strip().rstrip("，,")
+                series = series.strip().rstrip("，,")
+                if series.endswith(("中译", "译")) and "，" not in series:
+                    result["translator"] = [{"literal": series.removesuffix("中译").removesuffix("译").strip()}]
+                elif series.lower().startswith("in《") and series.endswith("》"):
+                    result["container-title"] = series[3:-1]
+                else:
+                    result["collection-title"] = series
         except IndexError:
             pass
         date_str = m.group("date").strip()
@@ -605,34 +631,31 @@ def run(
     if container_title:
         csl_extra["container-title"] = container_title
 
-    # Override with citation guidance (it's more authoritative)
-    if guidance_csl:
-        logger.info("Overriding metadata with in-page citation guidance")
-        if guidance_csl.get("author"):
-            csl_extra["author"] = guidance_csl["author"]
-        if guidance_csl.get("title"):
-            title = guidance_csl["title"]
-        if guidance_csl.get("issued"):
-            csl_extra["issued"] = guidance_csl["issued"]
-        if guidance_csl.get("publisher"):
-            csl_extra["publisher"] = guidance_csl["publisher"]
-        if guidance_csl.get("publisher-place"):
-            csl_extra["publisher-place"] = guidance_csl["publisher-place"]
-        if guidance_csl.get("container-title"):
-            csl_extra["container-title"] = guidance_csl["container-title"]
-        if guidance_csl.get("collection-title"):
-            csl_extra["collection-title"] = guidance_csl["collection-title"]
-        csl_extra["_citation_source"] = guidance_csl.get("_citation_source", "in_page_guidance")
-
     extracted = extract_multimodal_metadata("web", source_blocks, cfg)
-    csl_extra.update({key: value for key, value in extracted.items() if key not in {"type", "title"}})
+    csl_extra.update({key: value for key, value in extracted.items() if key not in {"type", "title", "_field_evidence"}})
     title = extracted.get("title") or title
+    field_evidence = dict(extracted.get("_field_evidence", {}))
+    if guidance_csl:
+        logger.info("Overriding metadata and DSPy with in-page citation guidance")
+        for field in ("author", "issued", "publisher", "publisher-place", "container-title", "collection-title", "title"):
+            value = guidance_csl.get(field)
+            if not value:
+                continue
+            if (title if field == "title" else csl_extra.get(field)) != value:
+                field_evidence.pop(field, None)
+            if field == "title":
+                title = value
+            else:
+                csl_extra[field] = value
+        csl_extra["_citation_source"] = guidance_csl.get("_citation_source", "in_page_guidance")
+    if field_evidence:
+        csl_extra["_field_evidence"] = field_evidence
     source_type = extracted.get("type") or metadata.get("type") or "webpage"
     if not valid_host_value("type", source_type):
         source_type = "webpage"
     csl_json = make_basic_csl(source_id, title, source_type, csl_extra)
     csl_json["_field_status"] = {
-        field: ("source-supported" if field in extracted.get("_field_evidence", {}) else
+        field: ("source-supported" if field in field_evidence else
                 "unverified" if csl_json.get(field) is not None else "missing")
         for field in evaluation_fields(csl_json, "url_article")
     }
