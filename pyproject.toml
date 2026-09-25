@@ -1,6 +1,6 @@
 [project]
 name = "citeindex"
-version = "0.13.2"
+version = "0.13.3"
 description = "Ingest sources with proper citation — PDF, URL, media, Office, DJVU"
 authors = [{ name = "ajia", email = "yyjfwoaini@gmail.com" }]
 dependencies = [
@@ -13,7 +13,7 @@ dependencies = [
     "citeproc-py>=0.7.0",
     "readability-lxml>=0.8.1",
     "pyyaml>=6.0.0",
-    "litellm>=1.83.0",
+    "litellm>=1.83.0,<1.100.0",
     "PyPDF2>=3.0.1",
     "python-dotenv>=1.1.0",
 ]
@@ -44,6 +44,9 @@ dev-dependencies = ["pytest>=7.0.0", "pytest-cov>=2.12.1", "psutil>=6.1.1"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["citeindex"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["citeindex", "README.md"]
 
 [tool.ruff.lint]
 

@@ -30,12 +30,13 @@ def parse_cli_output(text: str) -> dict:
     raise ValueError("CLI output does not contain one JSON object")
 
 
-def run_source(command: list[str], timeout: float, stdout_path: Path, stderr_path: Path) -> tuple[int, str | None]:
+def run_source(command: list[str], timeout: float, stdout_path: Path, stderr_path: Path,
+               env: dict[str, str] | None = None) -> tuple[int, str | None]:
     """Track descendants (including MinerU's separate session) and bound cleanup."""
     children = {}
     with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout,
-                                   stderr=stderr, start_new_session=True)
+                                   stderr=stderr, start_new_session=True, env=env)
         parent = psutil.Process(process.pid)
         started = heartbeat = time.monotonic()
         error = None
@@ -119,6 +120,11 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                             cli_args.append("--wenbi-speaker-labels")
                 command = [sys.executable, "-m", "citeindex.cli", source_path,
                            "--corpus-root", str(work / "corpus"), *cli_args]
+                env = os.environ.copy()
+                scan_page_sample = None
+                if row.get("modality") == "scanned_pdf":
+                    scan_page_sample = "first40-last10 for PDFs over 50 pages"
+                    env["CITEINDEX_BENCHMARK_SCAN_PAGES"] = "first40-last10"
                 started = time.monotonic()
                 deadline = int(row.get("timeout_seconds", timeout_seconds))
                 if deadline <= 0:
@@ -127,7 +133,7 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                 interrupted = False
                 result, returncode, error = {}, None, None
                 try:
-                    returncode, error = run_source(command, deadline, work / "stdout.json", work / "stderr.log")
+                    returncode, error = run_source(command, deadline, work / "stdout.json", work / "stderr.log", env)
                     if not error:
                         try:
                             result = parse_cli_output((work / "stdout.json").read_text())
@@ -147,7 +153,8 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                     "returncode": returncode, "document_path": result.get("document_path"),
                     "source_blocks": pipeline.get("source_blocks", []),
                     "citation_verification": result.get("citation_verification"),
-                    "config": {"cli_args": cli_args, "timeout_seconds": deadline},
+                    "config": {"cli_args": cli_args, "timeout_seconds": deadline,
+                               "scan_page_sample": scan_page_sample},
                     "logs": str(work), "tokens": None, "cost_usd": None,
                 }
                 original = Path(source_path)

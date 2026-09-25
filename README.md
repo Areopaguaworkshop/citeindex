@@ -431,7 +431,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.13.0). MIT. https://github.com/ajia/citeindex
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.13.3). MIT. https://github.com/ajia/citeindex
 
 **BibTeX:**
 
@@ -439,7 +439,7 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.13.0},
+  version = {0.13.3},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},

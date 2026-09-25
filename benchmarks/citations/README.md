@@ -50,3 +50,8 @@ To use Wenbi only for media rows, pass `--media-asr-backend wenbi` plus an
 explicit provider. `--wenbi-python ../wenbi/.venv/bin/python` keeps Wenbi's
 dependencies isolated from MinerU. The runner records the resulting CLI arguments
 per attempt. Do not select Gladia unless uploading audio is explicitly approved.
+
+
+### Filling local media records
+
+For local audio/video, begin with the filename as provisional evidence; do not treat a filename date as an event or publication date without confirmation. Ask the user to supply or verify the title, contributors and roles (speaker, interviewer, translator, etc.), event date, recording/publication date, and any publisher, series, or stable URL. Check embedded file metadata and the original event programme or upload page when available. Keep event date distinct from publication/upload date. Add transcript-segment evidence with timestamps only when a real transcript exists; failed transcription must not create transcript text. Leave unknown CSL fields out of the CSL object and keep the row `needs_review`; `field_status` uses the benchmark values `present`, `absent`, `illegible`, or `outside_scope` when the annotation is ready for review. Do not set `review_status` to `reviewed` until the source details are confirmed.

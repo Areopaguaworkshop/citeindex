@@ -714,6 +714,7 @@ def run_mineru_chunked(
     backend: str = "pipeline",
     timeout: int = 3600,
     chunk_pages: int | str = "auto",
+    benchmark_sample_pages: bool = False,
 ) -> Dict[str, Any]:
     """Run MinerU on a large PDF in page chunks and merge key outputs."""
     with fitz.open(pdf_path) as doc:
@@ -721,7 +722,10 @@ def run_mineru_chunked(
 
     resolved_chunk_pages = _resolve_mineru_chunk_pages(total_pages, chunk_pages)
 
-    if resolved_chunk_pages <= 0 or total_pages <= resolved_chunk_pages:
+    sampled = benchmark_sample_pages and total_pages > 50
+    if sampled and resolved_chunk_pages <= 0:
+        resolved_chunk_pages = 25
+    if resolved_chunk_pages <= 0 or (total_pages <= resolved_chunk_pages and not sampled):
         return run_mineru(
             pdf_path,
             output_dir=output_dir,
@@ -730,19 +734,23 @@ def run_mineru_chunked(
             timeout=timeout,
         )
 
-    logger.info(
-        "MinerU chunking enabled: %d pages, %d pages per chunk",
-        total_pages,
-        resolved_chunk_pages,
-    )
+    page_ranges = [(0, total_pages - 1)]
+    if sampled:
+        page_ranges = [(0, 39), (total_pages - 10, total_pages - 1)]
+        logger.info("Benchmark OCR page sample enabled: first 40 and last 10 of %d pages", total_pages)
+    logger.info("MinerU chunking enabled: %d pages per chunk", resolved_chunk_pages)
 
     merged_middle_json: list[Any] = []
     merged_content_list: list[Any] = []
     merged_markdown_parts: list[str] = []
     output_dirs: list[str] = []
 
-    for start_page in range(0, total_pages, resolved_chunk_pages):
-        end_page = min(start_page + resolved_chunk_pages - 1, total_pages - 1)
+    chunks = [
+        (start_page, min(start_page + resolved_chunk_pages - 1, range_end))
+        for range_start, range_end in page_ranges
+        for start_page in range(range_start, range_end + 1, resolved_chunk_pages)
+    ]
+    for start_page, end_page in chunks:
         chunk_output_dir = os.path.join(output_dir, f"chunk_{start_page + 1}_{end_page + 1}")
         os.makedirs(chunk_output_dir, exist_ok=True)
         logger.info(
@@ -838,6 +846,7 @@ def run(
             backend=cfg.mineru_backend,
             timeout=cfg.mineru_timeout,
             chunk_pages=cfg.mineru_chunk_pages,
+            benchmark_sample_pages=os.environ.get("CITEINDEX_BENCHMARK_SCAN_PAGES") == "first40-last10",
         )
         content_list = mineru_output.get("content_list")
         if not isinstance(content_list, list) or not content_list:
