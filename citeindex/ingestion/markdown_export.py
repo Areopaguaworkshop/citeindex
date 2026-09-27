@@ -406,6 +406,7 @@ def generate_library_markdown(
     transcript_json: Optional[Dict[str, Any]],
     resource_type: str,
     verification_status: Optional[str] = None,
+    rendered_citation: Optional[str] = None,
 ) -> str:
     """Generate a complete Markdown string for the library file."""
     parts: List[str] = []
@@ -417,7 +418,7 @@ def generate_library_markdown(
     # 2. Title + inline citation
     parts.append(f"# {csl_json.get('title', 'Untitled')}")
     parts.append("")
-    parts.append(_format_inline_citation(csl_json))
+    parts.append(rendered_citation or _format_inline_citation(csl_json))
     parts.append("")
 
     # 3. Body (per resource type)
@@ -450,6 +451,7 @@ def write_library_markdown(
     transcript_json: Optional[Dict[str, Any]],
     resource_type: str,
     verification_status: Optional[str] = None,
+    rendered_citation: Optional[str] = None,
 ) -> str:
     """Generate and write the library MD file. Returns the file path."""
     # library/ is a sibling of corpus/
@@ -471,6 +473,7 @@ def write_library_markdown(
         transcript_json=transcript_json,
         resource_type=resource_type,
         verification_status=verification_status,
+        rendered_citation=rendered_citation,
     )
 
     with open(md_path, "w", encoding="utf-8") as f:

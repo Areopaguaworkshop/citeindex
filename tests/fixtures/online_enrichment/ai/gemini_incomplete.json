@@ -1,0 +1,39 @@
+{
+  "candidates": [
+    {
+      "finishReason": "MAX_TOKENS",
+      "content": {
+        "parts": [
+          {
+            "text": "The identifier is DOI 10.1038/171737a0."
+          }
+        ]
+      },
+      "groundingMetadata": {
+        "webSearchQueries": [
+          "site:nature.com Watson Crick DNA DOI"
+        ],
+        "groundingChunks": [
+          {
+            "web": {
+              "uri": "https://www.nature.com/articles/171737a0",
+              "title": "Molecular Structure of Nucleic Acids"
+            }
+          }
+        ],
+        "groundingSupports": [
+          {
+            "segment": {
+              "startIndex": 0,
+              "endIndex": 39,
+              "text": "The identifier is DOI 10.1038/171737a0."
+            },
+            "groundingChunkIndices": [
+              0
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

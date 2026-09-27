@@ -372,8 +372,12 @@ def _extract_citation_grobid(pdf_path: str) -> Dict[str, Any]:
 
 
 def doc_type_to_csl_type(doc_type: str) -> str:
+    # Two-type model (2026-09-26): report/manuscript fold into book —
+    # standalone works cited without pages. Thesis keeps its own type.
     return {"book": "book", "thesis": "thesis", "journal": "article-journal",
-            "bookchapter": "chapter"}.get(doc_type, "document")
+            "article-journal": "article-journal", "report": "book",
+            "chapter": "chapter", "bookchapter": "chapter",
+            "entry-encyclopedia": "entry-encyclopedia", "manuscript": "book"}.get(doc_type, "document")
 
 
 def enrich_csl_with_citation_cascade(
@@ -411,7 +415,8 @@ def enrich_csl_with_citation_cascade(
 
         extracted_csl = (
             _run_dspy_extraction(ordered_text, doc_type, cfg, region_hints=region_hints,
-                                 source_blocks=source_blocks, candidate_regions=candidate_regions)
+                                 source_blocks=source_blocks, candidate_regions=candidate_regions,
+                                 total_pages=num_pages)
             if region_hints or source_blocks is not None
             else _run_dspy_extraction(ordered_text, doc_type, cfg)
         )
@@ -526,10 +531,16 @@ def validate_authors(
             logger.warning("Skipping suspiciously long author name: %s...", full_name[:50])
             continue
 
-        # Skip if name matches garbage patterns (sentence fragments)
+        # Skip if name matches garbage patterns (sentence fragments).
+        # Literal names skip the common-word check: an attested epithet
+        # like 'Aphrahat, the Persian Sage' is a legitimate CSL literal,
+        # not a sentence fragment (aphrahat1-demonstrations-en).
         if _GARBAGE_PATTERNS.search(full_name):
-            logger.warning("Skipping author name with non-name content: %s...", full_name[:50])
-            continue
+            if literal and not given and not family:
+                logger.info("Keeping literal author name: %s", full_name[:50])
+            else:
+                logger.warning("Skipping author name with non-name content: %s...", full_name[:50])
+                continue
 
         # Also check the family name alone for garbage patterns
         if family and _GARBAGE_FAMILY_PATTERNS.search(family):

@@ -9,7 +9,9 @@ from pathlib import Path
 
 
 def main(manifest_path: str, output_path: str) -> None:
-    rows = [json.loads(line) for line in Path(manifest_path).read_text().splitlines() if line.strip()]
+    rows = [json.loads(line) for line in Path(manifest_path).read_text().split("\n") if line.strip()]
+    if any(row.get("pilot_selection") is not None for row in rows):
+        rows = [row for row in rows if row.get("pilot_selection") != "excluded"]
     groups: dict[str, list[dict]] = {}
     for row in rows:
         if not row.get("work_family") or row.get("modality") not in {"digital_pdf", "scanned_pdf", "media", "url_article"}:

@@ -6,6 +6,7 @@ from citeindex.ingestion import citation_verification
 def _config(**changes):
     values = {
         "crossref_enabled": True,
+        "openlibrary_enabled": True,
         "offline_verification": False,
         "registry_contact_email": None,
         "citation_verifier_model": None,
@@ -165,3 +166,109 @@ def test_registry_does_not_treat_modified_metadata_as_issued(monkeypatch):
 
     assert "issued" not in result
     assert report["status"] == "needs_review"
+
+
+# 978-0-19-953556-9 has a valid mod-10 checksum.
+_ISBN = "978-0-19-953556-9"
+
+
+def test_openlibrary_isbn_used_when_crossref_finds_nothing(monkeypatch):
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda *args, **kwargs: {"status": "not_found", "candidate": None, "provenance": {}})
+    ol_calls = {}
+    def ol_lookup(isbn, **kwargs):
+        ol_calls.update(kwargs)
+        return {
+            "status": "found", "candidate": {"title": "The Book", "ISBN": "9780199535569"},
+            "provenance": {"provider": "openlibrary", "request_identifier": "9780199535569"},
+        }
+
+    monkeypatch.setattr(citation_verification, "lookup_openlibrary_isbn", ol_lookup)
+    document = {"structure": {"pages": [{"paragraphs": [{"node_id": "n1", "text": "The Book"}]}]}}
+
+    result, report = citation_verification.verify_citation_metadata(
+        {"title": "Draft", "ISBN": _ISBN}, document, "digital_pdf", {}, _config(),
+    )
+
+    assert report["registry"]["provenance"]["provider"] == "openlibrary"
+    assert ol_calls["openlibrary_enabled"] is True
+    assert report["corrections"][0]["field"] == "title"
+    assert report["corrections"][0]["value"] == "The Book"
+
+
+def test_openlibrary_not_called_when_crossref_resolves(monkeypatch):
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda *args, **kwargs: {"status": "found", "candidate": {"title": "Correct Title"}, "provenance": {"provider": "crossref"}})
+    monkeypatch.setattr(
+        citation_verification, "lookup_openlibrary_isbn",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+    document = {"structure": {"pages": [{"paragraphs": [{"node_id": "n1", "text": "Correct Title"}]}]}}
+
+    _, report = citation_verification.verify_citation_metadata(
+        {"title": "Draft", "DOI": "10.1000/example", "ISBN": _ISBN}, document, "digital_pdf", {}, _config(),
+    )
+
+    assert report["registry"]["provenance"]["provider"] == "crossref"
+
+
+def test_openlibrary_disabled_is_skipped(monkeypatch):
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda *args, **kwargs: {"status": "not_found", "candidate": None, "provenance": {}})
+    monkeypatch.setattr(
+        citation_verification, "lookup_openlibrary_isbn",
+        lambda isbn, **kwargs: {"status": "skipped", "candidate": None, "provenance": {"provider": "openlibrary"}},
+    )
+
+    _, report = citation_verification.verify_citation_metadata(
+        {"title": "Draft", "ISBN": _ISBN}, {"structure": {"pages": []}}, "digital_pdf", {}, _config(openlibrary_enabled=False),
+    )
+
+    assert report["registry"]["status"] == "skipped"
+    assert report["status"] == "skipped"
+
+
+def test_openlibrary_subtitle_flows_through_reconciliation(monkeypatch):
+    monkeypatch.setattr(citation_verification, "lookup_crossref_doi", lambda *args, **kwargs: {"status": "not_found", "candidate": None, "provenance": {}})
+    monkeypatch.setattr(citation_verification, "lookup_openlibrary_isbn", lambda isbn, **kwargs: {
+        "status": "found", "candidate": {"subtitle": "A Study in Origins"}, "provenance": {"provider": "openlibrary"},
+    })
+    text = "The Book: A Study in Origins"
+    document = {"structure": {"pages": [{"paragraphs": [{"node_id": "n1", "text": text}]}]}}
+
+    result, report = citation_verification.verify_citation_metadata(
+        {"title": "The Book", "ISBN": _ISBN}, document, "digital_pdf", {}, _config(),
+    )
+
+    correction = next(c for c in report["corrections"] if c["field"] == "subtitle")
+    assert correction["value"] == "A Study in Origins"
+    assert result.get("subtitle") == "A Study in Origins" or report["needs_review"]
+
+
+def test_multiline_ocr_title_evidence_supported():
+    """Printed titles split across extraction line breaks still validate."""
+    blocks = [{"id": "p1_b1", "text": "论三位一\n体", "physical_page_index": 0, "printed_page_label": "1"}]
+    evidence = [{"block_id": "p1_b1", "quote": "论三位一\n体"}]
+    resolved = citation_verification.validate_block_evidence("title", "论三位一体", evidence, blocks)
+    assert resolved and resolved["locator"]["char_start"] == 0
+
+
+def test_multiline_latin_title_evidence_supported():
+    blocks = [{"id": "p1_b2", "text": "GREGORY OF NYSSA A ND MACARIU\nS", "physical_page_index": 0}]
+    evidence = [{"block_id": "p1_b2", "quote": "GREGORY OF NYSSA A ND MACARIU\nS"}]
+    resolved = citation_verification.validate_block_evidence("title", "Gregory of Nyssa and Macarius", evidence, blocks)
+    assert resolved
+
+
+def test_whitespace_drift_quote_resolves_instead_of_raising():
+    """Evidence quotes whose whitespace drifted from the OCR block text must
+    resolve via the tolerant path, not raise on an exact re-index (sp1 gold
+    evidence rescoring crashed here)."""
+    blocks = [{"id": "p2_b1", "text": "A Study of the Divine\nLiturgy of St John", "physical_page_index": 1}]
+    evidence = [{"block_id": "p2_b1", "quote": "A Study of the Divine Liturgy of St John"}]
+    resolved = citation_verification.validate_block_evidence(
+        "title", "A Study of the Divine Liturgy of St John", evidence, blocks)
+    assert resolved and resolved["locator"]["char_start"] == 0
+
+
+def test_invented_title_still_rejected_under_tolerance():
+    blocks = [{"id": "a", "text": "Plain Title", "physical_page_index": 0}]
+    assert citation_verification.validate_block_evidence(
+        "title", "Invented", [{"block_id": "a", "quote": "Plain Title"}], blocks) is None

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import math
+from importlib.util import find_spec
 import subprocess
 import tempfile
 from importlib.metadata import PackageNotFoundError, version
@@ -33,7 +34,7 @@ def _is_url(value: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _probe_local_media(path: str) -> Dict[str, Any]:
-    metadata: Dict[str, Any] = {"source_path": os.path.abspath(path), "title": os.path.basename(path)}
+    metadata: Dict[str, Any] = {"source_path": os.path.abspath(path), "filename": os.path.basename(path)}
     try:
         from pymediainfo import MediaInfo
 
@@ -41,7 +42,8 @@ def _probe_local_media(path: str) -> Dict[str, Any]:
         tracks = parsed.tracks
         general = next((t for t in tracks if t.track_type == "General"), None)
         if general:
-            metadata["title"] = general.title or metadata["title"]
+            if general.title:
+                metadata["title"] = general.title
             metadata["duration_ms"] = general.duration
             metadata["format"] = general.format
             metadata["performer"] = getattr(general, "performer", None)
@@ -328,14 +330,17 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
         media_file_path = _download_media(media_ref)
         downloaded = True
 
-    # Step 3: Extract audio
+    # Step 3: Extract audio only when the configured backend can run.
+    asr_provenance: Dict[str, Any] = {"adapter": cfg.media_asr_backend}
+    asr_available = cfg.media_asr_backend != "whisperx" or find_spec("whisperx") is not None
+    if not asr_available:
+        asr_provenance.update(status="unavailable", error="WhisperX is not installed")
     audio_path: Optional[str] = None
-    if media_file_path and os.path.exists(media_file_path):
+    if asr_available and media_file_path and os.path.exists(media_file_path):
         audio_path = _extract_audio(media_file_path)
 
     # Step 4: Transcribe
     transcript_segments: List[Dict[str, Any]] = []
-    asr_provenance: Dict[str, Any] = {"adapter": cfg.media_asr_backend}
     if audio_path and os.path.exists(audio_path):
         try:
             if cfg.media_asr_backend == "wenbi":
@@ -345,12 +350,9 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
                 asr_provenance.update(provider="whisperx", model="base", device="cpu", compute_type="int8")
             else:
                 raise ValueError(f"unknown media ASR backend: {cfg.media_asr_backend}")
-        except Exception:
-            try:
-                os.remove(audio_path)
-            except OSError:
-                pass
-            raise
+        except Exception as exc:
+            logger.warning("Media transcription unavailable; keeping metadata-only result", exc_info=True)
+            asr_provenance.update(status="failed", error=str(exc))
 
     # Step 5: Speaker diarization (optional)
     speaker_segments: List[Dict[str, Any]] = []
@@ -388,7 +390,7 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
     source_blocks += metadata_blocks(retrieval_metadata, "retrieval_metadata.json")
     extracted = extract_multimodal_metadata("media", source_blocks, cfg)
     csl_extra.update(extracted)
-    title = csl_extra.pop("title", None) or media_metadata.get("title") or source_id
+    title = csl_extra.pop("title", None) or media_metadata.get("title") or media_metadata.get("filename") or source_id
     kind = csl_extra.pop("type", None) or "document"
     csl_json = make_basic_csl(source_id, title, kind, csl_extra)
     csl_json["_field_status"] = {
@@ -399,6 +401,12 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
     for field in ("URL", "accessed", "dimensions", "medium"):
         if field in csl_json:
             csl_json["_field_status"][field] = "observed"
+    if title == media_metadata.get("filename"):
+        csl_json["_field_status"]["title"] = "provisional-filename"
+    csl_json["_citation_status"] = "incomplete" if (
+        csl_json["_field_status"].get("title") != "source-supported" or
+        not any(csl_json["_field_status"].get(role) == "source-supported" for role in ("author", "host", "interviewer", "director", "performer"))
+    ) else "source-supported"
 
     transcript_json = {
         "source_id": source_id,
@@ -414,7 +422,7 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
         "source_blocks": source_blocks,
         "source_path": media_file_path,
         "retrieval_metadata": retrieval_metadata,
-        "transcription_status": "available" if transcript_segments else "unavailable",
+        "transcription_status": "available" if transcript_segments else "failed" if asr_provenance.get("status") == "failed" else "unavailable",
         "transcription_provenance": asr_provenance,
         "quotation_locators": [
             {"segment_id": b["segment_id"], "quote": b["text"],

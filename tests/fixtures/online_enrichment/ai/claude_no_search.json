@@ -1,0 +1,17 @@
+{
+  "stop_reason": "end_turn",
+  "content": [
+    {
+      "type": "text",
+      "text": "The identifier is DOI 10.1038/171737a0.",
+      "citations": [
+        {
+          "type": "web_search_result_location",
+          "url": "https://www.nature.com/articles/171737a0",
+          "cited_text": "The identifier is DOI 10.1038/171737a0.",
+          "encrypted_index": "opaque"
+        }
+      ]
+    }
+  ]
+}

@@ -151,7 +151,9 @@ def build_scanned_pipeline_result(
     images_list: Optional[List[Dict[str, Any]]] = None,
 ) -> PipelineResult:
     source_id = make_source_id(pdf_path)
-    num_pages = max(len(document_structure.get("pages", [])), len(page_paragraphs))
+    import fitz
+    with fitz.open(pdf_path) as pdf:
+        num_pages = pdf.page_count
     logger.info("[%s] Building result: %d pages, determining doc type...", backend_name, num_pages)
     doc_type = config.doc_type_override or determine_doc_type(pdf_path, num_pages)
     page_number_map = build_page_number_map_from_content_list(content_list)
@@ -180,6 +182,7 @@ def build_scanned_pipeline_result(
         config=config,
         source_blocks=source_blocks,
         region_hints=region_hints,
+        total_pages=num_pages,
     )
     initial_title = extracted_csl.get("title") or os.path.basename(pdf_path)
     csl = make_basic_csl(
@@ -193,6 +196,19 @@ def build_scanned_pipeline_result(
             continue
         if value is not None:
             csl[key] = value
+    from ..csl import evaluation_fields
+    supported = csl.get("_field_evidence", {})
+    csl["_field_status"] = {
+        field: "source-supported" if field in supported else "unverified" if csl.get(field) is not None else "missing"
+        for field in evaluation_fields(csl, "scanned_pdf")
+    }
+    if csl.get("title") == os.path.basename(pdf_path):
+        csl["_field_status"]["title"] = "provisional-filename"
+    csl["_citation_status"] = "source-supported" if (
+        csl["_field_status"].get("title") == "source-supported" and
+        any(csl["_field_status"].get(role) == "source-supported" for role in ("author", "editor")) and
+        csl["_field_status"].get("issued") == "source-supported"
+    ) else "incomplete"
 
     logger.info("[%s] Building content nodes and Merkle tree...", backend_name)
     nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=config.is_primary)

@@ -76,7 +76,9 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
          wenbi_python: str | None = None, wenbi_speaker_labels: bool = False) -> None:
     if timeout_seconds <= 0:
         raise ValueError("timeout must be positive")
-    rows = [json.loads(line) for line in Path(manifest_path).read_text().splitlines() if line.strip()]
+    rows = [json.loads(line) for line in Path(manifest_path).read_text().split("\n") if line.strip()]
+    if any(row.get("pilot_selection") is not None for row in rows):
+        rows = [row for row in rows if row.get("pilot_selection") != "excluded"]
     ids = [row["id"] for row in rows]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate manifest IDs")
@@ -88,7 +90,7 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit("Another runner owns this predictions file; do not start a duplicate.")
-        prior = [json.loads(line) for line in output_path.read_text().splitlines() if line.strip()] if output_path.exists() else []
+        prior = [json.loads(line) for line in output_path.read_text().split("\n") if line.strip()] if output_path.exists() else []
         latest = {row["id"]: row for row in prior}
         pending = [row for row in rows if row["id"] not in latest or
                    (retry_failed and latest[row["id"]].get("status") != "ok")]
@@ -104,6 +106,10 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                 cli_args = list(row.get("cli_args", []))
                 if not cli_args and source_path.casefold().endswith(".pdf"):
                     cli_args = ["--no-layout", "--no-pageindex"]
+                if "--online-enrich" in cli_args and "--no-online-enrich" in cli_args:
+                    raise ValueError("choose one enrichment mode in the manifest")
+                if "--online-enrich" not in cli_args and "--no-online-enrich" not in cli_args:
+                    cli_args.append("--no-online-enrich")
                 if citation_engine:
                     if "--citation-engine" in cli_args:
                         raise ValueError("set engine in the manifest or on the runner, not both")
@@ -123,8 +129,8 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                 env = os.environ.copy()
                 scan_page_sample = None
                 if row.get("modality") == "scanned_pdf":
-                    scan_page_sample = "first40-last10 for PDFs over 50 pages"
-                    env["CITEINDEX_BENCHMARK_SCAN_PAGES"] = "first40-last10"
+                    scan_page_sample = "citation-pages-1-10,-3"
+                    env["CITEINDEX_BENCHMARK_SCAN_PAGES"] = "1-10, -3"
                 started = time.monotonic()
                 deadline = int(row.get("timeout_seconds", timeout_seconds))
                 if deadline <= 0:
@@ -152,7 +158,10 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                     "error": error or result.get("error_message") or result.get("error"),
                     "returncode": returncode, "document_path": result.get("document_path"),
                     "source_blocks": pipeline.get("source_blocks", []),
+                    "retrieval_metadata": pipeline.get("retrieval_metadata", {}),
+                    "redirect_snapshots": pipeline.get("redirect_snapshots", []),
                     "citation_verification": result.get("citation_verification"),
+                    "online_enrichment": result.get("online_enrichment"),
                     "config": {"cli_args": cli_args, "timeout_seconds": deadline,
                                "scan_page_sample": scan_page_sample},
                     "logs": str(work), "tokens": None, "cost_usd": None,

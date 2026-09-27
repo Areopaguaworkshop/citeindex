@@ -573,6 +573,7 @@ def extract_pdf_images(
     source_id: str,
     min_width: int = 100,
     min_height: int = 100,
+    page_indices: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
     """Extract images from a PDF and save them to output_dir/images/.
 
@@ -597,7 +598,7 @@ def extract_pdf_images(
     doc = fitz.open(pdf_path)
     extracted: List[Dict[str, Any]] = []
 
-    for page_idx in range(doc.page_count):
+    for page_idx in page_indices if page_indices is not None else range(doc.page_count):
         page = doc[page_idx]
         image_list = page.get_images(full=True)
 
@@ -715,6 +716,7 @@ def run_mineru_chunked(
     timeout: int = 3600,
     chunk_pages: int | str = "auto",
     benchmark_sample_pages: bool = False,
+    benchmark_page_range: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run MinerU on a large PDF in page chunks and merge key outputs."""
     with fitz.open(pdf_path) as doc:
@@ -723,9 +725,24 @@ def run_mineru_chunked(
     resolved_chunk_pages = _resolve_mineru_chunk_pages(total_pages, chunk_pages)
 
     sampled = benchmark_sample_pages and total_pages > 50
-    if sampled and resolved_chunk_pages <= 0:
+    selected_pages = None
+    if benchmark_page_range:
+        from ...utils import parse_page_range
+        selected_pages = parse_page_range(benchmark_page_range, total_pages)
+        grouped = []
+        for page in selected_pages:
+            index = page - 1
+            if grouped and grouped[-1][1] + 1 == index:
+                grouped[-1] = (grouped[-1][0], index)
+            else:
+                grouped.append((index, index))
+        page_ranges = grouped
+        logger.info("Benchmark citation-page OCR enabled: pages %s of %d", selected_pages, total_pages)
+    else:
+        page_ranges = [(0, total_pages - 1)]
+    if (sampled or selected_pages is not None) and resolved_chunk_pages <= 0:
         resolved_chunk_pages = 25
-    if resolved_chunk_pages <= 0 or (total_pages <= resolved_chunk_pages and not sampled):
+    if resolved_chunk_pages <= 0 or (total_pages <= resolved_chunk_pages and not sampled and selected_pages is None):
         return run_mineru(
             pdf_path,
             output_dir=output_dir,
@@ -734,8 +751,7 @@ def run_mineru_chunked(
             timeout=timeout,
         )
 
-    page_ranges = [(0, total_pages - 1)]
-    if sampled:
+    if selected_pages is None and sampled:
         page_ranges = [(0, 39), (total_pages - 10, total_pages - 1)]
         logger.info("Benchmark OCR page sample enabled: first 40 and last 10 of %d pages", total_pages)
     logger.info("MinerU chunking enabled: %d pages per chunk", resolved_chunk_pages)
@@ -745,11 +761,11 @@ def run_mineru_chunked(
     merged_markdown_parts: list[str] = []
     output_dirs: list[str] = []
 
-    chunks = [
+    chunks = (page_ranges if selected_pages is not None else [
         (start_page, min(start_page + resolved_chunk_pages - 1, range_end))
         for range_start, range_end in page_ranges
         for start_page in range(range_start, range_end + 1, resolved_chunk_pages)
-    ]
+    ])
     for start_page, end_page in chunks:
         chunk_output_dir = os.path.join(output_dir, f"chunk_{start_page + 1}_{end_page + 1}")
         os.makedirs(chunk_output_dir, exist_ok=True)
@@ -839,6 +855,15 @@ def run(
 
     try:
         logger.info("[mineru] Step 1/5: Running MinerU OCR subprocess...")
+        benchmark_env = os.environ.get("CITEINDEX_BENCHMARK_SCAN_PAGES")
+        benchmark_sample_pages = benchmark_env == "first40-last10"
+        # ponytail: accept any raw page range ("1-10, -3"); legacy keyword
+        # "first5-last3" kept for backward compatibility with old manifests.
+        benchmark_page_range = (
+            benchmark_env if benchmark_env not in (None, "first40-last10") else None
+        )
+        if benchmark_page_range == "first5-last3":
+            benchmark_page_range = "1-5, -3"
         mineru_output = run_mineru_chunked(
             pdf_path,
             output_dir=mineru_tmpdir,
@@ -846,7 +871,8 @@ def run(
             backend=cfg.mineru_backend,
             timeout=cfg.mineru_timeout,
             chunk_pages=cfg.mineru_chunk_pages,
-            benchmark_sample_pages=os.environ.get("CITEINDEX_BENCHMARK_SCAN_PAGES") == "first40-last10",
+            benchmark_sample_pages=benchmark_sample_pages,
+            benchmark_page_range=benchmark_page_range,
         )
         content_list = mineru_output.get("content_list")
         if not isinstance(content_list, list) or not content_list:
@@ -856,7 +882,17 @@ def run(
         images_list: List[Dict[str, Any]] = []
         images_tmpdir = make_images_tmpdir(prefix="citeindex_mineru_imgs_")
         try:
-            images_list = extract_pdf_images(pdf_path, images_tmpdir, source_id)
+            sampled_pages = None
+            benchmark_pages = os.environ.get("CITEINDEX_BENCHMARK_SCAN_PAGES")
+            from ...utils import parse_page_range
+            with fitz.open(pdf_path) as doc:
+                if benchmark_pages == "first40-last10":
+                    if doc.page_count > 50:
+                        sampled_pages = list(range(40)) + list(range(doc.page_count - 10, doc.page_count))
+                elif benchmark_pages:
+                    page_spec = "1-5, -3" if benchmark_pages == "first5-last3" else benchmark_pages
+                    sampled_pages = [page - 1 for page in parse_page_range(page_spec, doc.page_count)]
+            images_list = extract_pdf_images(pdf_path, images_tmpdir, source_id, page_indices=sampled_pages)
         except Exception:
             logger.warning("MinerU image export fallback failed", exc_info=True)
 

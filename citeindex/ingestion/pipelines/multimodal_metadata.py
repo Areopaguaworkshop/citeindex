@@ -2,6 +2,7 @@
 import hashlib
 import json
 import logging
+import re
 from html.parser import HTMLParser
 
 import dspy
@@ -22,7 +23,9 @@ class ExtractWebMetadata(dspy.Signature):
     Classify the work, not its URL: use a specific CSL type such as post-weblog,
     article-newspaper, article-magazine or article-journal when supported;
     otherwise use webpage. Keep page title separate from site/container-title,
-    series/collection-title, publisher and publisher-place. Preserve ordered
+    series/collection-title, publisher and publisher-place. A meta description
+    can contain a site tagline; use the actual site name, not the whole tagline,
+    as container-title. Preserve ordered
     personal names as {family, given} and organizations or unsplittable Chinese
     names as {literal}; keep editor and translator roles separate from author.
     Express issued as {"date-parts": [[year, month, day]]}, omitting unknown
@@ -76,13 +79,17 @@ def web_source_blocks(html: str) -> list[dict]:
             self.parts = []
             self.json_ld = None
 
-        def emit(self, text, key=None):
+        def emit(self, text, key=None, tag=None):
             if not text.strip():
                 return
             block = {"id": f"html:{len(blocks)}", "text": text.strip(), "section_index": len(blocks) + 1,
                      "snapshot_artifact": "source.html", "source_digest": digest}
             if key:
                 block["metadata_key"] = key
+            if tag in {"h1", "h2", "title"}:
+                block["role"] = "heading"
+            elif len(block["text"]) < 240 and re.search(r"(?:^|\s)by\s+\S|(?:作者|撰文)\s*[:：]", block["text"], re.I):
+                block["role"] = "byline"
             blocks.append(block)
 
         def handle_starttag(self, tag, attrs):
@@ -126,7 +133,7 @@ def web_source_blocks(html: str) -> list[dict]:
             if tag in {"script", "style"}:
                 self.skip = max(0, self.skip - 1)
             if tag in {"p", "div", "li", "h1", "h2", "h3", "title", "body"} and self.parts:
-                self.emit("".join(self.parts))
+                self.emit("".join(self.parts), tag=tag)
                 self.parts.clear()
     parser = Parser()
     parser.feed(html)
@@ -154,7 +161,11 @@ def extract_multimodal_metadata(kind: str, blocks: list[dict], config: Ingestion
         ("若要引用", "若参考了这篇中译", "引用格式", "cite this", "can be cited as", "how to cite"))}
     guidance |= {i + offset for i in guidance for offset in (1, 2) if i + offset < len(blocks)}
     ranked = [block for _, block in sorted(enumerate(blocks), key=lambda item: (
-        0 if item[0] in guidance else 1 if item[1].get("metadata_key") else 2
+        0 if item[0] in guidance else
+        1 if item[1].get("role") == "byline" or str(item[1].get("metadata_key", "")).casefold() in
+            {"author", "citation_author", "dc.creator", "article:author", "jsonld:author"} else
+        2 if item[1].get("metadata_key") else
+        3 if item[1].get("role") == "heading" else 4
     ))]
     selected, remaining = [], 12000
     for block in ranked:
@@ -170,7 +181,7 @@ def extract_multimodal_metadata(kind: str, blocks: list[dict], config: Ingestion
         with dspy.context(lm=lm):
             result = dspy.Predict(signature)(source_blocks=selected)
         if not isinstance(result.csl, dict) or not isinstance(result.field_evidence, dict):
-            return {}
+            raise ValueError("DSPy returned malformed citation fields")
         accepted, evidence = {}, {}
         for field, value in result.csl.items():
             if field not in HOST_FIELDS or field in {"URL", "accessed"} or not valid_host_value(field, value):
@@ -182,9 +193,28 @@ def extract_multimodal_metadata(kind: str, blocks: list[dict], config: Ingestion
             supported = validate_block_evidence(field, value, result.field_evidence.get(field), selected)
             if supported:
                 accepted[field], evidence[field] = value, supported
-        if accepted:
-            accepted["_field_evidence"] = evidence
-        return accepted
     except Exception:
         logger.warning("%s DSPy metadata extraction unavailable; retaining unverified candidates", kind, exc_info=True)
-        return {}
+        accepted, evidence = {}, {}
+    if kind == "web" and "author" not in accepted:
+        for block in selected:
+            if block.get("role") != "byline":
+                continue
+            match = re.search(r"\bby\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]{2,80})\s*$", block["text"], re.I)
+            if not match:
+                continue
+            value = [{"literal": match.group(1).strip()}]
+            supported = validate_block_evidence("author", value, {"block_id": block["id"], "quote": match.group(1)}, blocks)
+            if supported:
+                accepted["author"], evidence["author"] = value, supported
+                break
+    if kind == "web":
+        for long_field, short_field in (("publisher", "container-title"), ("container-title", "publisher")):
+            long, short = accepted.get(long_field), accepted.get(short_field)
+            if (isinstance(long, str) and isinstance(short, str) and short and
+                    long.startswith(short + " — ") and
+                    validate_block_evidence(long_field, short, evidence.get(long_field), blocks)):
+                accepted[long_field] = short
+    if accepted:
+        accepted["_field_evidence"] = evidence
+    return accepted

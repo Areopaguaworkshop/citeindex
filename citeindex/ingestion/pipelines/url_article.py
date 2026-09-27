@@ -12,11 +12,14 @@ Workflow:
 """
 
 import logging
+import hashlib
 import os
 import re
 import tempfile
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urljoin
 
 import requests
 import trafilatura
@@ -24,7 +27,7 @@ import trafilatura
 from ..models import IngestionConfig, PipelineResult
 from ..csl import valid_host_value, evaluation_fields
 from .multimodal_metadata import extract_multimodal_metadata, web_source_blocks, metadata_blocks
-from ..url_security import UnsafeUrlError, fetch_text, validate_public_url, MAX_RESPONSE_BYTES
+from ..url_security import UnsafeUrlError, fetch_text, validate_public_url, MAX_RESPONSE_BYTES, MAX_REDIRECTS
 from .common import (
     attach_evidence_locators,
     build_merkle_for_nodes,
@@ -89,6 +92,42 @@ def _fetch_html(url: str) -> str:
     if html:
         return html
     return _fetch_with_requests(url)
+
+
+def _meta_refresh_target(html: str, base_url: str) -> str | None:
+    class Refresh(HTMLParser):
+        target = None
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            attrs = dict(attrs)
+            if tag != "meta" or str(attrs.get("http-equiv", "")).casefold() != "refresh":
+                return
+            match = re.fullmatch(r"\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\";]+)['\"]?\s*", attrs.get("content") or "", re.I)
+            if match:
+                self.target = urljoin(base_url, match.group(1).strip())
+    parser = Refresh()
+    parser.feed(html)
+    return parser.target
+
+
+def _fetch_article(url: str) -> tuple[str, str, list[dict]]:
+    """Follow bounded HTML meta refreshes using the same public-URL guard."""
+    current, visited, redirects = url, set(), []
+    for _ in range(MAX_REDIRECTS + 1):
+        if current in visited:
+            raise UnsafeUrlError("meta refresh cycle")
+        visited.add(current)
+        html = _fetch_html(current)
+        target = _meta_refresh_target(html, current)
+        if not target:
+            visible = " ".join(block["text"] for block in web_source_blocks(html) if not block.get("metadata_key"))
+            if not visible.strip() or (len(visible) < 300 and "redirecting" in visible.casefold()):
+                raise ValueError("URL returned no article text")
+            return current, html, redirects
+        validate_public_url(target)
+        redirects.append({"url": current, "target_url": target,
+                          "source_digest": hashlib.sha256(html.encode()).hexdigest(), "html": html})
+        current = target
+    raise UnsafeUrlError("too many meta refreshes")
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +242,7 @@ def _extract_metadata(html: str, url: str) -> Dict[str, Any]:
 
 # Patterns to find citation guidance blocks
 _CITE_GUIDANCE_PATTERNS = [
+    re.compile(r"若要转载请参考如下格式[：:]\s*(.*?)(?:[。]|$)", re.DOTALL),
     # Chinese: 若要引用本文 / 若要引用此文 / 若要引用，请采用以下格式
     re.compile(
         r"若要引用(?:本文|此文)?[，,]?\s*(?:请(?:按|参考|采用)以下格式[：:]?\s*)?(.*?)(?:[。]|也请参考|$)",
@@ -242,7 +282,7 @@ _CN_TRANSLATION_IN_RE = re.compile(
     re.IGNORECASE,
 )
 _CN_CITE_BOOK_RE = re.compile(
-    r"^\s*(?P<author>[^，,《]+?)[，,]\s*"
+    r"^\s*(?P<author>[^，,《]+?)[，,]?\s*"
     r"(?:译\s*)?"
     r"《(?P<title>.+?)》[，,]\s*"
     r"(?P<series>.+?)"
@@ -582,17 +622,17 @@ def run(
 ) -> PipelineResult:
     cfg = config or IngestionConfig()
     source_id = make_source_id(url)
-    now = datetime.now(timezone.utc)
 
     # ── Step 1: Fetch ──────────────────────────────────────────────
-    html = _fetch_html(url)
+    final_url, html, redirects = _fetch_article(url)
+    now = datetime.now(timezone.utc)
 
     # ── Step 2: Extract content as markdown (preserves headings) ──
     markdown_text = _extract_markdown(html)
 
     # ── Step 3: Extract metadata (Zotero first) ───────────────────
-    metadata = _extract_metadata(html, url)
-    title = metadata.get("title") or url
+    metadata = _extract_metadata(html, final_url)
+    title = metadata.get("title") or final_url
     author = metadata.get("author")
     date = metadata.get("date")
 
@@ -601,12 +641,12 @@ def run(
     cite_text = _find_citation_guidance(markdown_text) or _find_citation_guidance(html)
     guidance_csl = _parse_citation_string(cite_text) if cite_text else {}
     source_blocks = web_source_blocks(html)
-    retrieval_metadata = {"URL": url, "accessed": now.date().isoformat()}
+    retrieval_metadata = {"URL": final_url, "accessed": now.date().isoformat(), "requested_url": url}
     source_blocks += metadata_blocks(retrieval_metadata, "retrieval_metadata.json")
 
     # ── Step 6: Reconcile — citation guidance wins ────────────────
     csl_extra: Dict[str, Any] = {
-        "URL": url,
+        "URL": final_url,
         "accessed": {
             "date-parts": [[now.year, now.month, now.day]],
         },
@@ -637,16 +677,29 @@ def run(
     field_evidence = dict(extracted.get("_field_evidence", {}))
     if guidance_csl:
         logger.info("Overriding metadata and DSPy with in-page citation guidance")
+        guidance_block = next((block for block in source_blocks if cite_text and cite_text in block["text"]), None)
         for field in ("author", "issued", "publisher", "publisher-place", "container-title", "collection-title", "title"):
             value = guidance_csl.get(field)
             if not value:
                 continue
+            if field == "author" and field_evidence.get("author"):
+                existing = csl_extra.get("author")
+                surname = existing[0].get("family") if isinstance(existing, list) and len(existing) == 1 else None
+                if (surname and existing[0].get("given") and isinstance(value, list) and len(value) == 1 and
+                        re.search(rf"\b{re.escape(surname)}\b", value[0].get("literal", ""), re.I) and
+                        not re.search(re.escape(existing[0]["given"]), value[0].get("literal", ""), re.I)):
+                    continue  # Guidance abbreviates a source-supported full byline.
             if (title if field == "title" else csl_extra.get(field)) != value:
                 field_evidence.pop(field, None)
             if field == "title":
                 title = value
             else:
                 csl_extra[field] = value
+            if guidance_block:
+                from ..citation_verification import validate_block_evidence
+                supported = validate_block_evidence(field, value, {"block_id": guidance_block["id"], "quote": guidance_block["text"]}, source_blocks)
+                if supported:
+                    field_evidence[field] = supported
         csl_extra["_citation_source"] = guidance_csl.get("_citation_source", "in_page_guidance")
     if field_evidence:
         csl_extra["_field_evidence"] = field_evidence
@@ -661,9 +714,13 @@ def run(
     }
     csl_json["_field_status"]["accessed"] = "observed"
     csl_json["_field_status"]["URL"] = "observed"
+    csl_json["_citation_status"] = "incomplete" if (
+        csl_json["_field_status"].get("title") != "source-supported" or
+        not any(csl_json["_field_status"].get(role) == "source-supported" for role in ("author", "editor", "translator"))
+    ) else "source-supported"
 
     # ── Step 7: Build section-hierarchical structure ───────────────
-    pages, section_tree, page_paragraphs = _parse_markdown_sections(markdown_text, url)
+    pages, section_tree, page_paragraphs = _parse_markdown_sections(markdown_text, final_url)
     nodes = build_nodes(source_id, page_paragraphs)
     attach_evidence_locators({"pages": pages}, nodes)
 
@@ -677,6 +734,7 @@ def run(
         "source_blocks": source_blocks,
         "web_metadata": metadata,
         "retrieval_metadata": retrieval_metadata,
+        "redirect_snapshots": redirects,
     }
     if cfg.use_pageindex and markdown_text.strip():
         from .pageindex_tree import run_pageindex_md_tree, pageindex_to_citeindex_tree
@@ -699,7 +757,7 @@ def run(
         "source_type": "url_article",
         "metadata": {
             "title": title,
-            "url": url,
+            "url": final_url,
             "author": csl_extra.get("author"),
             "publication_date": date,
         },

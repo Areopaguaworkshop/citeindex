@@ -10,7 +10,7 @@ from citeindex.ingestion.csl import export_csl, evaluation_fields, valid_host_va
 from citeindex.ingestion.citation_verification import validate_block_evidence
 from citeindex.ingestion.models import IngestionConfig
 from citeindex.ingestion.pipelines import multimodal_metadata as contracts
-from citeindex.ingestion.pipelines import url_article, media
+from citeindex.ingestion.pipelines import url_article, media, mineru
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.storage import write_json
 
@@ -80,6 +80,104 @@ def test_modification_date_is_not_publication_date():
     assert supported(blocks, "issued", {"date-parts": [[2025, 5, 6]]}, "2025-05-06") is None
 
 
+def test_web_selection_keeps_late_byline(monkeypatch):
+    blocks = contracts.web_source_blocks("<h1>Antioch</h1>" + "<p>Navigation text.</p>" * 600 + "<p>(ca. 420) by Hidemi Takahashi</p>")
+    def response(selected):
+        assert sum(len(block["text"]) for block in selected) <= 12000
+        assert any("by Hidemi Takahashi" in block["text"] for block in selected)
+        return SimpleNamespace(csl={}, field_evidence={})
+    fake_predictor(monkeypatch, response)
+    result = contracts.extract_multimodal_metadata("web", blocks, IngestionConfig())
+    assert result["author"] == [{"literal": "Hidemi Takahashi"}]
+
+
+def test_web_site_tagline_uses_short_name(monkeypatch):
+    blocks = contracts.web_source_blocks('<meta name="description" content="Example Journal — Articles">'
+                                         '<p>Example Journal</p>')
+    def response(selected):
+        long = next(b for b in selected if "Example Journal — Articles" in b["text"])
+        short = next(b for b in selected if b["text"] == "Example Journal")
+        return SimpleNamespace(csl={"publisher": "Example Journal — Articles", "container-title": "Example Journal"},
+                               field_evidence={"publisher": {"block_id": long["id"], "quote": "Example Journal — Articles"},
+                                               "container-title": {"block_id": short["id"], "quote": "Example Journal"}})
+    fake_predictor(monkeypatch, response)
+    result = contracts.extract_multimodal_metadata("web", blocks, IngestionConfig())
+    assert result["publisher"] == "Example Journal"
+
+
+def test_meta_refresh_fetches_article_without_losing_redirect_snapshot(monkeypatch):
+    old = 'https://8.8.8.8/old'
+    target = 'https://8.8.8.8/new'
+    pages = {old: '<meta http-equiv="refresh" content="0;url=/new"><title>Redirecting...</title>',
+             target: '<h1>Article title</h1><p>Real article text.</p>'}
+    monkeypatch.setattr(url_article, "_fetch_html", pages.__getitem__)
+    final_url, html, chain = url_article._fetch_article(old)
+    assert final_url == target and "Real article" in html
+    assert len(chain) == 1 and chain[0]["url"] == old and chain[0]["target_url"] == target
+    assert chain[0]["html"] == pages[old]
+
+
+def test_exact_spans_can_support_names_across_blocks():
+    blocks = [{"id": "p1_b1", "text": "Alice Doe", "physical_page_index": 0},
+              {"id": "p1_b2", "text": "Bob Roe", "physical_page_index": 0}]
+    names = [{"literal": "Alice Doe"}, {"literal": "Bob Roe"}]
+    spans = [{"block_id": "p1_b1", "quote": "Alice Doe"}, {"block_id": "p1_b2", "quote": "Bob Roe"}]
+    assert len(validate_block_evidence("author", names, {"spans": spans}, blocks)["spans"]) == 2
+    assert validate_block_evidence("author", names, {"spans": spans[:1]}, blocks) is None
+    assert validate_block_evidence("author", names, {"spans": [*spans[:1], {"block_id": "p1_b2", "quote": "Invented"}]}, blocks) is None
+
+
+def test_missing_asr_keeps_media_metadata_without_transcript(tmp_path, monkeypatch):
+    source = tmp_path / "unknown.mp4"
+    source.write_bytes(b"placeholder")
+    monkeypatch.setattr(media, "find_spec", lambda package: None)
+    monkeypatch.setattr(media, "_probe_local_media", lambda path: {"filename": source.name, "source_path": str(source)})
+    monkeypatch.setattr(media, "_extract_audio", lambda path: pytest.fail("audio should not be extracted"))
+    monkeypatch.setattr(media, "extract_multimodal_metadata", lambda *args: {})
+    result = media.run(str(source), IngestionConfig())
+    assert result.status == "ok" and result.extra["transcription_status"] == "unavailable"
+    assert result.transcript_json["segments"] == []
+    assert result.csl_json["_citation_status"] == "incomplete"
+    assert result.csl_json["_field_status"]["title"] == "provisional-filename"
+
+
+def test_mineru_image_export_respects_page_sample(tmp_path, monkeypatch):
+    visited = []
+    class Page:
+        def get_images(self, full=False):
+            return []
+    class Doc:
+        page_count = 100
+        def __getitem__(self, index):
+            visited.append(index)
+            return Page()
+        def close(self):
+            pass
+    monkeypatch.setattr(mineru.fitz, "open", lambda path: Doc())
+    assert mineru.extract_pdf_images("sample.pdf", str(tmp_path), "sample", page_indices=[0, 1, 90, 99]) == []
+    assert visited == [0, 1, 90, 99]
+
+
+def test_benchmark_ocr_reads_only_citation_pages_and_keeps_physical_indices(tmp_path, monkeypatch):
+    class Doc:
+        page_count = 100
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+    monkeypatch.setattr(mineru.fitz, "open", lambda path: Doc())
+    calls = []
+    def run_mineru(path, **kwargs):
+        calls.append((kwargs["start_page"], kwargs["end_page"]))
+        return {"content_list": [{"page_idx": 0, "text": "page"}],
+                "middle_json": [], "markdown": "page"}
+    monkeypatch.setattr(mineru, "run_mineru", run_mineru)
+    result = mineru.run_mineru_chunked(
+        "source.pdf", str(tmp_path), chunk_pages="auto", benchmark_page_range="1-5, -3")
+    assert calls == [(0, 4), (97, 99)]
+    assert [item["page_idx"] for item in result["content_list"]] == [0, 97]
+
+
 @pytest.mark.parametrize("guidance,title", [
     ("若要引用本文，袁永甲，《题名》（伦敦：光从东方来，2026年08月19日），本网页网址，引用日期。", "题名"),
     ("Cite this article: Jane Doe, 'Example Article,' Example Journal, May 6, 2025.", "Example Article"),
@@ -122,13 +220,36 @@ def test_chinese_page_citation_overrides_conflicting_model(monkeypatch):
         assert csl["author"] == [{"literal": "ephremyuan"}]
         assert csl["issued"] == {"date-parts": [[2026, 8, 19]]}
         assert csl["publisher"] == "光从东方来" and csl["publisher-place"] == "伦敦"
-        assert "title" not in csl.get("_field_evidence", {})
-        assert csl["_field_status"]["title"] == "unverified"
+        assert csl["_field_evidence"]["title"]["quote"] == guidance
+        assert csl["_field_status"]["title"] == "source-supported"
+    finally:
+        Path(result.extra["source_snapshot_path"]).unlink()
+
+
+def test_abbreviated_guidance_author_keeps_supported_full_byline(monkeypatch):
+    guidance = "若要转载请参考如下格式：托伦斯 Torrance 《缩放文本：天梯约翰著作中书籍地位的模糊性》，Albert Sun 中译 （伦敦：教父原文中译计划，2024年1月22日），引用日期，此文链接。"
+    html = f"<p>Alexis Torrance</p><p>{guidance}</p>"
+    monkeypatch.setattr(url_article, "_fetch_html", lambda url: html)
+    monkeypatch.setattr(url_article, "_extract_markdown", lambda html: guidance)
+    monkeypatch.setattr(url_article, "_extract_metadata", lambda *a: {"title": "Wrong title"})
+    def extracted(kind, blocks, config):
+        block = next(b for b in blocks if b["text"] == "Alexis Torrance")
+        return {"author": [{"family": "Torrance", "given": "Alexis"}],
+                "_field_evidence": {"author": {"block_id": block["id"], "quote": "Alexis Torrance"}}}
+    monkeypatch.setattr(url_article, "extract_multimodal_metadata", extracted)
+    result = url_article.run("https://example.org/post", IngestionConfig(use_pageindex=False))
+    try:
+        assert result.csl_json["author"] == [{"family": "Torrance", "given": "Alexis"}]
+        assert result.csl_json["title"] == "缩放文本：天梯约翰著作中书籍地位的模糊性"
     finally:
         Path(result.extra["source_snapshot_path"]).unlink()
 
 
 def test_observed_gcdfl_and_ctcfol_guidance_forms():
+    ctcfol = "若要转载请参考如下格式：托伦斯 Torrance 《缩放文本：天梯约翰著作中书籍地位的模糊性》，Albert Sun 中译 （伦敦：教父原文中译计划，2024年1月22日），引用日期，此文链接。"
+    parsed_ctcfol = url_article._parse_citation_string(url_article._find_citation_guidance(ctcfol))
+    assert parsed_ctcfol["title"] == "缩放文本：天梯约翰著作中书籍地位的模糊性"
+    assert parsed_ctcfol["translator"] == [{"literal": "Albert Sun"}]
     # Source wording: gcdfl.org/posts/ajia/2025-10-22-syriac1-origin/
     series = "若要引用本文，袁永甲，《叙利亚教会的起源》，教会历史第二季之叙利亚传统第一课（伦敦：光从东方来，2025年10月22日），本网页网址，引用日期。"
     assert url_article._parse_citation_string(url_article._find_citation_guidance(series))["collection-title"] == "教会历史第二季之叙利亚传统第一课"

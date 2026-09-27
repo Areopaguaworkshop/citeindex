@@ -462,7 +462,9 @@ def run(
 
     # Open PDF once for metadata
     doc_tmp = fitz.open(pdf_path)
-    title = doc_tmp.metadata.get("title") or os.path.basename(pdf_path)
+    # Embedded PDF titles are commonly stale labels (e.g. "new doc 6"); keep
+    # the filename provisional until source-page evidence establishes the title.
+    title = os.path.basename(pdf_path)
     num_pages = doc_tmp.page_count
     doc_tmp.close()
 
@@ -621,6 +623,19 @@ def run(
             continue
         if value is not None:
             csl[key] = value
+    from ..csl import evaluation_fields
+    supported = csl.get("_field_evidence", {})
+    csl["_field_status"] = {
+        field: "source-supported" if field in supported else "unverified" if csl.get(field) is not None else "missing"
+        for field in evaluation_fields(csl, "digital_pdf")
+    }
+    if csl.get("title") == title and (title == os.path.basename(pdf_path) or title.casefold().endswith(".pdf")):
+        csl["_field_status"]["title"] = "provisional-filename"
+    csl["_citation_status"] = "source-supported" if (
+        csl["_field_status"].get("title") == "source-supported" and
+        any(csl["_field_status"].get(role) == "source-supported" for role in ("author", "editor")) and
+        csl["_field_status"].get("issued") == "source-supported"
+    ) else "incomplete"
 
     # ── Step 6: Nodes + Merkle ─────────────────────────────────────
     nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)

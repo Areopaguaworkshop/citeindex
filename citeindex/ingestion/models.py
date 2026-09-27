@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field, asdict
+import math
 from typing import Any, Dict, List, Optional
 
 
@@ -41,7 +42,7 @@ class IngestionConfig:
     text_direction: str = "horizontal"
     vertical_lang: str = "ch"
     lang: str = "auto"
-    page_range: str = "1-5, -3"
+    page_range: str = "1-10, -3"
     citation_style: str = "chicago-author-date"
     doc_type_override: Optional[str] = None
     use_layout_analysis: bool = True
@@ -51,16 +52,47 @@ class IngestionConfig:
     verify_citations: bool = False
     citation_verifier_model: Optional[str] = None
     crossref_enabled: bool = True
+    openlibrary_enabled: bool = True
     offline_verification: bool = False
     registry_contact_email: Optional[str] = None
     force_pdf_kind: Optional[str] = None  # 'force_ocr', 'force_digital', or None for auto-detect
     strip_existing_ocr: bool = False  # optionally reject existing OCR layers during classification
     repair_proposal: Optional[str] = None  # JSON proposal file; applied through normal finalization
+    # Default-on release is gated on the independent enrichment benchmark.
+    online_enrich: bool = False
+    online_enrich_providers: tuple[str, ...] = ("crossref", "openalex", "openlibrary", "datacite")
+    online_enrich_min_score: float = 0.90
+    online_enrich_timeout: float = 20.0
+    online_enrich_cache_ttl: float = 604800.0
+    online_enrich_ai_fallback: bool = False
+    online_enrich_ai_provider: Optional[str] = None
+    online_enrich_ai_model: Optional[str] = None
+    online_enrich_ai_domains: tuple[str, ...] = ("doi.org", "crossref.org", "openlibrary.org", "datacite.org")
+    enrich_proposal: Optional[str] = None
     media_asr_backend: str = "whisperx"  # whisperx or opt-in wenbi
     wenbi_asr_provider: str = "funasr"  # explicit; never Wenbi auto/implicit cloud
     wenbi_whisper_model: str = "large-v3-turbo"
     wenbi_speaker_labels: bool = False
     wenbi_python: Optional[str] = None  # optional isolated Wenbi environment interpreter
+
+    def __post_init__(self) -> None:
+        providers = self.online_enrich_providers
+        if (not isinstance(providers, (tuple, list)) or not providers
+                or any(not isinstance(p, str) or p not in {"crossref", "openalex", "openlibrary", "datacite"} for p in providers)
+                or len(set(providers)) != len(providers)):
+            raise ValueError("online_enrich_providers must contain unique supported registry names")
+        self.online_enrich_providers = tuple(providers)
+        for name in ("online_enrich_min_score", "online_enrich_timeout", "online_enrich_cache_ttl"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.online_enrich_min_score > 1:
+            raise ValueError("online_enrich_min_score must be at most 1")
+        if self.online_enrich_ai_fallback:
+            from .ai_discovery import validate_ai_config
+            validate_ai_config(self)
+        if self.enrich_proposal and self.offline_verification:
+            raise ValueError("--enrich-proposal requires online registry verification")
 
 
 @dataclass

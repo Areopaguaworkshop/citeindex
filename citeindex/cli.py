@@ -146,9 +146,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--page-range",
+        "--citation-pages",
         "-p",
-        default="1-5, -3",
-        help='Page range for extraction (default: "1-5, -3")',
+        default="1-10, -3",
+        help='Citation search pages, 1-based physical PDF positions; -3 means last 3 (default: "1-10, -3")',
     )
     parser.add_argument(
         "--type",
@@ -212,6 +213,24 @@ def main() -> None:
         "--repair-proposal",
         help="JSON evidence-backed repair proposal; corrections are applied through normal re-finalization",
     )
+    parser.add_argument("--online-enrich", action=argparse.BooleanOptionalAction, default=False,
+                        help="Enrich PDF metadata from registries (development opt-in; release benchmark pending)")
+    parser.add_argument("--online-enrich-providers", default="crossref,openalex,openlibrary,datacite",
+                        help="Comma-separated enabled metadata registries")
+    parser.add_argument("--online-enrich-min-score", type=float, default=0.90)
+    parser.add_argument("--online-enrich-timeout", type=float, default=20.0,
+                        help="Whole enrichment request budget in seconds")
+    parser.add_argument("--online-enrich-cache-ttl", type=float, default=604800.0,
+                        help="Positive registry cache lifetime in seconds")
+    parser.add_argument("--online-enrich-ai-fallback", action="store_true",
+                        help="Opt into identifier discovery with mandatory native online search")
+    parser.add_argument("--online-enrich-ai-provider", choices=("claude", "gemini", "openai"))
+    parser.add_argument("--online-enrich-ai-model", help="Supported native search model; provider default if omitted")
+    parser.add_argument("--online-enrich-ai-domains", default="doi.org,crossref.org,openlibrary.org,datacite.org",
+                        help="Comma-separated accepted AI discovery source domains")
+    parser.add_argument("--enrich-proposal", help="Registry-backed proposal; freshly validated after source repair")
+    parser.add_argument("--no-openlibrary", dest="openlibrary_enabled", action="store_false", default=True)
+    parser.add_argument("--citation-style", default="chicago-author-date", help="Bundled CSL rendering style")
     parser.add_argument(
         "--media-asr-backend",
         choices=["whisperx", "wenbi"],
@@ -292,37 +311,52 @@ def main() -> None:
     elif args.force_digital:
         force_pdf_kind = "force_digital"
 
-    config = IngestionConfig(
-        llm_model=args.llm,
-        citation_engine=args.citation_engine,
-        ocr_engine=args.ocr_engine,
-        ocr_model=args.ocr_model,
-        ollama_host=args.ollama_host,
-        mineru_backend=args.mineru_backend,
-        mineru_timeout=args.mineru_timeout,
-        mineru_chunk_pages=args.mineru_chunk_pages,
-        text_direction=args.text_direction,
-        vertical_lang=args.vertical_lang,
-        lang=args.lang,
-        page_range=args.page_range,
-        doc_type_override=args.type,
-        use_layout_analysis=not args.no_layout,
-        is_primary=args.is_primary,
-        use_pageindex=not args.no_pageindex,
-        pageindex_model=args.pageindex_model,
-        verify_citations=args.verify_citations,
-        citation_verifier_model=args.citation_verifier_model,
-        crossref_enabled=args.crossref_enabled,
-        offline_verification=args.offline_verification,
-        registry_contact_email=args.registry_contact_email,
-        force_pdf_kind=force_pdf_kind,
-        repair_proposal=args.repair_proposal,
-        media_asr_backend=args.media_asr_backend,
-        wenbi_asr_provider=args.wenbi_asr_provider,
-        wenbi_whisper_model=args.wenbi_whisper_model,
-        wenbi_speaker_labels=args.wenbi_speaker_labels,
-        wenbi_python=args.wenbi_python,
-    )
+    try:
+        config = IngestionConfig(
+            llm_model=args.llm,
+            citation_engine=args.citation_engine,
+            ocr_engine=args.ocr_engine,
+            ocr_model=args.ocr_model,
+            ollama_host=args.ollama_host,
+            mineru_backend=args.mineru_backend,
+            mineru_timeout=args.mineru_timeout,
+            mineru_chunk_pages=args.mineru_chunk_pages,
+            text_direction=args.text_direction,
+            vertical_lang=args.vertical_lang,
+            lang=args.lang,
+            page_range=args.page_range,
+            doc_type_override=args.type,
+            use_layout_analysis=not args.no_layout,
+            is_primary=args.is_primary,
+            use_pageindex=not args.no_pageindex,
+            pageindex_model=args.pageindex_model,
+            verify_citations=args.verify_citations,
+            citation_verifier_model=args.citation_verifier_model,
+            crossref_enabled=args.crossref_enabled,
+            openlibrary_enabled=args.openlibrary_enabled,
+            offline_verification=args.offline_verification,
+            registry_contact_email=args.registry_contact_email,
+            force_pdf_kind=force_pdf_kind,
+            repair_proposal=args.repair_proposal,
+            online_enrich=args.online_enrich,
+            online_enrich_providers=tuple(p.strip() for p in args.online_enrich_providers.split(",")),
+            online_enrich_min_score=args.online_enrich_min_score,
+            online_enrich_timeout=args.online_enrich_timeout,
+            online_enrich_cache_ttl=args.online_enrich_cache_ttl,
+            online_enrich_ai_fallback=args.online_enrich_ai_fallback,
+            online_enrich_ai_provider=args.online_enrich_ai_provider,
+            online_enrich_ai_model=args.online_enrich_ai_model,
+            online_enrich_ai_domains=tuple(d.strip() for d in args.online_enrich_ai_domains.split(",")),
+            enrich_proposal=args.enrich_proposal,
+            citation_style=args.citation_style,
+            media_asr_backend=args.media_asr_backend,
+            wenbi_asr_provider=args.wenbi_asr_provider,
+            wenbi_whisper_model=args.wenbi_whisper_model,
+            wenbi_speaker_labels=args.wenbi_speaker_labels,
+            wenbi_python=args.wenbi_python,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     orchestrator = CiteIndexIngestionOrchestrator(
         corpus_root=args.corpus_root,

@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 def validate_rows(rows: list[dict]) -> list[str]:
+    if any(row.get("pilot_selection") is not None for row in rows):
+        rows = [row for row in rows if row.get("pilot_selection") != "excluded"]
     from run import evaluated_fields
     from citeindex.ingestion.csl import valid_host_value
     errors: list[str] = []
@@ -61,7 +63,7 @@ def validate_rows(rows: list[dict]) -> list[str]:
 
 
 def main(manifest_path: str) -> None:
-    rows = [json.loads(line) for line in Path(manifest_path).read_text().splitlines() if line.strip()]
+    rows = [json.loads(line) for line in Path(manifest_path).read_text().split("\n") if line.strip()]
     errors = validate_rows(rows)
     if errors:
         print("\n".join(errors))

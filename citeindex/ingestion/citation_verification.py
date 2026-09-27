@@ -7,46 +7,119 @@ import json
 import os
 import math
 import calendar
+import re
 from typing import Any, Dict, Iterable
 
-from .metadata_registry import extract_doi, lookup_crossref_doi, normalize_doi
+from .metadata_registry import extract_doi, lookup_crossref_doi, lookup_openlibrary_isbn, normalize_doi, normalize_isbn
 
 
 _RECONCILABLE_FIELDS = (
-    "author", "title", "issued", "publisher", "publisher-place",
+    "author", "title", "subtitle", "issued", "publisher", "publisher-place",
     "container-title", "DOI", "URL", "page",
 )
 _LOCATOR_KEYS = ("node_id", "char_start", "char_end", "bbox")
 
 from .csl import HOST_FIELDS, NAME_FIELDS, valid_host_value
 
+# Whitespace-free canonical form: printed titles are frequently split across
+# OCR/extraction line breaks ("论三位一\n体", "A ND MACARIU\nS"); a quote that
+# matches modulo whitespace (and CJK zero-width artifacts) is still verbatim
+# support for the value. This is the plan v2 §4 "multi-line title" fix.
+_WS_STRIP_RE = re.compile(r"[\s\u3000\u200b\ufeff]+")
+
+
+def _compact(text: str) -> str:
+    """Casefolded, whitespace-stripped form for tolerance comparisons."""
+    return _WS_STRIP_RE.sub("", text.casefold())
+
+
+def _quote_in_block(quote: str, block_text: str) -> int | None:
+    """Index of ``quote`` in ``block_text``, whitespace-tolerant, else ``None``.
+
+    Fast path: exact substring (the common case — unchanged behavior).
+    Slow path: whitespace-insensitive scan bounded by the quote's own span.
+    """
+    if quote in block_text:
+        return block_text.index(quote)
+    compacted_quote = _compact(quote)
+    if not compacted_quote:
+        return None
+    compacted_block = _compact(block_text)
+    idx = compacted_block.find(compacted_quote)
+    if idx < 0:
+        return None
+    # Map the compacted hit back to an original-text span: walk the block
+    # skipping whitespace, counting non-space chars until the match begins.
+    char_count = 0
+    for pos, ch in enumerate(block_text):
+        if _WS_STRIP_RE.match(ch):
+            continue
+        if char_count == idx:
+            return pos
+        char_count += 1
+    return None
+
 
 def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[dict]) -> dict | None:
     """Resolve exact source spans. This establishes support, not host attribution."""
-    if not valid_host_value(field, value) or not isinstance(evidence, dict):
+    if not valid_host_value(field, value):
         return None
-    quote = evidence.get("quote")
-    block = next((b for b in blocks if b.get("id") == evidence.get("block_id")), None)
-    if not isinstance(quote, str) or not quote.strip() or not block or quote not in block["text"]:
-        return None
-    if field in NAME_FIELDS and block.get("metadata_key") in {"uploader", "channel", "platform"}:
-        return None
-    if field == "publisher" and block.get("metadata_key") == "platform":
-        return None
-    if field == "accessed" and block.get("metadata_key") != "accessed":
-        return None
-    metadata_key = str(block.get("metadata_key", "")).casefold()
-    if field == "issued" and ("modified" in metadata_key or metadata_key in {"event-date", "event_date"}):
-        return None
-    # CSL type is a classification, not a literal phrase printed in every source.
-    if field != "type" and not _find_evidence(value, [{"quote": quote}]):
-        return None
-    start = block["text"].index(quote)
-    locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index", "segment_id", "start_seconds", "end_seconds", "metadata_key", "snapshot_artifact", "source_digest") if k in block}
-    locator.update(block_id=block["id"], char_start=start, char_end=start + len(quote))
-    if not valid_source_locator(locator):
-        return None
-    return {"block_id": block["id"], "quote": quote, "locator": locator}
+    def supports(quote: str) -> bool:
+        if field == "type" or _find_evidence(value, [{"quote": quote}]):
+            return True
+        if field not in {*NAME_FIELDS, "title", "subtitle", "publisher", "publisher-place"}:
+            return False
+        def plain(text: str) -> str:
+            text = text.casefold().translate(str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"}))
+            return " ".join(re.findall(r"\w+", text))
+        normalized = plain(quote)
+        if all(plain(part) in normalized for part in _value_strings(value)):
+            return True
+        # Multi-line OCR tolerance: value words may straddle line breaks in
+        # the quote; whitespace-stripped containment still entails support.
+        return all(_compact(part) in _compact(quote) for part in _value_strings(value))
+    def resolve(span: Any) -> dict | None:
+        if not isinstance(span, dict):
+            return None
+        quote = span.get("quote")
+        block = next((b for b in blocks if b.get("id") == span.get("block_id")), None)
+        if not isinstance(quote, str) or not quote.strip() or not block:
+            return None
+        start = _quote_in_block(quote, block["text"])
+        if start is None:
+            return None
+        if field in NAME_FIELDS and block.get("metadata_key") in {"uploader", "channel", "platform"}:
+            return None
+        if field == "publisher" and block.get("metadata_key") == "platform":
+            return None
+        if field == "title" and block.get("metadata_key") in {"filename", "source_path"}:
+            return None
+        if field == "accessed" and block.get("metadata_key") != "accessed":
+            return None
+        metadata_key = str(block.get("metadata_key", "")).casefold()
+        if field == "issued" and ("modified" in metadata_key or metadata_key in {"event-date", "event_date"}):
+            return None
+        # start already resolved whitespace-tolerantly at the top of resolve();
+        # an exact re-index here raised on OCR line-break drift.
+        locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index", "segment_id", "start_seconds", "end_seconds", "metadata_key", "snapshot_artifact", "source_digest") if k in block}
+        locator.update(block_id=block["id"], char_start=start, char_end=start + len(quote))
+        return {"block_id": block["id"], "quote": quote, "locator": locator} if valid_source_locator(locator) else None
+
+    spans = evidence.get("spans") if isinstance(evidence, dict) and "spans" in evidence else evidence
+    if isinstance(spans, list):
+        if not 1 <= len(spans) <= 8:
+            return None
+        resolved = [resolve(span) for span in spans]
+        if any(span is None for span in resolved):
+            return None
+        quote = " ".join(span["quote"] for span in resolved)
+        if not supports(quote):
+            return None
+        return {"spans": resolved, "quote": quote, "locator": resolved[0]["locator"]}
+    resolved = resolve(spans)
+    if resolved and supports(resolved["quote"]):
+        return resolved
+    return None
 
 
 def valid_source_locator(locator: Any) -> bool:
@@ -210,14 +283,36 @@ def _value_strings(value: Any) -> list[str]:
     return []
 
 
+def _roman_to_int(numeral: str) -> int:
+    """'mdccccxlix' → 1949 (numeral already case-folded)."""
+    values = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
+    total = sum(values[c] for c in numeral)
+    for a, b in zip(numeral, numeral[1:]):
+        if values[a] < values[b]:
+            total -= 2 * values[a]
+    return total
+
+
 def _find_evidence(value: Any, evidence: Iterable[Dict[str, Any]]) -> Dict[str, Any] | None:
     values = [item.casefold().strip() for item in _value_strings(value) if item.strip()]
     if not values:
         return None
+    # Scholarly imprints print year as a Roman numeral ('PARISIIS MDCCCCXLIX'
+    # = 1949): the Arabic year is genuine support even though it is not the
+    # literal glyph run. Narrow to standalone numerals so embedded ones
+    # ('saeculi IX') cannot vouch for a year.
+    roman_year = None
+    if isinstance(value, dict) and "date-parts" in value:
+        parts = next((group for group in value.get("date-parts", []) if isinstance(group, list)), [])
+        if parts and type(parts[0]) is int and 1400 <= parts[0] <= 2030:
+            roman_year = parts[0]
     for item in evidence:
         quote = item["quote"].casefold()
         if isinstance(value, dict) and "date-parts" in value:
             matched = any(candidate in quote for candidate in values)
+            if not matched and roman_year is not None:
+                matched = any(_roman_to_int(m.group()) == roman_year
+                              for m in re.finditer(r"\b[mdclxvi]{6,18}\b", quote))
         else:
             matched = all(candidate in quote for candidate in values)
         if matched:
@@ -320,7 +415,7 @@ def _valid_model_decision(decision: Dict[str, Any] | None, field: str, draft_val
 
 def verify_citation_metadata(
     csl_json: Dict[str, Any], document_json: Dict[str, Any] | None, resource_type: str,
-    extra: Dict[str, Any], config: Any,
+    extra: Dict[str, Any], config: Any, *, registry_client: Any = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """Verify registry metadata; one unresolved conflict prevents all CSL changes."""
     original, proposed = dict(csl_json), dict(csl_json)
@@ -329,7 +424,14 @@ def verify_citation_metadata(
     # A DOI in the bibliography belongs to a cited work unless host identity
     # has already established it. Do not borrow the first DOI in body text.
     doi = normalize_doi(original.get("DOI"))
-    registry = lookup_crossref_doi(doi, crossref_enabled=config.crossref_enabled, offline_verification=config.offline_verification, contact_email=config.registry_contact_email)
+    registry = (registry_client.lookup("crossref", doi) if registry_client is not None else
+                lookup_crossref_doi(doi, crossref_enabled=config.crossref_enabled, offline_verification=config.offline_verification, contact_email=config.registry_contact_email))
+    if registry.get("status") != "found":
+        # Books rarely carry DOIs Crossref resolves; try the ISBN at OpenLibrary.
+        isbn = normalize_isbn(original.get("ISBN"))
+        if isbn:
+            registry = (registry_client.lookup("openlibrary", isbn) if registry_client is not None else
+                        lookup_openlibrary_isbn(isbn, openlibrary_enabled=getattr(config, "openlibrary_enabled", True), offline_verification=config.offline_verification))
     corrections: list[Dict[str, Any]] = []
     needs_review: list[Dict[str, Any]] = []
     candidate = registry.get("candidate") or {}

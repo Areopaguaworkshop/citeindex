@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "output": [
+    {
+      "type": "web_search_call",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "queries": [
+          "site:nature.com Watson Crick DNA DOI"
+        ],
+        "sources": [
+          {
+            "type": "url",
+            "url": "https://www.nature.com/articles/171737a0"
+          }
+        ]
+      }
+    },
+    {
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The identifier is DOI 10.1038/171737a0.",
+          "annotations": [
+            {
+              "type": "url_citation",
+              "url": "https://www.nature.com/fabricated",
+              "start_index": 0,
+              "end_index": 39
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

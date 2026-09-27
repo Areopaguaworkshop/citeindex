@@ -68,7 +68,9 @@ def evaluation_fields(csl: dict, modality: str = "") -> set[str]:
         fields |= {"container-title", "volume", "issue", "page", "DOI"}
     else:
         fields |= {"editor", "translator", "edition", "publisher", "ISBN"}
-        if kind == "chapter":
+        # Article-category contributions (cited with page numbers) also cite
+        # their container; encyclopedia entries follow the chapter profile.
+        if kind in {"chapter", "entry-encyclopedia"}:
             fields |= {"container-title", "page"}
     if csl.get("URL") or modality == "url_article":
         fields |= {"URL", "accessed"}

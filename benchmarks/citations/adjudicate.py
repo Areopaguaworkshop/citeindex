@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 def _rows(path: str) -> dict[str, dict]:
-    return {row["id"]: row for row in (json.loads(line) for line in Path(path).read_text().splitlines() if line.strip())}
+    rows = [json.loads(line) for line in Path(path).read_text().split("\n") if line.strip()]
+    if any(row.get("pilot_selection") is not None for row in rows):
+        rows = [row for row in rows if row.get("pilot_selection") != "excluded"]
+    return {row["id"]: row for row in rows}
 
 
 def main(first_path: str, second_path: str, output_path: str) -> None:

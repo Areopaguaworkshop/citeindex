@@ -13,6 +13,7 @@ from .markdown_export import write_library_markdown
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
 from .citation_verification import verify_citation_metadata
+from .online_enrichment import enrich_metadata
 from .url_security import UnsafeUrlError, validate_public_url
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class CiteIndexIngestionOrchestrator:
                     logger.warning("Failed to clean temporary output: %s", path, exc_info=True)
 
         try:
+            cfg.__post_init__()
             logger.info("Ingesting: %s", input_ref)
             resource_type, normalized = self.detect_resource_type(input_ref, config=cfg)
             logger.info("Detected resource type: %s", resource_type)
@@ -139,11 +141,22 @@ class CiteIndexIngestionOrchestrator:
                         candidate_csl["author"] = author_from_prompt
                         logger.info("Author provided interactively: %s", author_from_prompt)
 
+            registry_client = None
+            if (cfg.online_enrich or cfg.enrich_proposal) and resource_type in {"digital_pdf", "scanned_pdf"} and input_ref.lower().endswith(".pdf"):
+                from .metadata_registry import RegistryClient
+                registry_client = RegistryClient(cfg, cache_dir=os.path.join(self.corpus_root, ".registry-cache"))
             citation_verification = None
             if cfg.verify_citations:
+                registry_kwargs = {"registry_client": registry_client} if registry_client is not None else {}
                 candidate_csl, citation_verification = verify_citation_metadata(
                     candidate_csl, sub_result.document_json, resource_type, sub_result.extra, cfg,
+                    **registry_kwargs,
                 )
+                for correction in citation_verification.get("applied_corrections", []):
+                    candidate_csl.setdefault("_field_evidence", {})[correction["field"]] = {
+                        "quote": correction["quote"], "locator": correction["locator"],
+                        **({"block_id": correction["locator"]["block_id"]} if correction["locator"].get("block_id") else {}),
+                    }
 
             if cfg.repair_proposal:
                 candidate_csl = self._apply_repair_proposal(
@@ -152,6 +165,20 @@ class CiteIndexIngestionOrchestrator:
                 if citation_verification:
                     citation_verification["status"] = "needs_review"
                     citation_verification["verified"] = False
+            candidate_csl, online_enrichment = enrich_metadata(
+                candidate_csl, sub_result.document_json, resource_type, sub_result.extra,
+                cfg, input_ref, client=registry_client,
+            )
+            sub_result.extra["online_enrichment"] = online_enrichment
+            if online_enrichment["decisions"]:
+                if citation_verification:
+                    citation_verification["status"] = "needs_review"
+                    citation_verification["verified"] = False
+                    citation_verification["superseded_by_enrichment"] = [d["field"] for d in online_enrichment["decisions"]]
+                for repair in sub_result.extra.get("citation_repair", {}).get("applied", []):
+                    changes = [d for d in online_enrichment["decisions"] if d["field"] == repair["field"]]
+                    if changes:
+                        repair["superseded_by_enrichment"] = changes[-1]
             standardized_csl = self.standardize_csl_json(
                 candidate_csl, sub_result.merkle_tree or {}, resource_type,
             )
@@ -168,6 +195,11 @@ class CiteIndexIngestionOrchestrator:
                 from .pipelines.pageindex_tree import _build_level0
                 tree["level_0"] = _build_level0(standardized_csl, sub_result.source_id,
                                                (sub_result.merkle_tree or {}).get("root"))
+            redirect_html = []
+            if resource_type == "url_article":
+                for index, redirect in enumerate(sub_result.extra.get("redirect_snapshots", []), start=1):
+                    redirect_html.append((f"source-redirect-{index}.html", redirect.pop("html")))
+                    redirect["artifact"] = f"source-redirect-{index}.html"
             artifacts = sub_result.to_dict()
             artifacts["csl_json"] = standardized_csl
             if citation_verification:
@@ -178,6 +210,9 @@ class CiteIndexIngestionOrchestrator:
             snapshot_path = sub_result.extra.get("source_snapshot_path")
             if resource_type == "url_article" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
                 shutil.copy2(snapshot_path, os.path.join(document_path, "source.html"))
+                for filename, html in redirect_html:
+                    with open(os.path.join(document_path, filename), "w", encoding="utf-8") as sidecar:
+                        sidecar.write(html)
             elif resource_type == "media" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
                 shutil.copy2(snapshot_path, os.path.join(document_path, "source.media"))
             log_entry = self.log_ingestion(input_ref, resource_type, standardized_csl, sub_result)
@@ -217,6 +252,18 @@ class CiteIndexIngestionOrchestrator:
             }
             if citation_verification:
                 output["citation_verification"] = citation_verification
+            output["online_enrichment"] = online_enrichment
+
+            rendered_citation = None
+            if resource_type in {"digital_pdf", "scanned_pdf"}:
+                from ..citation_style import format_bibliography
+                from .csl import export_csl
+                render_item = export_csl(standardized_csl)
+                render_item.pop("custom", None)
+                rendered_citation, _ = format_bibliography([render_item], cfg.citation_style)
+                if not rendered_citation or rendered_citation.startswith("Error"):
+                    rendered_citation = None
+                    output["citation_render_warning"] = "CSL rendering unavailable; used deterministic fallback"
 
             # Generate human-readable library markdown
             try:
@@ -227,6 +274,7 @@ class CiteIndexIngestionOrchestrator:
                     transcript_json=sub_result.transcript_json,
                     resource_type=resource_type,
                     verification_status=citation_verification["status"] if citation_verification else None,
+                    rendered_citation=rendered_citation,
                 )
                 output["library_md_path"] = library_md_path
             except Exception:

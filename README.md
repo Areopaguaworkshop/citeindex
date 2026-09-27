@@ -110,15 +110,78 @@ Validate independent reviewers before scoring with
 reproducible split with `python benchmarks/citations/split.py manifest.jsonl
 split-manifest.jsonl`; compare saved reports with
 `python benchmarks/citations/compare.py baseline.json candidate.json`.
-After a reviewed run, this section will be updated with the commit, corpus
-denominators, per-modality results, evidence-validity rate, failure rate, and
-cost/latency summary; it will not publish source-private rows.
+The reviewed 40-source pilot has 36 citations with usable gold metadata
+(16 digital PDFs, 12 scanned PDFs, 8 URLs). The original 2026-09-24 cloud run
+scored 6/36 exact records (16.7%) under the earlier scorer, with 3 scanned-PDF
+timeouts and 4 media failures. A later sampled run completed all 36 PDF/URL
+sources. Under scorer `host-v4-run-accessed-equivalence`, which uses the actual
+retrieval date and rejects redirect-only article snapshots, it scores 3/36
+strict records (8.3%); two GCDFL snapshots are redirect-only. These are
+development results, not a production accuracy estimate.
 
-Current result: **no valid accuracy measurement yet**. Human-reviewed labels,
-adjudication, and live baseline/candidate runs remain pending. The runner keeps
-append-only attempts, locks each output file, defaults to 5,400 seconds per
-source, and supports `--retry-failed`. Missing token/cost telemetry is reported
-as unknown, never zero. Do not interpret JSONL line counts as unique sources.
+The repaired 40-source cloud candidate completed all 28 PDFs, 8 URLs and 4
+media files. On the 36 reviewed PDF/URL citations, strict record accuracy is
+4/36 (11.1%) and separately defined bibliographic equivalence is 9/36 (25.0%).
+By modality, equivalent record accuracy is 2/16 digital PDFs, 1/12 scanned PDFs
+and 6/8 URLs. The candidate follows both GCDFL redirects to final articles, so
+its URL snapshots differ from the old baseline; do not treat the aggregate as
+a same-snapshot causal comparison. The four media files returned empty
+transcripts and explicit incomplete citation status without guessed metadata;
+they remain unscored, as requested. **The 90% production target is not met** for
+this multimodal pilot.
+Predictions and source review are local ignored artifacts under
+`benchmarks/citations/predictions/` and `benchmarks/citations/reports/`.
+
+### Digital PDF two-category core-requirement benchmark (2026-09-26)
+
+A focused 16-source **digital-PDF** slice was re-benchmarked against the
+re-reviewed `digital-16-2026-09-26-gold-v2` manifest under the two-category
+citation model (article = cited with page numbers; book = cited without) and a
+category-aware **core-requirement** metric with equivalence-normalized matching:
+
+- **book core**: type, author/editor/translator, title, publisher, issued
+- **article core**: type, author, title, container/journal, number, page range
+- fields not printed in the supplied PDF (for example a volume number absent
+  from an article offprint) are marked `outside_scope` and are not required
+
+Result: **15/16 core records (93.75%)**, title F1 0.875, type F1 1.0. The single
+miss is a work whose author and editor are printed only in Latinized form
+(`GREGORII NYSSENI`, `WERNERUS JAEGER`). Trajectory under this metric:
+11/16 → 13/16 → 12/16 (one intermediate regression from over-constrained prompt
+rules) → 15/16, after moving deterministic normalization (OCR numeral repair,
+CIP author/translator role parsing) out of the prompt and into code.
+
+Scope and caveats: this covers 16 digital PDFs only; the scanned/URL/media
+slices above are not measured by this metric, so the multimodal pilot statement
+stands. With n=16 single-run variance is material, and the two confirming runs
+were replays of the same cached model responses, not independent samples.
+Reviewed labels, predictions, and reports stay local under
+`benchmarks/citations/predictions/`.
+
+### Scanned PDF two-category core-requirement benchmark (2026-09-26)
+
+A focused 12-source **scanned-PDF** slice was re-benchmarked against the
+re-reviewed `scanned-12-2026-09-26-gold-v2` manifest under the same
+two-category citation model and core-requirement metric as the digital slice.
+Scanned sources run the full ingestion pipeline; only the page sampler is
+narrowed (`1-10, -3`) and page-index/layout are disabled.
+
+Result: **12/12 core records (100%)** — every scanned core field recovered.
+Against the pre-review frozen labels the same run scores 8/12, and every
+per-source flip from the baseline is forward (no regressions). Four sources
+needed label re-review where the frozen labels asked for something the scan
+cannot support (an OCR-omitted title; name forms printed only in catalog or
+CIP shape); the diff is in
+`docs/2026-09-26-scanned-gold-v2-diff-for-signoff.md`.
+
+The work moved scanned title/credit recovery out of prompts and into gated
+deterministic seeds — heading-based title/subtitle, imprint publisher, and
+copyright-year branch priority, plus translator/editor credits and
+Roman-numeral imprint years — each verified against an offline OCR probe before
+any model run. One deliberately non-obvious case: a publisher that is garbled
+on the title page is still printable cleanly on a sampled tail page, so the
+imprint seed reads whichever copy is intact rather than trusting the first
+occurrence.
 
 ## Python API
 
@@ -299,7 +362,7 @@ the original source evidence; otherwise CiteIndex records `needs_review`.
 | `text_direction` | `--text-direction`, `-td` | `horizontal` | `horizontal`, `auto`, or `vertical` |
 | `vertical_lang` | `--vertical-lang` | `ch` | CJK language: `ch` (Chinese) or `japan` |
 | `lang` | `--lang`, `-l` | `auto` | OCR language (auto-detect or Tesseract code) |
-| `page_range` | `--page-range`, `-p` | `1-5, -3` | Pages to extract (e.g. `"1-10"`, `"1-5, -3"`) |
+| `page_range` | `--page-range`, `--citation-pages`, `-p` | `1-10, -3` | DSPy citation search window: 1-based physical PDF pages; `-3` means the last three pages. Does not limit full-document ingestion or the separately selected GROBID engine. |
 | `doc_type_override` | `--type`, `-t` | auto | `book`, `thesis`, `journal`, or `bookchapter` |
 | `use_layout_analysis` | `--no-layout` | `True` | Disable column/footnote detection |
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
@@ -358,6 +421,41 @@ The CLI itself always performs the core verification when
 `--verify-citations` is supplied. The additional agent audit runs only through
 an explicit harness workflow (for example OpenCode `/ingest-verified`); a raw
 `citeindex` subprocess cannot detect or launch an agent harness.
+
+### Online enrichment (opt-in)
+
+```sh
+citeindex paper.pdf --online-enrich
+citeindex paper.pdf --online-enrich --online-enrich-ai-fallback --online-enrich-ai-provider openai
+```
+
+Digital and scanned PDFs share this order: source extraction, optional quotation-backed
+repair, registry enrichment, then final CSL identifiers, artifact copies and Chicago
+Markdown rendering. Accepted Crossref/DataCite DOI records (T1) and OpenLibrary ISBN
+editions (T2) can automatically overwrite existing fields, including source repairs.
+The audit sidecar `online_enrichment.json` retains values, identity checks and provenance.
+Ambiguous matches abstain. Converted non-PDF inputs are outside this first release.
+
+AI discovery requires `--online-enrich-ai-fallback` and an explicit provider: `claude`
+(`ANTHROPIC_API_KEY`), `gemini` (`GEMINI_API_KEY`), or `openai` (`OPENAI_API_KEY`).
+Each uses its native online search tool; search execution and cited identifier evidence
+are required. The discovered DOI/ISBN must independently resolve in a registry before
+T4 can fill missing fields. AI cannot overwrite fields. Supported model defaults and
+allowlisted source domains can be selected with `--online-enrich-ai-model` and
+`--online-enrich-ai-domains`.
+
+Requests share a default 20-second budget, at most 12 attempts, five seconds per request,
+and a 2 MiB response limit. Registry caching lives in `corpus/.registry-cache`.
+`--offline-verification` blocks verification and enrichment network requests;
+`--no-online-enrich` disables automatic discovery. A supplied `--enrich-proposal` still
+requires fresh registry validation and is rejected in offline mode. With
+`--online-enrich`, validated proposals run first, then discovery considers remaining
+missing fields. Source repair proposals remain source-only.
+
+Enrichment stays disabled by default until independent held-out release gates pass.
+See [the implementation plan](docs/2026-09-27-online-enrichment-plan-v2.md) and
+[benchmark instructions](benchmarks/citations/README.md). Live provider checks are
+separate from fixture tests and require `CITEINDEX_AI_LIVE_SMOKE=1` plus credentials.
 
 ### Ingestion log (`corpus/ingestion_log.jsonl`)
 
@@ -431,7 +529,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.13.3). MIT. https://github.com/ajia/citeindex
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.13.4). MIT. https://github.com/ajia/citeindex
 
 **BibTeX:**
 
@@ -439,7 +537,7 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.13.3},
+  version = {0.13.4},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},

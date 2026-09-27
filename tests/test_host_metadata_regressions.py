@@ -14,6 +14,36 @@ from citeindex.ingestion.models import PipelineResult
 from citeindex.ingestion.pipelines import dspy_extract
 
 
+@pytest.mark.parametrize("source_type", ["book", "chapter", "article-journal"])
+def test_bibliographic_selection_bounds_and_type(monkeypatch, source_type):
+    from citeindex.ingestion.models import IngestionConfig
+
+    blocks = [{"id": f"p{page}", "text": f"Original page {page}",
+               "physical_page_index": page - 1} for page in range(1, 101)]
+    seen = []
+    def predict(**kwargs):
+        seen.extend(kwargs["page_blocks"])
+        return SimpleNamespace(
+            document_type=source_type,
+            type_evidence=[{"block_id": "p1", "quote": "Original page 1"}],
+            selected_pages=[
+                {"page": 1, "role": "title", "block_id": "p1", "quote": "Original page 1"},
+                {"page": 100, "role": "colophon", "block_id": "p100", "quote": "Original page 100"},
+                {"page": 50, "role": "title", "block_id": "p50", "quote": "Original page 50"},
+                {"page": 2, "role": "title", "block_id": "p2", "quote": "Invented"},
+            ])
+    monkeypatch.setattr(dspy_extract.dspy, "Predict", lambda *args: predict)
+    selected, audit = dspy_extract.locate_bibliographic_pages(
+        blocks, 100, IngestionConfig(), None, "book")
+    assert {b["page"] for b in seen} == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 98, 99, 100}
+    assert [b["id"] for b in selected] == ["p1", "p100"]
+    assert audit["document_type"] == source_type
+    assert audit["status"] == "selected"
+    selected, audit = dspy_extract.locate_bibliographic_pages(
+        blocks, 100, IngestionConfig(page_range="2-3"), None, "book")
+    assert selected == [] and audit["status"] == "needs_review"
+
+
 def benchmark_module(name):
     path = Path(__file__).parents[1] / "benchmarks" / "citations" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(f"benchmark_{name}", path)
@@ -78,7 +108,7 @@ def test_retry_preserves_history_and_records_blocked(tmp_path, monkeypatch):
     manifest.write_text(json.dumps({"id": "one", "source_path": str(source)}) + "\n")
     first = {"id": "one", "status": "failed", "error": "old failure"}
     predictions.write_text(json.dumps(first) + "\n")
-    def run(command, timeout, stdout, stderr):
+    def run(command, timeout, stdout, stderr, env):
         assert timeout == 5400
         stdout.write_text(json.dumps({"status": "blocked", "error_message": "service unavailable"}))
         return 0, None
@@ -130,6 +160,21 @@ def test_host_scorer_counts_failures_and_unknown_cost():
     assert "references" not in result and "marker_links" not in result
     assert scorer._norm("https://doi.org/10.1/ABC", "DOI") == "10.1/abc"
     assert scorer._norm([{"family": "A"}, {"family": "B"}]) != scorer._norm([{"family": "B"}, {"family": "A"}])
+
+
+def test_scorer_uses_observed_access_date_and_keeps_strict_score():
+    scorer = benchmark_module("run")
+    gold = {"url": {"modality": "url_article", "csl": {"accessed": {"date-parts": [[2026, 9, 25]]}},
+                    "field_status": {"accessed": "present"}}}
+    prediction = {"id": "url", "status": "ok", "csl": {"accessed": {"date-parts": [[2026, 9, 24]]}},
+                  "source_blocks": [{"metadata_key": "accessed", "text": "2026-09-24"}]}
+    assert scorer._score_values(gold, {"url": prediction}, "accessed")["tp"] == 1
+    assert scorer._equiv_text("S. P. Brock", "author") == "s.p. brock"
+    assert scorer._equivalent({"csl": {"author": [{"literal": "Sebastian P. Brock"}]}},
+                              {"csl": {"author": [{"given": "Sebastian P.", "family": "Brock"}]}}, "author")
+    assert not scorer._equivalent({"csl": {"author": [{"literal": "Sebastian P. Brock"}]}},
+                                  {"csl": {"author": [{"literal": "Someone Else"}]}}, "author")
+    assert not scorer._equivalent({"csl": {"title": "Other title"}}, {"csl": {"title": "Host title"}}, "title")
 
 
 def test_timeout_cleans_child_in_separate_session(tmp_path):

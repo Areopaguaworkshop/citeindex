@@ -1,0 +1,39 @@
+{
+  "status": "completed",
+  "output": [
+    {
+      "type": "web_search_call",
+      "status": "completed",
+      "action": {
+        "type": "search",
+        "queries": [
+          "site:nature.com Watson Crick DNA DOI"
+        ],
+        "sources": [
+          {
+            "type": "url",
+            "url": "https://nature.com.evil.test/a"
+          }
+        ]
+      }
+    },
+    {
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The identifier is DOI 10.1038/171737a0.",
+          "annotations": [
+            {
+              "type": "url_citation",
+              "url": "https://nature.com.evil.test/a",
+              "start_index": 0,
+              "end_index": 39
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

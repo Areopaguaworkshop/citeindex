@@ -1,0 +1,1 @@
+Synthetic API fixtures based on official contracts checked 2026-09-27. These are not recorded live provider responses. Invalid variants test execution, citation linkage, domains, and incomplete calls. Live smoke remains separately gated by CITEINDEX_AI_LIVE_SMOKE=1.

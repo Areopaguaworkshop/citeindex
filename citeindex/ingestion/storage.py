@@ -118,12 +118,16 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: Dict[s
             "citation_repair.json", "quotation_locators.json", "document.json",
             "transcript.json", "merkle.json", "media_metadata.json",
             "pageindex_tree.json", "citation_verification.json", "source.html",
+            "online_enrichment.json",
             "source.media",
         )
         for filename in optional_files:
             path = os.path.join(target_dir, filename)
             if os.path.isfile(path):
                 os.remove(path)
+        for filename in os.listdir(target_dir):
+            if filename.startswith("source-redirect-") and filename.endswith(".html"):
+                os.remove(os.path.join(target_dir, filename))
         images_dir = os.path.join(target_dir, "images")
         if os.path.isdir(images_dir):
             shutil.rmtree(images_dir)
@@ -132,7 +136,7 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: Dict[s
             from .csl import export_csl
             # CSL data files contain an array; enriched csl.json remains backwards-compatible.
             write_json(os.path.join(target_dir, "csl-export.json"), [export_csl(artifacts["csl_json"])])
-        for key in ("source_blocks", "web_metadata", "retrieval_metadata", "citation_repair", "quotation_locators"):
+        for key in ("source_blocks", "web_metadata", "retrieval_metadata", "citation_repair", "quotation_locators", "online_enrichment"):
             if artifacts.get(key) is not None:
                 write_json(os.path.join(target_dir, key + ".json"), artifacts[key])
         if artifacts.get("document_json") is not None:

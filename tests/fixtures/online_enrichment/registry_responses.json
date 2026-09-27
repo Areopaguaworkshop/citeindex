@@ -1,0 +1,25 @@
+{
+  "crossref": {
+    "positive": {"message": {"items": [{"DOI": "10.1000/ONE", "type": "journal-article", "title": ["Registry Identity"], "author": [{"family": "Smith", "given": "Ada"}], "issued": {"date-parts": [[2024]]}, "ISSN": ["1234-5678"]}]}},
+    "empty": {"message": {"items": []}},
+    "malformed": {"message": {"items": "wrong shape"}}
+  },
+  "datacite": {
+    "positive": {"data": [{"id": "10.1000/one", "attributes": {"doi": "10.1000/one", "titles": [{"title": "Registry Identity"}], "creators": [{"name": "Ada Smith", "givenName": "Ada", "familyName": "Smith"}], "publicationYear": 2024, "publisher": "Example Press", "types": {"resourceTypeGeneral": "Dissertation"}, "language": "en"}}]},
+    "thesis": {"data": {"id": "10.1000/thesis", "attributes": {"doi": "10.1000/thesis", "titles": [{"title": "Doctoral Thesis"}], "publicationYear": 2024, "types": {"resourceTypeGeneral": "Text", "resourceType": "Dissertation"}}}},
+    "empty": {"data": []},
+    "malformed": {"data": "wrong shape"}
+  },
+  "openalex": {
+    "positive": {"results": [{"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1000/one", "title": "Registry Identity", "type": "article", "publication_year": 2024, "authorships": [{"author": {"display_name": "Ada Smith"}}], "primary_location": {"source": {"display_name": "Example Journal", "issn": ["1234-5678"]}}, "biblio": {"volume": "7", "issue": "2", "first_page": "1", "last_page": "9"}}]},
+    "empty": {"results": []},
+    "malformed": {"results": "wrong shape"}
+  },
+  "openlibrary": {
+    "positive": {"docs": [{"key": "/works/OL1W", "title": "Work Title Must Not Be Used", "first_publish_year": 1900, "isbn": ["9780425278437"], "edition_key": ["OL1M"]}]},
+    "empty": {"docs": []},
+    "malformed": {"docs": "wrong shape"},
+    "edition": {"key": "/books/OL1M", "title": "Registry Identity", "isbn_13": ["9780199535569"], "authors": [{"key": "/authors/OL1A"}], "publish_date": "2024", "publishers": ["Example Press"], "edition_name": "Second edition", "languages": [{"key": "/languages/eng"}]},
+    "author": {"key": "/authors/OL1A", "name": "Ada Smith"}
+  }
+}

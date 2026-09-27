@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital PDF Ingestion - Control Flow | CiteIndex</title>
+<meta name="description" content="Control flow of the CiteIndex digital PDF ingestion pipeline, traced from source.">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem("citeindex-doc-theme");
+    if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
+<style>
+/* ---------------------------------------------------------------
+   theme tokens
+   --------------------------------------------------------------- */
+:root {
+  --bg:        #f6f4ef;
+  --bg-2:      #eeebe3;
+  --panel:     #fffdf9;
+  --panel-2:   #f7f4ec;
+  --ink:       #17202a;
+  --ink-dim:   #5c6874;
+  --ink-faint: #8b939c;
+  --line:      #dcd6c9;
+  --line-soft: #e7e2d7;
+  --grid:      rgba(23,32,42,.045);
+  --rail:      #cfc8b8;
+
+  --stage:     #0f7b74;
+  --stage-bg:  rgba(15,123,116,.09);
+  --branch:    #96620a;
+  --branch-bg: rgba(150,98,10,.10);
+  --fail:      #ac2b2d;
+  --fail-bg:   rgba(172,43,45,.09);
+  --artifact:  #6241b8;
+  --artifact-bg: rgba(98,65,184,.09);
+  --accent:    #0b5f8a;
+
+  --shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 10px 26px -18px rgba(23,32,42,.45);
+  --shadow-hi: 0 1px 0 rgba(255,255,255,.7) inset, 0 16px 34px -18px rgba(23,32,42,.5);
+}
+:root[data-theme="dark"] {
+  --bg:        #0a0e13;
+  --bg-2:      #0d1219;
+  --panel:     #111922;
+  --panel-2:   #0e151d;
+  --ink:       #dde6ee;
+  --ink-dim:   #93a3b3;
+  --ink-faint: #64748b;
+  --line:      #22303f;
+  --line-soft: #1a2531;
+  --grid:      rgba(125,211,252,.055);
+  --rail:      #263444;
+
+  --stage:     #4fd1c5;
+  --stage-bg:  rgba(79,209,197,.10);
+  --branch:    #f0b429;
+  --branch-bg: rgba(240,180,41,.11);
+  --fail:      #f2686a;
+  --fail-bg:   rgba(242,104,106,.11);
+  --artifact:  #a78bfa;
+  --artifact-bg: rgba(167,139,250,.12);
+  --accent:    #7dd3fc;
+
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 14px 30px -20px rgba(0,0,0,.9);
+  --shadow-hi: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 40px -20px rgba(0,0,0,.95);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #0a0e13;
+    --bg-2:      #0d1219;
+    --panel:     #111922;
+    --panel-2:   #0e151d;
+    --ink:       #dde6ee;
+    --ink-dim:   #93a3b3;
+    --ink-faint: #64748b;
+    --line:      #22303f;
+    --line-soft: #1a2531;
+    --grid:      rgba(125,211,252,.055);
+    --rail:      #263444;
+    --stage:     #4fd1c5;
+    --stage-bg:  rgba(79,209,197,.10);
+    --branch:    #f0b429;
+    --branch-bg: rgba(240,180,41,.11);
+    --fail:      #f2686a;
+    --fail-bg:   rgba(242,104,106,.11);
+    --artifact:  #a78bfa;
+    --artifact-bg: rgba(167,139,250,.12);
+    --accent:    #7dd3fc;
+    --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 14px 30px -20px rgba(0,0,0,.9);
+    --shadow-hi: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 40px -20px rgba(0,0,0,.95);
+  }
+}
+
+/* ---------------------------------------------------------------
+   base
+   --------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 26px 26px, 26px 26px;
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+code, .mono, kbd { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; }
+p { margin: 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--stage); }
+::selection { background: var(--stage-bg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
+
+/* ---------------------------------------------------------------
+   header
+   --------------------------------------------------------------- */
+header.masthead {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel-2), var(--bg) 92%);
+  overflow: hidden;
+}
+header.masthead::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 26px 26px, 26px 26px;
+  pointer-events: none;
+}
+.masthead .wrap { position: relative; z-index: 1; padding-top: 3.2rem; padding-bottom: 2rem; }
+.kicker {
+  display: flex; align-items: center; gap: .7rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .7rem; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.kicker .dot { width: 6px; height: 6px; background: var(--stage); border-radius: 50%; box-shadow: 0 0 0 3px var(--stage-bg); }
+h1 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-size: clamp(1.9rem, 5vw, 3rem);
+  font-weight: 600; letter-spacing: -.02em;
+  margin: 1rem 0 0;
+}
+h1 .thin { color: var(--ink-dim); font-weight: 400; }
+.subtitle {
+  margin-top: .7rem; max-width: 46rem;
+  font-size: 1rem; color: var(--ink-dim);
+}
+.subtitle .ref { color: var(--ink); }
+
+.legend {
+  display: flex; flex-wrap: wrap; gap: .45rem .5rem;
+  margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px dashed var(--line);
+  font-size: .72rem;
+}
+.legend .lg { display: inline-flex; align-items: center; gap: .4rem; padding: .22rem .6rem .22rem .45rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink-dim); }
+.legend .swatch { width: 8px; height: 8px; border-radius: 2px; }
+.sw-stage    { background: var(--stage); }
+.sw-branch   { background: var(--branch); }
+.sw-fail     { background: var(--fail); }
+.sw-artifact { background: var(--artifact); }
+
+/* ---------------------------------------------------------------
+   sticky nav
+   --------------------------------------------------------------- */
+nav.toc {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--line);
+}
+nav.toc .wrap { display: flex; align-items: center; gap: .3rem; overflow-x: auto; padding-top: .5rem; padding-bottom: .5rem; scrollbar-width: none; }
+nav.toc .wrap::-webkit-scrollbar { display: none; }
+nav.toc a {
+  flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: .72rem; letter-spacing: .04em; color: var(--ink-dim);
+  text-decoration: none; padding: .3rem .6rem; border-radius: 4px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+nav.toc a:hover { color: var(--ink); background: var(--panel); border-color: var(--line); }
+nav.toc .spacer { flex: 1 1 auto; min-width: .5rem; }
+.tbtn {
+  flex: 0 0 auto; font: inherit; font-size: .72rem; font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: var(--ink-dim); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 4px; padding: .3rem .6rem; cursor: pointer; display: inline-flex; align-items: center; gap: .4rem;
+}
+.tbtn:hover { color: var(--ink); border-color: var(--ink-faint); }
+.tbtn svg { width: 13px; height: 13px; display: block; }
+#themeToggle .ico-sun { display: none; }
+:root[data-theme="dark"] #themeToggle .ico-sun { display: block; }
+:root[data-theme="dark"] #themeToggle .ico-moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #themeToggle .ico-sun { display: block; }
+  :root:not([data-theme="light"]) #themeToggle .ico-moon { display: none; }
+}
+
+/* ---------------------------------------------------------------
+   sections
+   --------------------------------------------------------------- */
+main { padding: 2.6rem 0 1rem; }
+section { margin-bottom: 3.4rem; scroll-margin-top: 4rem; }
+.sec-head { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap; margin-bottom: 1.4rem; }
+.sec-idx {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: .72rem; color: var(--ink-faint); letter-spacing: .12em;
+  padding-top: .15rem;
+}
+.sec-head h2 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: clamp(1.3rem, 3vw, 1.7rem); font-weight: 600;
+}
+.sec-head .rule { flex: 1 1 4rem; height: 1px; background: var(--line); align-self: center; min-width: 2rem; }
+.lede { color: var(--ink-dim); max-width: 52rem; font-size: .92rem; margin-bottom: 1.3rem; }
+
+/* ---------------------------------------------------------------
+   entry / routing strip
+   --------------------------------------------------------------- */
+.entry {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.entry-row {
+  display: grid; grid-template-columns: 7.5rem 1fr; gap: 1rem;
+  padding: .8rem 1rem; border-bottom: 1px solid var(--line-soft);
+  align-items: start;
+}
+.entry-row:last-child { border-bottom: 0; }
+.entry-row .k { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .72rem; color: var(--ink-faint); letter-spacing: .05em; padding-top: .15rem; }
+.entry-row .v { font-size: .9rem; color: var(--ink-dim); }
+.entry-row .v strong { color: var(--ink); font-weight: 600; }
+
+.ref {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .74rem; color: var(--accent);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 3px; padding: .05em .38em; white-space: nowrap;
+}
+.arrow { color: var(--ink-faint); font-family: ui-monospace, Menlo, monospace; }
+
+/* ---------------------------------------------------------------
+   gate
+   --------------------------------------------------------------- */
+.gate {
+  border: 1px solid var(--branch);
+  border-left-width: 3px;
+  background: var(--panel);
+  border-radius: 8px; overflow: hidden; box-shadow: var(--shadow);
+}
+.gate-head {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  padding: .85rem 1.1rem; background: var(--branch-bg); border-bottom: 1px solid var(--line-soft);
+}
+.gate-head h3 { font-size: .95rem; }
+.gate-head .ref { border-color: color-mix(in srgb, var(--branch) 40%, var(--line)); }
+.gate-body { padding: 1.1rem; display: grid; gap: 1.3rem; grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); }
+@media (max-width: 780px) { .gate-body { grid-template-columns: 1fr; } }
+
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; counter-reset: r; }
+.rules li {
+  counter-increment: r;
+  display: grid; grid-template-columns: 1.5rem 1fr auto; gap: .6rem; align-items: center;
+  padding: .5rem .6rem; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 5px;
+  font-size: .84rem;
+}
+.rules li::before {
+  content: counter(r);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .68rem;
+  color: var(--branch); text-align: center;
+  border: 1px solid color-mix(in srgb, var(--branch) 35%, transparent); border-radius: 50%;
+  width: 1.35rem; height: 1.35rem; line-height: 1.25rem;
+}
+.rules .cond { color: var(--ink); }
+.rules .cond code { font-size: .8rem; color: var(--ink-dim); }
+.out {
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .68rem; letter-spacing: .06em;
+  padding: .15rem .45rem; border-radius: 3px; border: 1px solid; white-space: nowrap;
+}
+.out.digital { color: var(--stage); background: var(--stage-bg); border-color: color-mix(in srgb, var(--stage) 40%, transparent); }
+.out.scanned { color: var(--fail); background: var(--fail-bg); border-color: color-mix(in srgb, var(--fail) 40%, transparent); }
+.out.mixed   { color: var(--branch); background: var(--branch-bg); border-color: color-mix(in srgb, var(--branch) 40%, transparent); }
+
+.thr h4 { font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-family: ui-monospace, Menlo, Consolas, monospace; margin-bottom: .7rem; }
+.thr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .35rem; }
+.thr-chip {
+  display: flex; justify-content: space-between; align-items: baseline; gap: .4rem;
+  padding: .38rem .55rem; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 4px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .7rem;
+}
+.thr-chip .n { color: var(--ink-faint); }
+.thr-chip .v { color: var(--stage); font-weight: 600; }
+.edge {
+  margin-top: 1rem; padding: .7rem .8rem; border: 1px dashed var(--fail);
+  background: var(--fail-bg); border-radius: 5px; font-size: .82rem; color: var(--ink-dim);
+}
+.edge b { color: var(--fail); font-weight: 600; font-family: ui-monospace, Menlo, monospace; font-size: .78rem; }
+
+/* ---------------------------------------------------------------
+   flow rail
+   --------------------------------------------------------------- */
+.flow { position: relative; }
+.flow::before {
+  content: ""; position: absolute; left: 1.35rem; top: .6rem; bottom: .6rem; width: 2px;
+  background: linear-gradient(180deg, transparent, var(--rail) 4%, var(--rail) 96%, transparent);
+}
+.step {
+  position: relative; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); box-shadow: var(--shadow);
+  margin-bottom: .9rem; transition: box-shadow .25s ease, transform .25s ease;
+}
+.step:hover { box-shadow: var(--shadow-hi); }
+.step[open] { border-color: color-mix(in srgb, var(--stage) 45%, var(--line)); }
+.step > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: .8rem;
+  padding: .85rem 1rem; user-select: none;
+}
+.step > summary::-webkit-details-marker { display: none; }
+.step > summary:hover .node-name { color: var(--stage); }
+.node-num {
+  flex: 0 0 auto; width: 2.7rem; height: 2.7rem; margin-left: 0;
+  display: grid; place-items: center;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .82rem; font-weight: 600;
+  color: var(--stage); background: var(--bg);
+  border: 2px solid var(--rail); border-radius: 50%;
+  position: relative; z-index: 1;
+  transition: border-color .25s ease, box-shadow .25s ease;
+}
+.step[open] .node-num { border-color: var(--stage); box-shadow: 0 0 0 4px var(--stage-bg); }
+.node-name { font-size: 1rem; font-weight: 600; transition: color .2s ease; }
+.node-meta { margin-left: auto; display: flex; align-items: center; gap: .6rem; flex: 0 0 auto; }
+.chev {
+  width: 1.1rem; height: 1.1rem; color: var(--ink-faint); transition: transform .25s ease; flex: 0 0 auto;
+}
+.step[open] .chev { transform: rotate(90deg); }
+.card { padding: 0 1.1rem 1.2rem 4.5rem; }
+@media (max-width: 620px) { .card { padding-left: 1.1rem; } .node-meta .ref { display: none; } }
+.card > * + * { margin-top: .9rem; }
+.what { font-size: .9rem; color: var(--ink-dim); }
+.what strong { color: var(--ink); font-weight: 600; }
+.card h4 {
+  font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600;
+  margin-bottom: .5rem;
+}
+.fnlist { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.fnlist li {
+  padding: .5rem .65rem; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 5px;
+  font-size: .82rem; color: var(--ink-dim);
+  display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .3rem .7rem; align-items: baseline;
+}
+.fnlist .fn { color: var(--ink); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .78rem; }
+.fnlist .note { grid-column: 1 / -1; color: var(--ink-dim); }
+@media (max-width: 520px) {
+  .fnlist li { grid-template-columns: 1fr; }
+  .fnlist .ref { justify-self: start; }
+}
+.branch {
+  display: flex; gap: .6rem; align-items: flex-start;
+  padding: .65rem .75rem; border-radius: 5px; border: 1px solid var(--line);
+  background: var(--panel-2); font-size: .82rem; color: var(--ink-dim);
+}
+.branch .tag {
+  flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: .64rem; letter-spacing: .08em; text-transform: uppercase;
+  padding: .12rem .42rem; border-radius: 3px; border: 1px solid; margin-top: .1rem;
+}
+.tag.br  { color: var(--branch); background: var(--branch-bg); border-color: color-mix(in srgb,var(--branch) 40%,transparent); }
+.tag.fa  { color: var(--fail);   background: var(--fail-bg);   border-color: color-mix(in srgb,var(--fail) 40%,transparent); }
+.tag.st  { color: var(--stage);  background: var(--stage-bg);  border-color: color-mix(in srgb,var(--stage) 40%,transparent); }
+.branch code { color: var(--ink); font-size: .78rem; }
+
+.substeps { list-style: none; margin: .5rem 0 0; padding: 0 0 0 .9rem; border-left: 2px solid var(--line-soft); display: grid; gap: .5rem; }
+.substeps li { font-size: .82rem; color: var(--ink-dim); }
+.substeps li > code { color: var(--ink); }
+
+/* ---------------------------------------------------------------
+   persist / artifacts
+   --------------------------------------------------------------- */
+.persist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem,1fr)); gap: .8rem; }
+.pcard {
+  border: 1px solid var(--line); border-left: 3px solid var(--artifact);
+  background: var(--panel); border-radius: 6px; padding: .85rem .95rem; box-shadow: var(--shadow);
+}
+.pcard h3 { font-size: .86rem; margin-bottom: .55rem; display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.pcard p { font-size: .82rem; color: var(--ink-dim); }
+.pcard p + p { margin-top: .35rem; }
+
+.tree {
+  margin-top: 1rem; border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.tree-head {
+  padding: .7rem 1rem; border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .76rem; color: var(--ink-dim);
+}
+.tree-head .folder { color: var(--artifact); }
+.tree ul { list-style: none; margin: 0; padding: .8rem 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .35rem; }
+.tree li {
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .76rem; color: var(--ink);
+  padding: .32rem .5rem; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line-soft);
+  display: flex; align-items: center; gap: .5rem;
+}
+.tree li::before { content: ""; width: 6px; height: 6px; background: var(--artifact); border-radius: 1px; flex: 0 0 auto; }
+.tree li .cond { color: var(--ink-faint); font-size: .7rem; margin-left: auto; }
+.tree .sidecar { grid-column: 1 / -1; padding: .5rem 0 0; border-top: 1px dashed var(--line); color: var(--ink-dim); font-family: ui-monospace, Menlo, monospace; font-size: .76rem; }
+.tree .sidecar::before { display: none; }
+.tree .sidecar { background: none; border-left: 0; border-right: 0; border-top: 1px dashed var(--line); border-radius: 0; padding-left: 0; }
+
+/* ---------------------------------------------------------------
+   discrepancies
+   --------------------------------------------------------------- */
+.callout {
+  border: 1px solid var(--fail); border-left-width: 3px; border-radius: 8px;
+  background: var(--panel); box-shadow: var(--shadow); overflow: hidden;
+}
+.callout-head { padding: .85rem 1.1rem; background: var(--fail-bg); border-bottom: 1px solid var(--line-soft); }
+.callout-head h3 { font-size: .95rem; }
+.callout-head p { font-size: .82rem; color: var(--ink-dim); margin-top: .3rem; }
+.disc { list-style: none; margin: 0; padding: 0; counter-reset: d; }
+.disc li {
+  counter-increment: d; padding: 1rem 1.1rem 1rem 3.4rem; position: relative;
+  border-bottom: 1px solid var(--line-soft); font-size: .86rem; color: var(--ink-dim);
+}
+.disc li:last-child { border-bottom: 0; }
+.disc li::before {
+  content: counter(d); position: absolute; left: 1.1rem; top: 1rem;
+  width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
+  font-family: ui-monospace, Menlo, monospace; font-size: .72rem; font-weight: 600;
+  color: var(--fail); border: 1px solid color-mix(in srgb, var(--fail) 45%, transparent); border-radius: 50%;
+}
+.disc .claim { color: var(--ink); }
+.disc .vs {
+  display: flex; gap: .6rem; align-items: flex-start; margin-top: .5rem; padding-top: .5rem;
+  border-top: 1px dashed var(--line); font-size: .82rem;
+}
+.disc .vs .tag { margin-top: .12rem; }
+.disc strong { color: var(--ink); font-weight: 600; }
+
+/* ---------------------------------------------------------------
+   footnote + footer
+   --------------------------------------------------------------- */
+footer {
+  border-top: 1px solid var(--line); margin-top: 1rem; padding: 1.6rem 0 3rem;
+  background: var(--bg-2);
+}
+.footnote {
+  font-size: .8rem; color: var(--ink-dim); max-width: 58rem;
+  border-left: 2px solid var(--line); padding-left: .9rem;
+}
+.footnote p + p { margin-top: .5rem; }
+.footnote code { color: var(--ink); font-size: .76rem; }
+.footnote .sig {
+  margin-top: 1.1rem; font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------
+   reveal animation
+   --------------------------------------------------------------- */
+.reveal { opacity: 0; transform: translateY(10px); }
+.reveal.in { opacity: 1; transform: none; transition: opacity .5s ease, transform .5s cubic-bezier(.2,.7,.3,1); }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+  .step, .chev, .node-num { transition: none; }
+}
+
+/* ---------------------------------------------------------------
+   print
+   --------------------------------------------------------------- */
+@media print {
+  :root { --bg:#fff; --bg-2:#fff; --panel:#fff; --panel-2:#fbfaf7; --ink:#111; --ink-dim:#333; --line:#bbb; --line-soft:#ddd; --rail:#999; --grid:transparent; }
+  body { background: #fff; font-size: 10.5pt; }
+  nav.toc { display: none; }
+  header.masthead { border-bottom: 2px solid #111; }
+  header.masthead::after { display: none; }
+  .step, .gate, .callout, .pcard, .tree, .entry { box-shadow: none; break-inside: avoid; }
+  .step { border-color: #999; }
+  section { break-inside: auto; margin-bottom: 1.4rem; }
+  .sec-head { break-after: avoid; }
+  details > summary { break-after: avoid; }
+  a { color: #111; text-decoration: none; }
+  .ref { border-color: #ccc; background: #fff; color: #333; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { margin: 14mm 12mm; }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="kicker"><span class="dot"></span> CiteIndex &nbsp;/&nbsp; ingestion pipeline</div>
+    <h1>Digital PDF Ingestion <span class="thin">- Control Flow</span></h1>
+    <p class="subtitle">CiteIndex - traced from source. Classification gate, the seven in-pipeline steps, and the master wrapper that persists the corpus. Every stage is annotated with its <span class="mono">file:line</span> origin.</p>
+
+    <div class="legend" aria-label="Diagram legend">
+      <span class="lg"><span class="swatch sw-stage"></span> pipeline stage</span>
+      <span class="lg"><span class="swatch sw-branch"></span> branch / decision</span>
+      <span class="lg"><span class="swatch sw-fail"></span> failure path</span>
+      <span class="lg"><span class="swatch sw-artifact"></span> artifact</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Section navigation">
+  <div class="wrap">
+    <a href="#entry">Entry &amp; routing</a>
+    <a href="#gate">Classification gate</a>
+    <a href="#pipeline">Pipeline steps</a>
+    <a href="#persist">Persistence</a>
+    <a href="#artifacts">Artifacts</a>
+    <a href="#discrepancies">Code vs README</a>
+    <a href="#footnote">Notes</a>
+    <span class="spacer"></span>
+    <button class="tbtn" id="expandAll" type="button">Expand all</button>
+    <button class="tbtn" id="themeToggle" type="button" aria-pressed="false" aria-label="Toggle color theme">
+      <svg class="ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <span id="themeLabel">Theme</span>
+    </button>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <!-- ============================ ENTRY ============================ -->
+  <section id="entry" class="reveal">
+    <div class="sec-head">
+      <span class="sec-idx">00</span>
+      <h2>Entry and routing</h2>
+      <span class="rule"></span>
+    </div>
+    <p class="lede">A resource is typed, then a PDF is classified before any pipeline is chosen. MIXED never reaches the digital path.</p>
+
+    <div class="entry">
+      <div class="entry-row">
+        <span class="k">detect</span>
+        <span class="v"><strong>detect_resource_type()</strong> routes <code>.pdf</code> to PDF classification. <span class="ref">master.py:318</span></span>
+      </div>
+      <div class="entry-row">
+        <span class="k">classify</span>
+        <span class="v"><strong>_pdf_kind()</strong> calls <code>classify_pdf(pdf_path, force_kind, strip_existing_ocr)</code>. <code>force_ocr</code> <span class="arrow">&rarr;</span> SCANNED, <code>force_digital</code> <span class="arrow">&rarr;</span> DIGITAL. <span class="ref">master.py:350-402</span></span>
+      </div>
+      <div class="entry-row">
+        <span class="k">remap</span>
+        <span class="v">MIXED is remapped to <code>scanned_pdf</code>, so MIXED never enters the digital pipeline. <span class="ref">master.py:389-394</span></span>
+      </div>
+      <div class="entry-row">
+        <span class="k">route</span>
+        <span class="v"><strong>route_to_pipeline()</strong> <span class="arrow">&rarr;</span> <code>digital_pdf.run(..., source_type="digital_pdf")</code>. <span class="ref">master.py:414</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ GATE ============================ -->
+  <section id="gate" class="reveal">
+    <div class="sec-head">
+      <span class="sec-idx">01</span>
+      <h2>Classification gate</h2>
+      <span class="rule"></span>
+      <span class="ref">pdf_classifier.py:255-345</span>
+    </div>
+    <p class="lede">Document-level decision, evaluated after every page has been classified on its own.</p>
+
+    <div class="gate">
+      <div class="gate-head">
+        <h3>classify_pdf()</h3>
+        <span class="ref">pdf_classifier.py:255-345</span>
+        <span class="ref">per page: _classify_single_page() pdf_classifier.py:176-249</span>
+      </div>
+      <div class="gate-body">
+        <div>
+          <h4 class="k" style="font-family:ui-monospace,Menlo,monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:.6rem;">document decision <span class="ref">:311-327</span></h4>
+          <ol class="rules">
+            <li>
+              <span class="cond">any <code>doubtful_text</code> (<code>bad_text</code> / <code>ocr_rejected</code>)</span>
+              <span class="out scanned">SCANNED</span>
+            </li>
+            <li>
+              <span class="cond">else <code>digital_ratio &gt;= 0.9</code></span>
+              <span class="out digital">DIGITAL</span>
+            </li>
+            <li>
+              <span class="cond">else <code>scanned_ratio &gt;= 0.5</code></span>
+              <span class="out scanned">SCANNED</span>
+            </li>
+            <li>
+              <span class="cond">else MIXED <span class="arrow">&rarr;</span> remapped to scanned</span>
+              <span class="out mixed">MIXED</span>
+            </li>
+          </ol>
+          <div class="edge">
+            <b>threshold edge</b><br>
+            A single page with <code>bad_text</code> or <code>ocr_rejected</code> (e.g. replacement-char ratio &gt; 0.05) forces the whole document to SCANNED before the 0.9 ratio test runs.
+          </div>
+        </div>
+
+        <div class="thr">
+          <h4>thresholds <span class="ref" style="letter-spacing:0;text-transform:none;">pdf_classifier.py:84-99</span></h4>
+          <div class="thr-grid">
+            <span class="thr-chip"><span class="n">DIGITAL_RATIO_THRESHOLD</span><span class="v">0.9</span></span>
+            <span class="thr-chip"><span class="n">SCANNED_RATIO_THRESHOLD</span><span class="v">0.5</span></span>
+            <span class="thr-chip"><span class="n">BITMAP_COVERAGE_MIXED</span><span class="v">0.05</span></span>
+            <span class="thr-chip"><span class="n">ALPHANUM_THRESHOLD</span><span class="v">0.3</span></span>
+            <span class="thr-chip"><span class="n">SPACE_RATIO_THRESHOLD</span><span class="v">0.7</span></span>
+            <span class="thr-chip"><span class="n">NEWLINE_RATIO_THRESHOLD</span><span class="v">0.6</span></span>
+            <span class="thr-chip"><span class="n">REPLACEMENT_RATIO_THRESHOLD</span><span class="v">0.05</span></span>
+            <span class="thr-chip"><span class="n">IMAGE_DOMINANCE_THRESHOLD</span><span class="v">0.65</span></span>
+            <span class="thr-chip"><span class="n">MIN_OVERLAY_ALPHANUM</span><span class="v">50</span></span>
+          </div>
+          <div class="branch" style="margin-top:.9rem;">
+            <span class="tag br">short-circuit</span>
+            <span><code>force_kind</code> short-circuits all page analysis at <span class="ref">pdf_classifier.py:282-284</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ PIPELINE ============================ -->
+  <section id="pipeline" class="reveal">
+    <div class="sec-head">
+      <span class="sec-idx">02</span>
+      <h2>Pipeline steps</h2>
+      <span class="rule"></span>
+      <span class="ref">digital_pdf.py:455</span>
+    </div>
+    <p class="lede">Select a step to expand its functions, behaviour, and failure branch.</p>
+
+    <div class="flow">
+
+      <!-- PRELUDE -->
+      <details class="step" id="s-prelude">
+        <summary>
+          <span class="node-num">P</span>
+          <span class="node-name">Pipeline prelude</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:455</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Opens the PDF for page count and establishes identity before any extraction. <strong>Title is hardcoded to the filename</strong>; embedded PDF metadata is not read.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">make_source_id()</span> <span class="ref">digital_pdf.py:461</span><span class="note">Slug of the filename stem. <span class="ref">common.py:78-81</span></span></li>
+              <li><span class="fn">open for page_count</span> <span class="ref">digital_pdf.py:464-469</span><span class="note">Title is the filename. Embedded metadata is not read.</span></li>
+              <li><span class="fn">determine_doc_type()</span> <span class="ref">digital_pdf.py:471</span><span class="note">Explicit <code>doc_type_override</code> wins, else heuristic: book if pages &gt;= 70, else journal. <span class="ref">common.py:296-303</span></span></li>
+              <li><span class="fn">_extract_pages()</span> <span class="ref">digital_pdf.py:477</span><span class="note">Always runs raw PyMuPDF <code>page.get_text()</code> + <code>get_text("blocks")</code>, then <code>clean_page_texts</code>. Raw blocks are retained as citation evidence. <span class="ref">digital_pdf.py:45-61</span></span></li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 1 -->
+      <details class="step" id="s1">
+        <summary>
+          <span class="node-num">1</span>
+          <span class="node-name">Layout / text extraction</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:479-515</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Gated on <code>cfg.use_layout_analysis</code> (default <strong>True</strong>). A GNN-backed layout pass classifies blocks; a heuristic fallback covers import failure.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">analyze_document_layout_pymupdf4llm()</span> <span class="ref">digital_pdf.py:485</span><span class="note">Imports <code>pymupdf4llm.helpers.document_layout.parse_document</code>. ImportError falls back to the heuristic <code>analyze_document_layout()</code>. <span class="ref">layout.py:690-728</span></span></li>
+              <li><span class="fn">parse_document(doc, use_ocr=False, force_text=True)</span> <span class="ref">digital_pdf.py:485</span><span class="note">Result rejected if <code>len(pdoc.pages) != page_count</code>.</span></li>
+              <li><span class="fn">_gnn_classified_blocks_to_layout()</span> <span class="ref">layout.py:499-687</span><span class="note">GNN classes <code>footnote</code>, <code>page-header</code>, <code>page-footer</code>; everything else body. Header/footer only used for page-number candidates. Hybrid footnote detection re-runs heuristic <code>detect_footnotes()</code> only on GNN <code>text</code> blocks. Per-page guard re-runs <code>analyze_page_layout()</code> if GNN omitted existing text (:570-579). <code>detect_columns()</code> uses x-gap &gt; 10% page width.</span></li>
+            </ul>
+          </div>
+          <div class="branch">
+            <span class="tag fa">fallback</span>
+            <span>Any exception <span class="arrow">&rarr;</span> warning, <code>page_layouts=None</code>; falls back to raw <code>source_pages</code>. <span class="ref">digital_pdf.py:511-515</span></span>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 2 -->
+      <details class="step" id="s2">
+        <summary>
+          <span class="node-num">2</span>
+          <span class="node-name">Image extraction</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:517-525</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Gated on <code>cfg.use_layout_analysis</code> - <strong>not</strong> on pymupdf4llm success.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">extract_pdf_images()</span> <span class="ref">digital_pdf.py:80-135</span><span class="note">Per page <code>get_images(full=True)</code>, <code>extract_image(xref)</code>. Skips images where width &lt; 100 AND height &lt; 100. Names <code>{source_id}_p{page}_img{n}.{ext}</code>. Records bbox via <code>_get_image_bbox()</code> (:138-143). No caption extraction.</span></li>
+            </ul>
+          </div>
+          <div class="branch">
+            <span class="tag fa">fallback</span>
+            <span>Exception <span class="arrow">&rarr;</span> warning, <code>pdf_images=[]</code>. <span class="ref">digital_pdf.py:517-525</span></span>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 3 -->
+      <details class="step" id="s3">
+        <summary>
+          <span class="node-num">3</span>
+          <span class="node-name">Document structure</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:527-574</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Builds the flat page/paragraph structure, embeds image placeholders, then applies layout post-processing.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">_build_flat_document_structure()</span> <span class="ref">digital_pdf.py:705-727</span><span class="note"><code>{pages:[{page_number, physical_page_index, paragraphs:[...]}], section_tree:[]}</code></span></li>
+              <li><span class="fn">_embed_images_into_pages()</span> <span class="ref">digital_pdf.py:146-160</span><span class="note">Appends <code>{type:"image_caption", text, image_path}</code> to the image's page.</span></li>
+              <li><span class="fn">_attach_layout_footnotes</span> <span class="ref">digital_pdf.py:527-574</span><span class="note">Copies footnotes, strips duplicate body paragraphs via normalized first-200-char signature.</span></li>
+              <li><span class="fn">_remove_header_footer_paragraphs</span> <span class="ref">digital_pdf.py:527-574</span><span class="note">Same signature removal.</span></li>
+              <li><span class="fn">build_page_number_map()</span> <span class="ref">layout.py:731-765</span><span class="note">Feeds <code>_apply_page_number_map()</code>, which rewrites <code>page_number</code> to printed page labels.</span></li>
+            </ul>
+          </div>
+          <div class="branch">
+            <span class="tag fa">error branch</span>
+            <span>Layout exception <span class="arrow">&rarr;</span> warning, structure left flat. <span class="ref">digital_pdf.py:573-574</span></span>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 4 -->
+      <details class="step" id="s4">
+        <summary>
+          <span class="node-num">4</span>
+          <span class="node-name">PageIndex tree</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:576-588</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what"><strong>Default on.</strong> Produces the section hierarchy consumed later by citation region selection and heading injection.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">run_pageindex_tree()</span> <span class="ref">digital_pdf.py:576-588</span><span class="note">Options <code>{if_add_node_id:"yes", if_add_node_summary:"yes", if_add_node_text:"no", if_add_doc_description:"no"}</code>; calls the vendored <code>page_index_main</code>. <span class="ref">pageindex_tree.py:35-73</span></span></li>
+              <li><span class="fn">cfg.use_pageindex</span> <span class="ref">models.py:49</span><span class="note">Default True. Model <code>cfg.pageindex_model</code> default <code>ollama/deepseek-v4.1-flash:cloud</code>.</span></li>
+            </ul>
+          </div>
+          <div class="branch">
+            <span class="tag fa">fallback</span>
+            <span>Returns None on empty structure or any exception <span class="arrow">&rarr;</span> warning, flat structure used. <span class="ref">digital_pdf.py:576-588</span></span>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 5 -->
+      <details class="step" id="s5">
+        <summary>
+          <span class="node-num">5</span>
+          <span class="node-name">Citation extraction</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:590-638</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Two mutually exclusive branches. A base CSL is derived from the filename title, then either GROBID or the DSPy cascade enriches it.</p>
+          <div>
+            <h4>Shared setup</h4>
+            <ul class="fnlist">
+              <li><span class="fn">make_basic_csl()</span> <span class="ref">digital_pdf.py:593-597</span><span class="note">From filename-derived title + <code>doc_type_to_csl_type(...)</code>.</span></li>
+              <li><span class="fn">build_source_blocks()</span> <span class="ref">digital_pdf.py:600</span><span class="note">Built from the RAW PyMuPDF blocks, with <code>physical_page_index</code>, <code>printed_page_label</code>, <code>role</code>. <span class="ref">dspy_extract.py:41-61</span></span></li>
+              <li><span class="fn">select_candidate_regions()</span> <span class="ref">digital_pdf.py:601</span><span class="note">Flattens PageIndex level_1 headings, classifies imprint / front_matter / bibliography, max 12. <span class="ref">dspy_extract.py:89-115</span></span></li>
+            </ul>
+          </div>
+
+          <div class="branch" style="border-color:color-mix(in srgb,var(--fail) 40%,transparent);background:var(--fail-bg);">
+            <span class="tag fa">branch A</span>
+            <span><strong><code>citation_engine == "grobid"</code></strong> <span class="ref">digital_pdf.py:602-607</span><br>
+            <code>_run_grobid()</code> (:429-448): <code>is_grobid_available()</code> (GET <code>/api/isalive</code>, 5s timeout, <span class="ref">grobid.py:13-19</span>) else RuntimeError; <code>extract_document_metadata_grobid()</code> (fulltext endpoint 120s then header 60s, <span class="ref">grobid.py:344-369</span>); empty result <span class="arrow">&rarr;</span> RuntimeError. GROBID replaces DSPy entirely on this branch and a failure <strong>aborts ingestion</strong> (no fallback).</span>
+          </div>
+
+          <div class="branch">
+            <span class="tag st">branch B</span>
+            <span><strong>default <code>dspy</code></strong> <span class="ref">digital_pdf.py:608-618</span><br>
+            <code>enrich_csl_with_citation_cascade()</code> (<span class="ref">common.py:380-438</span>) <span class="arrow">&rarr;</span> <code>_run_dspy_extraction()</code> (<span class="ref">dspy_extract.py:763-875</span>)</span>
+          </div>
+
+          <ul class="substeps">
+            <li><code>locate_bibliographic_pages()</code> (:177-229) uses <code>parse_page_range(config.page_range, total_pages)</code> (<span class="ref">utils.py:62</span>). Default <code>page_range</code> is <code>"1-5, -3"</code> and it <strong>only bounds this bibliographic search window</strong> - it does not limit ingestion and does not apply to GROBID.</li>
+            <li>12,000-char per-page preview budget.</li>
+            <li><code>dspy.Predict(ExtractDocumentMetadata)</code> up to 2 attempts; every field accepted only through <code>validate_block_evidence</code> (requires block_id + quote + page match).</li>
+            <li>Selection failure / missing blocks <span class="arrow">&rarr;</span> returns <code>_citation_status:"incomplete"</code>, no fallback extraction. <span class="ref">dspy_extract.py:791-796</span></li>
+            <li>Nothing extracted <span class="arrow">&rarr;</span> base_csl with <code>extraction_method="metadata-only"</code>. <span class="ref">common.py:404, 423-425</span></li>
+          </ul>
+        </div>
+      </details>
+
+      <!-- STEP 5b -->
+      <details class="step" id="s5b">
+        <summary>
+          <span class="node-num">5b</span>
+          <span class="node-name">Field status</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:620-638</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Merges enriched fields onto the base (skips <code>id</code>) and grades each field on evidence.</p>
+          <div>
+            <h4>Behaviour</h4>
+            <ul class="fnlist">
+              <li><span class="fn">_field_status per field</span> <span class="ref">digital_pdf.py:620-638</span><span class="note">Over <code>evaluation_fields</code>: <code>source-supported</code> / <code>unverified</code> / <code>missing</code>.</span></li>
+              <li><span class="fn">title == filename</span> <span class="ref">digital_pdf.py:620-638</span><span class="note">Title equal to the filename (or ending <code>.pdf</code>) <span class="arrow">&rarr;</span> <code>provisional-filename</code>.</span></li>
+              <li><span class="fn">_citation_status</span> <span class="ref">digital_pdf.py:620-638</span><span class="note"><code>"source-supported"</code> only if title + (author|editor) + issued are all source-supported; otherwise <code>incomplete</code>.</span></li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 6 -->
+      <details class="step" id="s6">
+        <summary>
+          <span class="node-num">6</span>
+          <span class="node-name">Nodes + Merkle</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:640-646</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">Content-addressed hashing over granular nodes, plus a hierarchy-aware proof tree.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">build_nodes_with_granularity()</span> <span class="ref">digital_pdf.py:640-646</span><span class="note">Paragraph-level default, line-level when <code>cfg.is_primary</code>. <span class="ref">common.py:115-158</span></span></li>
+              <li><span class="fn">build_merkle_for_nodes()</span> <span class="ref">digital_pdf.py:640-646</span><span class="note">SHA-256, odd-leaf duplication, <code>.root</code>. <span class="ref">deterministic.py:34-144</span></span></li>
+              <li><span class="fn">build_hierarchical_merkle_tree()</span> <span class="ref">digital_pdf.py:640-646</span><span class="note">Adds <code>hierarchical_root</code> + <code>proof_tree</code> across line <span class="arrow">&rarr;</span> paragraph <span class="arrow">&rarr;</span> column <span class="arrow">&rarr;</span> page <span class="arrow">&rarr;</span> document.</span></li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <!-- STEP 7 -->
+      <details class="step" id="s7">
+        <summary>
+          <span class="node-num">7</span>
+          <span class="node-name">PageIndex injection + evidence</span>
+          <span class="node-meta"><span class="ref">digital_pdf.py:660-688</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </span>
+        </summary>
+        <div class="card">
+          <p class="what">The PageIndex tree becomes the document's section tree and markdown headings; paragraph locators are attached.</p>
+          <div>
+            <h4>Functions</h4>
+            <ul class="fnlist">
+              <li><span class="fn">pageindex_to_citeindex_tree()</span> <span class="ref">digital_pdf.py:660-688</span><span class="note"><code>{citeindex_version:"12.0", tree_version:"1.0", level_0, level_1}</code>; maps start/end index through <code>page_number_map</code>; footnotes attached per locator range with dedup. <span class="ref">pageindex_tree.py:133-172</span></span></li>
+              <li><span class="fn">_annotate_document_with_pageindex()</span> <span class="ref">digital_pdf.py:380-422</span><span class="note">level_1 <span class="arrow">&rarr;</span> <code>document["section_tree"]</code>; builds page-start heading inserts (level starts 2, recurses +1); prepends <code>{type:"heading", level, text}</code> to each page; sets each page's <code>section_title</code>. This produces markdown headings (<span class="ref">markdown_export.py:244-249</span> renders <code>type=="heading"</code>).</span></li>
+              <li><span class="fn">attach_evidence_locators()</span> <span class="ref">digital_pdf.py:660-688</span><span class="note">Assigns <code>node_id</code>, <code>char_start</code>/<code>char_end</code>, <code>bbox</code> to paragraphs. <span class="ref">common.py:161-226</span></span></li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </section>
+
+  <!-- ============================ PERSIST ============================ -->
+  <section id="persist" class="reveal">
+    <div class="sec-head">
+      <span class="sec-idx">03</span>
+      <h2>Master wrapper - persist</h2>
+      <span class="rule"></span>
+      <span class="ref">master.py:112-461</span>
+    </div>
+    <p class="lede">After the pipeline returns, the master wrapper validates identity, optionally verifies, standardizes the CSL, and stores artifacts atomically.</p>
+
+    <div class="persist-grid">
+      <div class="pcard">
+        <h3>Author validation <span class="ref">master.py:112-140</span></h3>
+        <p><code>validate_authors</code>; for PDF paths tries <code>parse_author_from_filename</code>, then may prompt interactively.</p>
+      </div>
+      <div class="pcard">
+        <h3>Optional verification <span class="ref">master.py:142-146</span></h3>
+        <p>Runs when <code>cfg.verify_citations</code>. Repair at <span class="ref">master.py:148-154</span>.</p>
+      </div>
+      <div class="pcard">
+        <h3>Standardization <span class="ref">master.py:155 / 434-451</span></h3>
+        <p><code>standardize_csl_json()</code> <span class="arrow">&rarr;</span> <code>content_hash = sha256({csl, merkle_root, source_type})</code>, <code>id = hash[:16]</code>, plus <code>merkle_root</code>, <code>source_type</code>, <code>ingestion_timestamp</code>.</p>
+      </div>
+      <div class="pcard">
+        <h3>Level 0 refresh <span class="ref">master.py:166-170</span></h3>
+        <p><code>_build_level0()</code> refreshes the PageIndex tree after standardization.</p>
+      </div>
+      <div class="pcard">
+        <h3>Folder naming <span class="ref">storage.py:55-100</span></h3>
+        <p><code>csl_folder_name()</code> <span class="arrow">&rarr;</span> <code>author_year_issue_title_publisher_&lt;contenthash12&gt;</code>.</p>
+      </div>
+      <div class="pcard">
+        <h3>Atomic store <span class="ref">storage.py:103-160</span></h3>
+        <p><code>store_corpus_artifacts()</code> writes to a staging dir then atomically renames; stale sidecars/images removed first.</p>
+      </div>
+      <div class="pcard">
+        <h3>Library markdown <span class="ref">master.py:230-241</span></h3>
+        <p>Library markdown written to the <code>library/</code> sibling directory.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ARTIFACTS ============================ -->
+  <section id="artifacts" class="reveal">
+    <div class="sec-head">
+      <span class="sec-idx">04</span>
+      <h2>Persisted artifacts</h2>
+      <span class="rule"></span>
+      <span class="ref">storage.py:103-160</span>
+    </div>
+
+    <div class="tree">
+      <div class="tree-head">corpus/<span class="folder">Author_Year_Title_&lt;12-char-hash&gt;</span>/</div>
+      <ul>
+        <li>csl.json</li>
+        <li>csl-export.json</li>
+        <li>source_blocks.json</li>
+        <li>document.json</li>
+        <li>merkle.json</li>
+        <li>pageindex_tree.json</li>
+        <li>citation_verification.json <span class="cond">only when verification is enabled</span></li>
+        <li>ingestion_output.json</li>
+        <li>images/</li>
+        <li class="sidecar">library/&lt;name&gt;.md &nbsp;-&nbsp; sibling directory <span class="ref">master.py:230-241</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================ DISCREPANCIES ============================ -->
+  <section id="discrepancies" class="reveal">
+    <div class="sec-head">
+      <span class="sec-idx">05</span>
+      <h2>Code vs README</h2>
+      <span class="rule"></span>
+    </div>
+
+    <div class="callout">
+      <div class="callout-head">
+        <h3>Four documented discrepancies</h3>
+        <p>Where the README's description of the digital PDF flow differs from what the source tree does.</p>
+      </div>
+      <ol class="disc">
+        <li>
+          <p class="claim">README says "PDF metadata remains a last-resort, unverified identity hint" (<span class="ref">README.md:279-280</span>).</p>
+          <div class="vs"><span class="tag fa">code</span><span>The code <strong>never reads embedded PDF metadata</strong>; the title is always <code>os.path.basename(pdf_path)</code>. <span class="ref">digital_pdf.py:467</span> The real last resort is the filename-derived <code>base_csl</code>. <span class="ref">common.py:404</span>, <code>extraction_method="metadata-only"</code></span></div>
+        </li>
+        <li>
+          <p class="claim">README's flow orders "DSPy citation extraction <span class="arrow">&rarr;</span> PageIndex tree" (<span class="ref">README.md:181-186</span>).</p>
+          <div class="vs"><span class="tag fa">code</span><span>The code runs PageIndex (Step 4, <span class="ref">digital_pdf.py:576</span>) <strong>before</strong> citation extraction (Step 5, <span class="ref">digital_pdf.py:590</span>).</span></div>
+        </li>
+        <li>
+          <p class="claim">README implies digital image extraction is unconditional (<span class="ref">README.md:188</span>).</p>
+          <div class="vs"><span class="tag fa">code</span><span>The code gates it on <code>cfg.use_layout_analysis</code>. <span class="ref">digital_pdf.py:520</span></span></div>
+        </li>
+        <li>
+          <p class="claim">README lists GROBID as a cascade tail (<span class="ref">README.md:183</span>).</p>
+          <div class="vs"><span class="tag fa">code</span><span>When selected it <strong>replaces DSPy entirely</strong> (<span class="ref">digital_pdf.py:602-607</span>) and its failure aborts ingestion rather than falling through.</span></div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+</main>
+
+<footer id="footnote">
+  <div class="wrap">
+    <div class="footnote">
+      <p>All callouts, thresholds, function names, and <code>file:line</code> references on this page were traced from the CiteIndex source tree. Where a fact was not present in the source, it was omitted.</p>
+      <p>The README's flowchart differs from the executed control flow in the four places listed above; the source tree is authoritative.</p>
+      <p class="sig">CiteIndex &nbsp;-&nbsp; Digital PDF ingestion &nbsp;-&nbsp; source-traced reference</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- theme ---------- */
+  var root = document.documentElement;
+  var btn = document.getElementById("themeToggle");
+  var label = document.getElementById("themeLabel");
+  var mq = window.matchMedia("(prefers-color-scheme: dark)");
+
+  function current() {
+    var set = root.getAttribute("data-theme");
+    if (set === "dark" || set === "light") return set;
+    return mq.matches ? "dark" : "light";
+  }
+  function paint() {
+    var t = current();
+    btn.setAttribute("aria-pressed", String(t === "dark"));
+    label.textContent = t === "dark" ? "Dark" : "Light";
+  }
+  btn.addEventListener("click", function () {
+    var next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("citeindex-doc-theme", next); } catch (e) {}
+    paint();
+  });
+  mq.addEventListener ? mq.addEventListener("change", paint) : mq.addListener(paint);
+  paint();
+
+  /* ---------- expand all ---------- */
+  var steps = Array.prototype.slice.call(document.querySelectorAll("details.step"));
+  var allBtn = document.getElementById("expandAll");
+  allBtn.addEventListener("click", function () {
+    var open = steps.some(function (d) { return !d.open; });
+    steps.forEach(function (d) { d.open = open; });
+    allBtn.textContent = open ? "Collapse all" : "Expand all";
+  });
+
+  /* ---------- staggered reveal ---------- */
+  var targets = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
+  if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    var io = new IntersectionObserver(function (entries) {
+      var i = 0;
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var el = en.target;
+        el.style.transitionDelay = (i++ * 70) + "ms";
+        el.classList.add("in");
+        io.unobserve(el);
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.05 });
+    targets.forEach(function (t) { io.observe(t); });
+  } else {
+    targets.forEach(function (t) { t.classList.add("in"); });
+  }
+
+  /* ---------- print: reveal all step bodies ---------- */
+  var reopened = [];
+  window.addEventListener("beforeprint", function () {
+    reopened = [];
+    steps.forEach(function (d) { if (!d.open) { reopened.push(d); d.open = true; } });
+  });
+  window.addEventListener("afterprint", function () {
+    reopened.forEach(function (d) { d.open = false; });
+    reopened = [];
+  });
+})();
+</script>
+</body>
+</html>

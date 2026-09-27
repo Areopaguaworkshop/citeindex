@@ -1,0 +1,23 @@
+{
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The identifier is DOI 10.1038/171737a0.",
+          "annotations": [
+            {
+              "type": "url_citation",
+              "url": "https://www.nature.com/articles/171737a0",
+              "start_index": 0,
+              "end_index": 39
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
