@@ -185,6 +185,56 @@ occurrence.
 
 ## Python API
 
+### Optional translation plugin
+
+Install Fanyi into the same environment to add on-demand translation of an
+already ingested PDF corpus. Fanyi may be a private local checkout:
+
+```sh
+python -m pip install -e /path/to/citeindex -e /path/to/fanyi
+citeindex-plugin list
+```
+
+Save translation settings as `fanyi-options.json`:
+
+```json
+{"target_lang": "ZH", "engine": "dspy", "format": "mdx"}
+```
+
+```sh
+citeindex-plugin run fanyi corpus/Author_Title_hash \
+  --options fanyi-options.json --output translations/Author_Title_hash/zh
+# Optional: --timeout 7200 for a long document.
+```
+
+The plugin reads the completed corpus without re-ingesting or requiring the
+original PDF. It writes bilingual MDX, aligned JSON, copied image assets, and
+`plugin_result.json` provenance into a separate output directory. The destination
+must be absent or empty. Partial translations go into `<output>.partial` and
+return a nonzero exit status; failed runs do not replace earlier output.
+Translations are derived text, not original-source quotation evidence.
+
+Plugins register a callable in the `citeindex.plugins.v1` Python entry-point
+group. `citeindex.plugins.run_plugin(name, document_path, output_dir=...,
+options={...}, timeout=3600)` is the equivalent Python API. The selected callable
+receives a version-1 dictionary with `document_path`, `output_dir`, and `options`,
+and returns `protocol_version`, `status`, relative `artifacts` paths, QA details,
+errors/warnings, and optional sanitized `manifest_options`. Only explicitly
+requested plugins execute, in a child process using the same Python environment.
+Installed plugins are trusted code; this process boundary is not a sandbox.
+
+```sh
+python -m pip uninstall fanyi
+citeindex-plugin list
+```
+
+Removing Fanyi detaches translation while preserving CiteIndex and existing
+corpora/output. CiteIndex's base installation has no Fanyi dependency. See the
+[implementation plan](docs/plans/2026-10-14-plugin-system-fanyi.md) for the contract
+and supported workflow.
+
+### Ingestion
+
 ```python
 from citeindex import ingest, IngestionConfig, IngestionFailure, PipelineResult
 

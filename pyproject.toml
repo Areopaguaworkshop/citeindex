@@ -1,6 +1,6 @@
 [project]
 name = "citeindex"
-version = "0.13.4"
+version = "0.14.0"
 description = "Ingest sources with proper citation — PDF, URL, media, Office, DJVU"
 authors = [{ name = "ajia", email = "yyjfwoaini@gmail.com" }]
 dependencies = [
@@ -23,6 +23,7 @@ license = "MIT"
 
 [project.scripts]
 citeindex = "citeindex.cli:main"
+citeindex-plugin = "citeindex.plugins:main"
 
 [project.optional-dependencies]
 ocr-mineru = ["mineru[pipeline]>=3.4.5,<4.0.0"]
