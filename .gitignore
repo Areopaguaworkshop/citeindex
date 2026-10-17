@@ -44,3 +44,6 @@ mempalace.yaml
 entities.json
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+
+# Authority benchmark API cache (benchmarks/authority/reports/ is committed as frozen evidence)
+benchmarks/authority/cache/

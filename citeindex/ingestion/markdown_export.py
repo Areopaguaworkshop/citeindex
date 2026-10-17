@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # CSL formatting helpers
 # ---------------------------------------------------------------------------
 
+
 def _format_authors(csl: dict[str, Any]) -> str:
     authors = csl.get("author") or []
     parts: list[str] = []
@@ -88,14 +89,15 @@ def _format_inline_citation(csl: dict[str, Any]) -> str:
 
 
 def _yaml_escape(value: str) -> str:
-    if any(ch in value for ch in (':', '#', '"', "'", '\n', '{', '}', '[', ']')):
-        return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    if any(ch in value for ch in (":", "#", '"', "'", "\n", "{", "}", "[", "]")):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return value
 
 
 # ---------------------------------------------------------------------------
 # Front-matter
 # ---------------------------------------------------------------------------
+
 
 def _build_front_matter(csl: dict[str, Any], verification_status: str | None = None) -> str:
     lines = ["---"]
@@ -120,6 +122,7 @@ def _build_front_matter(csl: dict[str, Any], verification_status: str | None = N
 # ---------------------------------------------------------------------------
 # Per-resource-type body builders
 # ---------------------------------------------------------------------------
+
 
 def _index_section_levels(
     sections: list[dict[str, Any]],
@@ -202,11 +205,7 @@ def _build_body_document(
         _index_section_levels(section_tree, section_levels, base_level=2)
 
     # ── Detect MinerU vs fitz structure ─────────────────────────────
-    is_mineru = any(
-        "paragraphs" in page and page.get("paragraphs", [])
-        or "sections" in page
-        for page in pages
-    )
+    is_mineru = any("paragraphs" in page and page.get("paragraphs", []) or "sections" in page for page in pages)
 
     # Build a short citation prefix for page markers
     cite_prefix = f"{author}, 《{title}》"
@@ -379,6 +378,7 @@ def _build_body_media(
 # Footnotes block
 # ---------------------------------------------------------------------------
 
+
 def _build_footnotes_block(footnotes: list[dict[str, Any]]) -> str:
     if not footnotes:
         return ""
@@ -396,9 +396,26 @@ def _build_footnotes_block(footnotes: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _authority_links_line(authority_links: dict[str, Any]) -> str:
+    """One human-readable line per linked entity (P2 D4): name → authority id."""
+    parts = []
+    for link in authority_links.get("links", []):
+        source = link.get("source")
+        if isinstance(source, dict):
+            label = " ".join(str(source.get(key)) for key in ("given", "family") if source.get(key))
+        else:
+            label = str(source or "")
+        label = label or link.get("entity_type", "entity")
+        uri = link.get("uri") or ""
+        authority = f"{link.get('system', '?')} {link.get('id', '?')}"
+        parts.append(f"{label} → [{authority}]({uri})" if uri else f"{label} → {authority}")
+    return "**Authority links:** " + "; ".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def generate_library_markdown(
     csl_json: dict[str, Any],
@@ -407,6 +424,7 @@ def generate_library_markdown(
     resource_type: str,
     verification_status: str | None = None,
     rendered_citation: str | None = None,
+    authority_links: dict[str, Any] | None = None,
 ) -> str:
     """Generate a complete Markdown string for the library file."""
     parts: list[str] = []
@@ -420,6 +438,9 @@ def generate_library_markdown(
     parts.append("")
     parts.append(rendered_citation or _format_inline_citation(csl_json))
     parts.append("")
+    if authority_links:
+        parts.append(_authority_links_line(authority_links))
+        parts.append("")
 
     # 3. Body (per resource type)
     footnotes: list[dict[str, Any]] = []
@@ -452,6 +473,7 @@ def write_library_markdown(
     resource_type: str,
     verification_status: str | None = None,
     rendered_citation: str | None = None,
+    authority_links: dict[str, Any] | None = None,
 ) -> str:
     """Generate and write the library MD file. Returns the file path."""
     # library/ is a sibling of corpus/
@@ -474,6 +496,7 @@ def write_library_markdown(
         resource_type=resource_type,
         verification_status=verification_status,
         rendered_citation=rendered_citation,
+        authority_links=authority_links,
     )
 
     with open(md_path, "w", encoding="utf-8") as f:

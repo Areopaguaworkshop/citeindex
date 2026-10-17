@@ -1,0 +1,100 @@
+{
+  "orcid": {
+    "positive": {
+      "expanded-result": [
+        {
+          "orcid-id": "0000-0003-1535-4568",
+          "given-names": "Nathan",
+          "family-names": "Wright",
+          "credit-name": null,
+          "other-name": [
+            "N. P. Wright"
+          ],
+          "institution-name": [
+            "Wright State University"
+          ]
+        },
+        {
+          "orcid-id": "0000-0001-8912-164X",
+          "given-names": "Nathan",
+          "family-names": "Wright"
+        }
+      ],
+      "num-found": 12
+    },
+    "empty": {
+      "expanded-result": null,
+      "num-found": 0
+    },
+    "malformed": {
+      "expanded-result": "not-a-list"
+    }
+  },
+  "wikidata": {
+    "positive": {
+      "search": [
+        {
+          "id": "Q200441",
+          "concepturi": "http://www.wikidata.org/entity/Q200441",
+          "label": "Antioch",
+          "description": "ancient Greek city in southern Turkey"
+        },
+        {
+          "id": "Q495357",
+          "label": "Antioch"
+        },
+        {
+          "id": "Q200441",
+          "label": "Antioch (duplicate identity)"
+        }
+      ],
+      "searchinfo": {
+        "search": "Antioch"
+      }
+    },
+    "empty": {
+      "search": []
+    },
+    "malformed": {
+      "search": [
+        {
+          "label": "no id"
+        }
+      ]
+    }
+  },
+  "geonames": {
+    "positive": {
+      "totalResultsCount": 2,
+      "geonames": [
+        {
+          "geonameId": "325311",
+          "name": "Antioch",
+          "countryName": "Türkiye",
+          "adminName1": "Hatay Province",
+          "lat": "36.20277",
+          "lng": "36.16028",
+          "fcode": "PPLX"
+        },
+        {
+          "geonameId": "4247419",
+          "name": "Antioch",
+          "countryName": "United States",
+          "adminName1": "Illinois",
+          "fcode": "PPL"
+        }
+      ]
+    },
+    "empty": {
+      "totalResultsCount": 0,
+      "geonames": []
+    },
+    "malformed": {
+      "geonames": [
+        {
+          "name": "no id"
+        }
+      ]
+    }
+  }
+}

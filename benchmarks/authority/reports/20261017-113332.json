@@ -1,0 +1,2884 @@
+{
+  "gold_rows": 131,
+  "latency_seconds_per_100": 0.18,
+  "systems": {
+    "new": {
+      "work": {
+        "rows": 131,
+        "present": 131,
+        "absent": 0,
+        "tp": 112,
+        "fp": 0,
+        "fn": 19,
+        "tn": 0,
+        "precision": 1.0,
+        "recall": 0.855,
+        "f1": 0.9218,
+        "no_match_rate": 0.145,
+        "correct_no_match_rate": null
+      }
+    },
+    "baseline": {
+      "work": {
+        "rows": 131,
+        "present": 131,
+        "absent": 0,
+        "tp": 112,
+        "fp": 0,
+        "fn": 19,
+        "tn": 0,
+        "precision": 1.0,
+        "recall": 0.855,
+        "f1": 0.9218,
+        "no_match_rate": 0.145,
+        "correct_no_match_rate": null
+      }
+    }
+  },
+  "outcome_rows": [
+    {
+      "id": "work-0001",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10057",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10057"
+      }
+    },
+    {
+      "id": "work-0001",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10057",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10057"
+      }
+    },
+    {
+      "id": "work-0002",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10089",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10089"
+      }
+    },
+    {
+      "id": "work-0002",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10089",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10089"
+      }
+    },
+    {
+      "id": "work-0003",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347566",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347566"
+      }
+    },
+    {
+      "id": "work-0003",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347566",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347566"
+      }
+    },
+    {
+      "id": "work-0004",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347589",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347589"
+      }
+    },
+    {
+      "id": "work-0004",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347589",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347589"
+      }
+    },
+    {
+      "id": "work-0005",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341486",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341486"
+      }
+    },
+    {
+      "id": "work-0005",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341486",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341486"
+      }
+    },
+    {
+      "id": "work-0006",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10080",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10080"
+      }
+    },
+    {
+      "id": "work-0006",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10080",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10080"
+      }
+    },
+    {
+      "id": "work-0007",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347556",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347556"
+      }
+    },
+    {
+      "id": "work-0007",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347556",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347556"
+      }
+    },
+    {
+      "id": "work-0008",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347577",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347577"
+      }
+    },
+    {
+      "id": "work-0008",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347577",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347577"
+      }
+    },
+    {
+      "id": "work-0009",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10130",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10130"
+      }
+    },
+    {
+      "id": "work-0009",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10130",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10130"
+      }
+    },
+    {
+      "id": "work-0010",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341488",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341488"
+      }
+    },
+    {
+      "id": "work-0010",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341488",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341488"
+      }
+    },
+    {
+      "id": "work-0011",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10034",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10034"
+      }
+    },
+    {
+      "id": "work-0011",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10034",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10034"
+      }
+    },
+    {
+      "id": "work-0012",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347587",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0012",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347587",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0013",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10036",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10036"
+      }
+    },
+    {
+      "id": "work-0013",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10036",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10036"
+      }
+    },
+    {
+      "id": "work-0014",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10111",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10111"
+      }
+    },
+    {
+      "id": "work-0014",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10111",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10111"
+      }
+    },
+    {
+      "id": "work-0015",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10068",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10068"
+      }
+    },
+    {
+      "id": "work-0015",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10068",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10068"
+      }
+    },
+    {
+      "id": "work-0016",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10121",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10121"
+      }
+    },
+    {
+      "id": "work-0016",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10121",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10121"
+      }
+    },
+    {
+      "id": "work-0017",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347554",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347554"
+      }
+    },
+    {
+      "id": "work-0017",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347554",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347554"
+      }
+    },
+    {
+      "id": "work-0018",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341484",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341484"
+      }
+    },
+    {
+      "id": "work-0018",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341484",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341484"
+      }
+    },
+    {
+      "id": "work-0019",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10060",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10060"
+      }
+    },
+    {
+      "id": "work-0019",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10060",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10060"
+      }
+    },
+    {
+      "id": "work-0020",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347584",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0020",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347584",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0021",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347588",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347588"
+      }
+    },
+    {
+      "id": "work-0021",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347588",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347588"
+      }
+    },
+    {
+      "id": "work-0022",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347561",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347561"
+      }
+    },
+    {
+      "id": "work-0022",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347561",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347561"
+      }
+    },
+    {
+      "id": "work-0023",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10077",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10077"
+      }
+    },
+    {
+      "id": "work-0023",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10077",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10077"
+      }
+    },
+    {
+      "id": "work-0024",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347563",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0024",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347563",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0025",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10092",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10092"
+      }
+    },
+    {
+      "id": "work-0025",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10092",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10092"
+      }
+    },
+    {
+      "id": "work-0026",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347576",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0026",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347576",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0027",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10122",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10122"
+      }
+    },
+    {
+      "id": "work-0027",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10122",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10122"
+      }
+    },
+    {
+      "id": "work-0028",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347516",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347516"
+      }
+    },
+    {
+      "id": "work-0028",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347516",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347516"
+      }
+    },
+    {
+      "id": "work-0029",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10050",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10050"
+      }
+    },
+    {
+      "id": "work-0029",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10050",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10050"
+      }
+    },
+    {
+      "id": "work-0030",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347544",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347544"
+      }
+    },
+    {
+      "id": "work-0030",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347544",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347544"
+      }
+    },
+    {
+      "id": "work-0031",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347585",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347585"
+      }
+    },
+    {
+      "id": "work-0031",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347585",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347585"
+      }
+    },
+    {
+      "id": "work-0032",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10097",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10097"
+      }
+    },
+    {
+      "id": "work-0032",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10097",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10097"
+      }
+    },
+    {
+      "id": "work-0033",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347557",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347557"
+      }
+    },
+    {
+      "id": "work-0033",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347557",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347557"
+      }
+    },
+    {
+      "id": "work-0034",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347569",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347569"
+      }
+    },
+    {
+      "id": "work-0034",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347569",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347569"
+      }
+    },
+    {
+      "id": "work-0035",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10113",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10113"
+      }
+    },
+    {
+      "id": "work-0035",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10113",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10113"
+      }
+    },
+    {
+      "id": "work-0036",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10114",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10114"
+      }
+    },
+    {
+      "id": "work-0036",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10114",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10114"
+      }
+    },
+    {
+      "id": "work-0037",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347580",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347580"
+      }
+    },
+    {
+      "id": "work-0037",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347580",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347580"
+      }
+    },
+    {
+      "id": "work-0038",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10066",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10066"
+      }
+    },
+    {
+      "id": "work-0038",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10066",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10066"
+      }
+    },
+    {
+      "id": "work-0039",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10099",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10099"
+      }
+    },
+    {
+      "id": "work-0039",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10099",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10099"
+      }
+    },
+    {
+      "id": "work-0040",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10058",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10058"
+      }
+    },
+    {
+      "id": "work-0040",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10058",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10058"
+      }
+    },
+    {
+      "id": "work-0041",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10124",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10124"
+      }
+    },
+    {
+      "id": "work-0041",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10124",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10124"
+      }
+    },
+    {
+      "id": "work-0042",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10119",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10119"
+      }
+    },
+    {
+      "id": "work-0042",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10119",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10119"
+      }
+    },
+    {
+      "id": "work-0043",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347578",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347578"
+      }
+    },
+    {
+      "id": "work-0043",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347578",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347578"
+      }
+    },
+    {
+      "id": "work-0044",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10072",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10072"
+      }
+    },
+    {
+      "id": "work-0044",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10072",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10072"
+      }
+    },
+    {
+      "id": "work-0045",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10069",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10069"
+      }
+    },
+    {
+      "id": "work-0045",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10069",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10069"
+      }
+    },
+    {
+      "id": "work-0046",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10116",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10116"
+      }
+    },
+    {
+      "id": "work-0046",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10116",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10116"
+      }
+    },
+    {
+      "id": "work-0047",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10082",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10082"
+      }
+    },
+    {
+      "id": "work-0047",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10082",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10082"
+      }
+    },
+    {
+      "id": "work-0048",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10106",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10106"
+      }
+    },
+    {
+      "id": "work-0048",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10106",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10106"
+      }
+    },
+    {
+      "id": "work-0049",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10108",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10108"
+      }
+    },
+    {
+      "id": "work-0049",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10108",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10108"
+      }
+    },
+    {
+      "id": "work-0050",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10033",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10033"
+      }
+    },
+    {
+      "id": "work-0050",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10033",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10033"
+      }
+    },
+    {
+      "id": "work-0051",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10045",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10045"
+      }
+    },
+    {
+      "id": "work-0051",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10045",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10045"
+      }
+    },
+    {
+      "id": "work-0052",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347545",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347545"
+      }
+    },
+    {
+      "id": "work-0052",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347545",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347545"
+      }
+    },
+    {
+      "id": "work-0053",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347581",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0053",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347581",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0054",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347533",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347533"
+      }
+    },
+    {
+      "id": "work-0054",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347533",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347533"
+      }
+    },
+    {
+      "id": "work-0055",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347582",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0055",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347582",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0056",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10047",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0056",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10047",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0057",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347570",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347570"
+      }
+    },
+    {
+      "id": "work-0057",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347570",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347570"
+      }
+    },
+    {
+      "id": "work-0058",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10093",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10093"
+      }
+    },
+    {
+      "id": "work-0058",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10093",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10093"
+      }
+    },
+    {
+      "id": "work-0059",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10035",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10035"
+      }
+    },
+    {
+      "id": "work-0059",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10035",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10035"
+      }
+    },
+    {
+      "id": "work-0060",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10079",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10079"
+      }
+    },
+    {
+      "id": "work-0060",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10079",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10079"
+      }
+    },
+    {
+      "id": "work-0061",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10086",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10086"
+      }
+    },
+    {
+      "id": "work-0061",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10086",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10086"
+      }
+    },
+    {
+      "id": "work-0062",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10083",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10083"
+      }
+    },
+    {
+      "id": "work-0062",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10083",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10083"
+      }
+    },
+    {
+      "id": "work-0063",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10078",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10078"
+      }
+    },
+    {
+      "id": "work-0063",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10078",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10078"
+      }
+    },
+    {
+      "id": "work-0064",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347590",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347590"
+      }
+    },
+    {
+      "id": "work-0064",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347590",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347590"
+      }
+    },
+    {
+      "id": "work-0065",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10084",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10084"
+      }
+    },
+    {
+      "id": "work-0065",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10084",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10084"
+      }
+    },
+    {
+      "id": "work-0066",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10120",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10120"
+      }
+    },
+    {
+      "id": "work-0066",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10120",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10120"
+      }
+    },
+    {
+      "id": "work-0067",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347562",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347562"
+      }
+    },
+    {
+      "id": "work-0067",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347562",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347562"
+      }
+    },
+    {
+      "id": "work-0068",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10125",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10125"
+      }
+    },
+    {
+      "id": "work-0068",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10125",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10125"
+      }
+    },
+    {
+      "id": "work-0069",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10063",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10063"
+      }
+    },
+    {
+      "id": "work-0069",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10063",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10063"
+      }
+    },
+    {
+      "id": "work-0070",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10088",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10088"
+      }
+    },
+    {
+      "id": "work-0070",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10088",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10088"
+      }
+    },
+    {
+      "id": "work-0071",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10110",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10110"
+      }
+    },
+    {
+      "id": "work-0071",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10110",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10110"
+      }
+    },
+    {
+      "id": "work-0072",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10095",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10095"
+      }
+    },
+    {
+      "id": "work-0072",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10095",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10095"
+      }
+    },
+    {
+      "id": "work-0073",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347560",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347560"
+      }
+    },
+    {
+      "id": "work-0073",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347560",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347560"
+      }
+    },
+    {
+      "id": "work-0074",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347550",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347550"
+      }
+    },
+    {
+      "id": "work-0074",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347550",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347550"
+      }
+    },
+    {
+      "id": "work-0075",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10102",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10102"
+      }
+    },
+    {
+      "id": "work-0075",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10102",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10102"
+      }
+    },
+    {
+      "id": "work-0076",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10109",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10109"
+      }
+    },
+    {
+      "id": "work-0076",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10109",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10109"
+      }
+    },
+    {
+      "id": "work-0077",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10131",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10131"
+      }
+    },
+    {
+      "id": "work-0077",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10131",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10131"
+      }
+    },
+    {
+      "id": "work-0078",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10090",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10090"
+      }
+    },
+    {
+      "id": "work-0078",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10090",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10090"
+      }
+    },
+    {
+      "id": "work-0079",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10126",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10126"
+      }
+    },
+    {
+      "id": "work-0079",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10126",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10126"
+      }
+    },
+    {
+      "id": "work-0080",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10044",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10044"
+      }
+    },
+    {
+      "id": "work-0080",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10044",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10044"
+      }
+    },
+    {
+      "id": "work-0081",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347579",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347579"
+      }
+    },
+    {
+      "id": "work-0081",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347579",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347579"
+      }
+    },
+    {
+      "id": "work-0082",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10104",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10104"
+      }
+    },
+    {
+      "id": "work-0082",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10104",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10104"
+      }
+    },
+    {
+      "id": "work-0083",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10061",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10061"
+      }
+    },
+    {
+      "id": "work-0083",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10061",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10061"
+      }
+    },
+    {
+      "id": "work-0084",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10049",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10049"
+      }
+    },
+    {
+      "id": "work-0084",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10049",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10049"
+      }
+    },
+    {
+      "id": "work-0085",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347565",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0085",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347565",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0086",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10056",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10056"
+      }
+    },
+    {
+      "id": "work-0086",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10056",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10056"
+      }
+    },
+    {
+      "id": "work-0087",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10087",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10087"
+      }
+    },
+    {
+      "id": "work-0087",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10087",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10087"
+      }
+    },
+    {
+      "id": "work-0088",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347552",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347552"
+      }
+    },
+    {
+      "id": "work-0088",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347552",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347552"
+      }
+    },
+    {
+      "id": "work-0089",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10118",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10118"
+      }
+    },
+    {
+      "id": "work-0089",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10118",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10118"
+      }
+    },
+    {
+      "id": "work-0090",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10081",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10081"
+      }
+    },
+    {
+      "id": "work-0090",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10081",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10081"
+      }
+    },
+    {
+      "id": "work-0091",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10062",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10062"
+      }
+    },
+    {
+      "id": "work-0091",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10062",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10062"
+      }
+    },
+    {
+      "id": "work-0092",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347583",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347583"
+      }
+    },
+    {
+      "id": "work-0092",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347583",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347583"
+      }
+    },
+    {
+      "id": "work-0093",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10127",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10127"
+      }
+    },
+    {
+      "id": "work-0093",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10127",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10127"
+      }
+    },
+    {
+      "id": "work-0094",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10107",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10107"
+      }
+    },
+    {
+      "id": "work-0094",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10107",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10107"
+      }
+    },
+    {
+      "id": "work-0095",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347559",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0095",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347559",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0096",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10129",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10129"
+      }
+    },
+    {
+      "id": "work-0096",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10129",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10129"
+      }
+    },
+    {
+      "id": "work-0097",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10128",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10128"
+      }
+    },
+    {
+      "id": "work-0097",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10128",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10128"
+      }
+    },
+    {
+      "id": "work-0098",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10096",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10096"
+      }
+    },
+    {
+      "id": "work-0098",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10096",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10096"
+      }
+    },
+    {
+      "id": "work-0099",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347568",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347568"
+      }
+    },
+    {
+      "id": "work-0099",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347568",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347568"
+      }
+    },
+    {
+      "id": "work-0100",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10105",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10105"
+      }
+    },
+    {
+      "id": "work-0100",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10105",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10105"
+      }
+    },
+    {
+      "id": "work-0101",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10052",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10052"
+      }
+    },
+    {
+      "id": "work-0101",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10052",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10052"
+      }
+    },
+    {
+      "id": "work-0102",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10101",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10101"
+      }
+    },
+    {
+      "id": "work-0102",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10101",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10101"
+      }
+    },
+    {
+      "id": "work-0103",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10037",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10037"
+      }
+    },
+    {
+      "id": "work-0103",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10037",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10037"
+      }
+    },
+    {
+      "id": "work-0104",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347586",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347586"
+      }
+    },
+    {
+      "id": "work-0104",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347586",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347586"
+      }
+    },
+    {
+      "id": "work-0105",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10046",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10046"
+      }
+    },
+    {
+      "id": "work-0105",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10046",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10046"
+      }
+    },
+    {
+      "id": "work-0106",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10100",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10100"
+      }
+    },
+    {
+      "id": "work-0106",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10100",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10100"
+      }
+    },
+    {
+      "id": "work-0107",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347575",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347575"
+      }
+    },
+    {
+      "id": "work-0107",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347575",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347575"
+      }
+    },
+    {
+      "id": "work-0108",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10039",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10039"
+      }
+    },
+    {
+      "id": "work-0108",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10039",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10039"
+      }
+    },
+    {
+      "id": "work-0109",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10071",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10071"
+      }
+    },
+    {
+      "id": "work-0109",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10071",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10071"
+      }
+    },
+    {
+      "id": "work-0110",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347571",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347571"
+      }
+    },
+    {
+      "id": "work-0110",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12347571",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12347571"
+      }
+    },
+    {
+      "id": "work-0111",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10091",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10091"
+      }
+    },
+    {
+      "id": "work-0111",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10091",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10091"
+      }
+    },
+    {
+      "id": "work-0112",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10103",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10103"
+      }
+    },
+    {
+      "id": "work-0112",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10103",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10103"
+      }
+    },
+    {
+      "id": "work-0113",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341604",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341604"
+      }
+    },
+    {
+      "id": "work-0113",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12341604",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12341604"
+      }
+    },
+    {
+      "id": "work-0114",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10075",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10075"
+      }
+    },
+    {
+      "id": "work-0114",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10075",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10075"
+      }
+    },
+    {
+      "id": "work-0115",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10067",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10067"
+      }
+    },
+    {
+      "id": "work-0115",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10067",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10067"
+      }
+    },
+    {
+      "id": "work-0116",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10070",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10070"
+      }
+    },
+    {
+      "id": "work-0116",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10070",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10070"
+      }
+    },
+    {
+      "id": "work-0117",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10073",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10073"
+      }
+    },
+    {
+      "id": "work-0117",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10073",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10073"
+      }
+    },
+    {
+      "id": "work-0118",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10094",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10094"
+      }
+    },
+    {
+      "id": "work-0118",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10094",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10094"
+      }
+    },
+    {
+      "id": "work-0119",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12351586",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12351586"
+      }
+    },
+    {
+      "id": "work-0119",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-12351586",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-12351586"
+      }
+    },
+    {
+      "id": "work-0120",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10074",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10074"
+      }
+    },
+    {
+      "id": "work-0120",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/15700720-bja10074",
+      "outcome": {
+        "status": "linked",
+        "id": "10.1163/15700720-bja10074"
+      }
+    },
+    {
+      "id": "work-0121",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.2307/3217620",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0121",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.2307/3217620",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0122",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1515/9781501757235",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0122",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1515/9781501757235",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0123",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.2307/605571",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0123",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.2307/605571",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0124",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.31826/9781463216382",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0124",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.31826/9781463216382",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0125",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.4324/9780203029039",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0125",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.4324/9780203029039",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0126",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.7227/bjrl.78.3.3",
+      "outcome": {
+        "status": "linked",
+        "id": "10.7227/bjrl.78.3.3"
+      }
+    },
+    {
+      "id": "work-0126",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.7227/bjrl.78.3.3",
+      "outcome": {
+        "status": "linked",
+        "id": "10.7227/bjrl.78.3.3"
+      }
+    },
+    {
+      "id": "work-0127",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.4324/9780203451441",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0127",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.4324/9780203451441",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0128",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.2307/1584423",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0128",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.2307/1584423",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0129",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.4324/9781315251493",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0129",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.4324/9781315251493",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0130",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/9789004675377",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0130",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/9789004675377",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0131",
+      "entity_type": "work",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "10.1163/1574-9347_bnp_e326200",
+      "outcome": {
+        "status": "no_match"
+      }
+    },
+    {
+      "id": "work-0131",
+      "entity_type": "work",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "10.1163/1574-9347_bnp_e326200",
+      "outcome": {
+        "status": "no_match"
+      }
+    }
+  ]
+}

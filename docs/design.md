@@ -55,6 +55,11 @@ one JSON object per line on stderr.
 - **New metadata providers** — `metadata_registry.py` (`_PROVIDER_URLS`,
   `lookup`, `search`, and the CSL normalizers) emits candidates with
   provenance (`request_url`, digest, retrieval time).
+- **Authority sources (entity normalisation, P2)** —
+  `ingestion/authority/` (ORCID, Wikidata, GeoNames; VIAF probed and
+  dropped 2026-10-17) plugs into the same registry dispatch; candidates
+  carry `type` + `authority` blocks and are never work-shaped, so the
+  work matcher rejects them until a name/place policy exists.
 - **Plugins** — installed packages can register the `citeindex.plugins.v1`
   entry point and post-process a finished corpus (see
   `docs/plans/2026-10-14-plugin-system-fanyi.md`).

@@ -1,4 +1,5 @@
 """Registry-backed PDF metadata enrichment, before artifact finalization."""
+
 from __future__ import annotations
 
 import hashlib
@@ -14,6 +15,7 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
+from .authority.matching import select_authority_candidate
 from .citation_verification import (
     _find_evidence,
     _same_value,
@@ -41,9 +43,20 @@ def target_fields(csl: dict) -> set[str]:
 
 def candidate_digest(csl: dict) -> str:
     """Digest the replay stage, excluding finalized identity and volatile output data."""
-    return hash_payload({k: v for k, v in csl.items() if k not in {
-        "id", "content_hash", "merkle_root", "source_type", "ingestion_timestamp",
-    }})
+    return hash_payload(
+        {
+            k: v
+            for k, v in csl.items()
+            if k
+            not in {
+                "id",
+                "content_hash",
+                "merkle_root",
+                "source_type",
+                "ingestion_timestamp",
+            }
+        }
+    )
 
 
 def source_digest(path: str) -> str:
@@ -76,8 +89,16 @@ def refresh_field_states(csl: dict, document: dict | None, resource_type: str, e
                 if not any(b.get("id") in ids and b.get("role") in {"bibliography", "references"} for b in blocks):
                     resolved = validate_block_evidence(field, value, span, blocks)
             elif span.get("locator"):
-                resolved = next((item for item in text_items if item["quote"] == span.get("quote")
-                                 and item["locator"] == span["locator"] and _find_evidence(value, [item])), None)
+                resolved = next(
+                    (
+                        item
+                        for item in text_items
+                        if item["quote"] == span.get("quote")
+                        and item["locator"] == span["locator"]
+                        and _find_evidence(value, [item])
+                    ),
+                    None,
+                )
         if resolved:
             supported[field] = resolved
             states[field] = "source-supported"
@@ -91,11 +112,15 @@ def refresh_field_states(csl: dict, document: dict | None, resource_type: str, e
             states[field] = "unverified"
     refreshed["_field_evidence"] = supported
     refreshed["_field_status"] = states
-    refreshed["_citation_status"] = "source-supported" if (
-        states.get("title") == "source-supported"
-        and any(states.get(role) == "source-supported" for role in ("author", "editor"))
-        and states.get("issued") == "source-supported"
-    ) else "incomplete"
+    refreshed["_citation_status"] = (
+        "source-supported"
+        if (
+            states.get("title") == "source-supported"
+            and any(states.get(role) == "source-supported" for role in ("author", "editor"))
+            and states.get("issued") == "source-supported"
+        )
+        else "incomplete"
+    )
     return refreshed
 
 
@@ -155,8 +180,9 @@ def _name_agreement(csl: dict, candidate: dict, field: str) -> bool:
     return matched
 
 
-def match_candidate(csl: dict, candidate: dict, *, min_score: float = .90,
-                    existing_identifier: bool = False, isbn: bool = False) -> dict:
+def match_candidate(
+    csl: dict, candidate: dict, *, min_score: float = 0.90, existing_identifier: bool = False, isbn: bool = False
+) -> dict:
     """Establish identity before allowing tier-based field corrections."""
     left, right = _title(csl), _title(candidate)
     cjk = bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", left + right))
@@ -195,8 +221,11 @@ def match_candidate(csl: dict, candidate: dict, *, min_score: float = .90,
         if states.get(field) != "source-supported" or not candidate.get(field):
             continue
         source_year, registry_year = _year(csl), _year(candidate)
-        agreement = (source_year is not None and registry_year is not None
-                     and abs(source_year - registry_year) <= 1) if field == "issued" else _normalized(csl[field]) == _normalized(candidate[field])
+        agreement = (
+            (source_year is not None and registry_year is not None and abs(source_year - registry_year) <= 1)
+            if field == "issued"
+            else _normalized(csl[field]) == _normalized(candidate[field])
+        )
         if agreement:
             result["anchors"].append(field)
         elif not existing_identifier:
@@ -220,14 +249,16 @@ def _identity(result: dict) -> str:
     return str(result.get("provenance", {}).get("source_id") or _title(candidate))
 
 
-def select_candidate(csl: dict, results: list[dict], min_score: float = .9) -> tuple[dict | None, list[dict]]:
+def select_candidate(csl: dict, results: list[dict], min_score: float = 0.9) -> tuple[dict | None, list[dict]]:
     accepted: dict[str, dict] = {}
     rejected: list[dict] = []
     for result in results:
         candidate = result.get("candidate")
         if result.get("status") != "found" or not isinstance(candidate, dict):
             continue
-        match = match_candidate(csl, candidate, min_score=min_score, isbn=bool(candidate.get("ISBN") and not candidate.get("DOI")))
+        match = match_candidate(
+            csl, candidate, min_score=min_score, isbn=bool(candidate.get("ISBN") and not candidate.get("DOI"))
+        )
         if not match["accepted"]:
             rejected.append({"identity": _identity(result), "match": match, "provenance": result.get("provenance")})
             continue
@@ -236,8 +267,10 @@ def select_candidate(csl: dict, results: list[dict], min_score: float = .9) -> t
         if identity not in accepted or row["match"]["score"] > accepted[identity]["match"]["score"]:
             accepted[identity] = row
     ranked = sorted(accepted.values(), key=lambda row: row["match"]["score"], reverse=True)
-    if len(ranked) > 1 and ranked[0]["match"]["score"] - ranked[1]["match"]["score"] < .05:
-        rejected.extend({"identity": _identity(row), "match": {**row["match"], "reason": "ambiguous_identity"}} for row in ranked)
+    if len(ranked) > 1 and ranked[0]["match"]["score"] - ranked[1]["match"]["score"] < 0.05:
+        rejected.extend(
+            {"identity": _identity(row), "match": {**row["match"], "reason": "ambiguous_identity"}} for row in ranked
+        )
         return None, rejected
     return (ranked[0] if ranked else None), rejected
 
@@ -246,8 +279,13 @@ def merge_registry(csl: dict, result: dict, tier: str, origin: str, match: dict)
     merged = deepcopy(csl)
     decisions: list[dict] = []
     provenance = result.get("provenance") or {}
-    if (result.get("status") != "found" or not provenance.get("response_digest")
-            or not provenance.get("request_url") or not provenance.get("provider") or tier not in {"T1", "T2", "T4"}):
+    if (
+        result.get("status") != "found"
+        or not provenance.get("response_digest")
+        or not provenance.get("request_url")
+        or not provenance.get("provider")
+        or tier not in {"T1", "T2", "T4"}
+    ):
         return merged, decisions
     evidence = merged.setdefault("_field_evidence", {})
     states = merged.setdefault("_field_status", {})
@@ -258,27 +296,39 @@ def merge_registry(csl: dict, result: dict, tier: str, origin: str, match: dict)
             continue
         if tier == "T4" and old is not None:
             continue
-        decision = {"field": field, "old_value": deepcopy(old), "new_value": deepcopy(value),
-                    "action": "fill" if old is None else "overwrite", "tier": tier,
-                    "discovery_origin": origin,
-                    "verification_basis": "isbn_edition_round_trip" if result["provenance"]["provider"] == "openlibrary" else "doi_round_trip",
-                    "provenance": deepcopy(provenance), "match": deepcopy(match)}
+        decision = {
+            "field": field,
+            "old_value": deepcopy(old),
+            "new_value": deepcopy(value),
+            "action": "fill" if old is None else "overwrite",
+            "tier": tier,
+            "discovery_origin": origin,
+            "verification_basis": "isbn_edition_round_trip"
+            if result["provenance"]["provider"] == "openlibrary"
+            else "doi_round_trip",
+            "provenance": deepcopy(provenance),
+            "match": deepcopy(match),
+        }
         if field in evidence:
             decision["source_evidence"] = evidence.pop(field)
         merged[field] = deepcopy(value)
         states[field] = "registry-sourced" if old is None else "registry-corrected"
         decisions.append(decision)
     if decisions:
-        merged["_citation_status"] = "source-supported" if all(
-            states.get(field) == "source-supported" for field in ("title", "author", "issued")
-        ) else "incomplete"
+        merged["_citation_status"] = (
+            "source-supported"
+            if all(states.get(field) == "source-supported" for field in ("title", "author", "issued"))
+            else "incomplete"
+        )
     return merged, decisions
 
 
-def resolve_citation_url(url: str, timeout: float, client: Any, domains: tuple[str, ...],
-                         *, session: Any = requests) -> str | None:
+def resolve_citation_url(
+    url: str, timeout: float, client: Any, domains: tuple[str, ...], *, session: Any = requests
+) -> str | None:
     """Resolve only Google grounding redirects within the shared request budget."""
     from .url_security import UnsafeUrlError, validate_public_url
+
     deadline = time.monotonic() + timeout
     for _ in range(3):
         response = None
@@ -308,10 +358,12 @@ def resolve_citation_url(url: str, timeout: float, client: Any, domains: tuple[s
     return None
 
 
-def _resolve(client: Any, config: Any, candidate: dict, *, fresh: bool = False, provider: str | None = None) -> dict | None:
+def _resolve(
+    client: Any, config: Any, candidate: dict, *, fresh: bool = False, provider: str | None = None
+) -> dict | None:
     doi = normalize_doi(candidate.get("DOI"))
     if doi:
-        for name in ([provider] if provider else ["crossref", "datacite"]):
+        for name in [provider] if provider else ["crossref", "datacite"]:
             if name not in config.online_enrich_providers or (name == "crossref" and not config.crossref_enabled):
                 continue
             result = client.lookup(name, doi, fresh=fresh)
@@ -325,7 +377,9 @@ def _resolve(client: Any, config: Any, candidate: dict, *, fresh: bool = False, 
     return None
 
 
-def apply_enrichment_proposal(csl: dict, payload: dict, source_sha256: str, client: Any, config: Any) -> tuple[dict, list[dict]]:
+def apply_enrichment_proposal(
+    csl: dict, payload: dict, source_sha256: str, client: Any, config: Any
+) -> tuple[dict, list[dict]]:
     """Freshly validate every entry before applying any entry."""
     if config.offline_verification:
         raise ValueError("enrichment proposal requires online verification")
@@ -342,11 +396,17 @@ def apply_enrichment_proposal(csl: dict, payload: dict, source_sha256: str, clie
             raise ValueError("invalid enrichment proposal entry")
         field, provider, kind = entry.get("field"), entry.get("provider"), entry.get("kind")
         old, value = entry.get("old_value"), entry.get("proposed_value")
-        if (field not in target_fields(csl) or field in seen or not valid_host_value(field, value)
-                or "old_value" not in entry or old != csl.get(field)
-                or provider not in {"crossref", "datacite", "openlibrary"}
-                or kind not in {"registry_fill", "registry_correction"}
-                or not isinstance(entry.get("evidence_reference"), dict) or not entry["evidence_reference"]):
+        if (
+            field not in target_fields(csl)
+            or field in seen
+            or not valid_host_value(field, value)
+            or "old_value" not in entry
+            or old != csl.get(field)
+            or provider not in {"crossref", "datacite", "openlibrary"}
+            or kind not in {"registry_fill", "registry_correction"}
+            or not isinstance(entry.get("evidence_reference"), dict)
+            or not entry["evidence_reference"]
+        ):
             raise ValueError("invalid, duplicate, unsupported or stale registry proposal")
         if (kind == "registry_fill") != (old is None):
             raise ValueError("registry proposal kind does not match current value")
@@ -361,11 +421,23 @@ def apply_enrichment_proposal(csl: dict, payload: dict, source_sha256: str, clie
             result = _resolve(client, config, probe, fresh=True, provider=provider)
             if not result:
                 raise ValueError("registry proposal identifier could not be freshly verified")
-            source_identifier = (normalize_isbn(csl.get("ISBN")) == normalized if provider == "openlibrary"
-                                 else normalize_doi(csl.get("DOI")) == normalized)
-            source_identifier = source_identifier and csl.get("_field_status", {}).get("ISBN" if provider == "openlibrary" else "DOI") == "source-supported"
-            match = match_candidate(csl, result["candidate"], min_score=config.online_enrich_min_score,
-                                    existing_identifier=source_identifier, isbn=provider == "openlibrary")
+            source_identifier = (
+                normalize_isbn(csl.get("ISBN")) == normalized
+                if provider == "openlibrary"
+                else normalize_doi(csl.get("DOI")) == normalized
+            )
+            source_identifier = (
+                source_identifier
+                and csl.get("_field_status", {}).get("ISBN" if provider == "openlibrary" else "DOI")
+                == "source-supported"
+            )
+            match = match_candidate(
+                csl,
+                result["candidate"],
+                min_score=config.online_enrich_min_score,
+                existing_identifier=source_identifier,
+                isbn=provider == "openlibrary",
+            )
             if not match["accepted"]:
                 raise ValueError("registry proposal does not match host identity")
             lookups[key] = result, match
@@ -385,12 +457,93 @@ def apply_enrichment_proposal(csl: dict, payload: dict, source_sha256: str, clie
     return merged, decisions
 
 
-def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra: dict,
-                    config: Any, input_ref: str, *, client: Any = None) -> tuple[dict, dict]:
+def resolve_authority_entities(anchors: dict, client: Any, config: Any) -> list[dict]:
+    """Resolve author names and publisher/event places against authority sources (P2 D2).
+
+    Opt-in: authority providers must be listed in ``online_enrich_providers``.
+    Decisions land in the enrichment report with explicit ``no_match`` reasons
+    and provenance; the CSL record is never modified by authority links
+    (sidecar persistence is deferred to the gold-set phase).
+    """
+    providers = {p for p in ("orcid", "geonames", "wikidata") if p in tuple(config.online_enrich_providers or ())}
+    decisions: list[dict] = []
+    if "orcid" in providers:
+        # ponytail: three names per document; widen when the gold set asks for it
+        for person in [item for item in (anchors.get("author") or []) if isinstance(item, dict)][:3]:
+            family = str(person.get("family") or person.get("literal") or "").strip()
+            if not family:
+                continue
+            results = client.search("orcid", family, author=str(person.get("given") or "").strip() or None)
+            decision = select_authority_candidate("person", person, results, field="author")
+            decisions.append(decision)
+    place_field = next(
+        (
+            field
+            for field in ("publisher-place", "event-place")
+            if isinstance(anchors.get(field), str) and anchors[field].strip()
+        ),
+        None,
+    )
+    if place_field and providers & {"geonames", "wikidata"}:
+        place_results: list[dict] = []
+        for provider in ("geonames", "wikidata"):
+            if provider in providers:
+                place_results.extend(client.search(provider, anchors[place_field]))
+        decision = select_authority_candidate("place", anchors[place_field], place_results, field=place_field)
+        decisions.append(decision)
+    return decisions
+
+
+def build_authority_links(report: dict) -> dict | None:
+    """Sidecar link table for corpus artifacts (P2 D4).
+
+    One entry per linked entity — system, id/URI, score, provenance —
+    distilled from ``report["authority_decisions"]``. ``no_match`` and
+    ``skipped`` decisions stay in the ``online_enrichment`` report; the
+    sidecar is only the links. Returns ``None`` when nothing linked, so
+    no empty artifact is persisted. CSL is never mutated (``csl.json``
+    is untouchable; CSL is a strict field whitelist).
+    """
+    links = []
+    for decision in report.get("authority_decisions") or []:
+        if decision.get("status") != "linked":
+            continue
+        authority = decision.get("authority") or {}
+        links.append(
+            {
+                "entity_type": decision.get("entity_type"),
+                "field": decision.get("field"),
+                "source": decision.get("source"),
+                "system": authority.get("system"),
+                "id": authority.get("id"),
+                "uri": authority.get("uri"),
+                "score": decision.get("score"),
+                "provenance": decision.get("provenance"),
+            }
+        )
+    return {"schema_version": 1, "links": links} if links else None
+
+
+def enrich_metadata(
+    csl: dict,
+    document: dict | None,
+    resource_type: str,
+    extra: dict,
+    config: Any,
+    input_ref: str,
+    *,
+    client: Any = None,
+) -> tuple[dict, dict]:
     started = time.monotonic()
     original = deepcopy(csl)
-    report: dict = {"schema_version": SCHEMA_VERSION, "policy_version": POLICY_VERSION,
-                    "status": "skipped", "decisions": [], "attempts": [], "rejected_candidates": []}
+    report: dict = {
+        "schema_version": SCHEMA_VERSION,
+        "policy_version": POLICY_VERSION,
+        "status": "skipped",
+        "decisions": [],
+        "attempts": [],
+        "rejected_candidates": [],
+    }
     original_pdf = resource_type in {"digital_pdf", "scanned_pdf"} and Path(input_ref).suffix.lower() == ".pdf"
     if not original_pdf:
         if config.enrich_proposal:
@@ -401,9 +554,14 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
         report["reason"] = "offline_verification" if config.offline_verification else "disabled"
         return original, report
     current = refresh_field_states(csl, document, resource_type, extra)
-    report.update(source_sha256=source_digest(input_ref), candidate_input_snapshot=deepcopy(current),
-                  candidate_input_digest=candidate_digest(current),
-                  source_repaired_fields=sorted({entry["field"] for entry in extra.get("citation_repair", {}).get("applied", [])}))
+    report.update(
+        source_sha256=source_digest(input_ref),
+        candidate_input_snapshot=deepcopy(current),
+        candidate_input_digest=candidate_digest(current),
+        source_repaired_fields=sorted(
+            {entry["field"] for entry in extra.get("citation_repair", {}).get("applied", [])}
+        ),
+    )
     if current["_field_status"].get("title") != "source-supported":
         if config.enrich_proposal:
             raise ValueError("enrichment proposal requires source-supported title")
@@ -411,14 +569,21 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
         return current, report
     if client is None:
         from .metadata_registry import RegistryClient
+
         client = RegistryClient(config)
+
     def finish() -> tuple[dict, dict]:
-        report.update(attempts=deepcopy(client.attempts), request_count=client.request_count,
-                      cache_hits=client.cache_hits, budget_seconds=config.online_enrich_timeout,
-                      elapsed_seconds=round(time.monotonic() - started, 3))
+        report.update(
+            attempts=deepcopy(client.attempts),
+            request_count=client.request_count,
+            cache_hits=client.cache_hits,
+            budget_seconds=config.online_enrich_timeout,
+            elapsed_seconds=round(time.monotonic() - started, 3),
+        )
         if report["decisions"]:
             report["status"] = "enriched"
         return current, report
+
     if config.enrich_proposal:
         path = Path(config.enrich_proposal)
         if path.stat().st_size > 2 * 1024 * 1024:
@@ -435,15 +600,27 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
     # Match against the accepted source snapshot, never against our own registry writes.
     anchors = report["candidate_input_snapshot"]
     resolved = _resolve(client, config, anchors)
-    proposal_identifiers = {d["provenance"]["provider"]: d["provenance"].get("request_identifier")
-                            for d in report["decisions"]}
-    accepted_identity = next((("isbn:" if p == "openlibrary" else "doi:") + identifier
-                              for p, identifier in proposal_identifiers.items() if identifier), None)
+    proposal_identifiers = {
+        d["provenance"]["provider"]: d["provenance"].get("request_identifier") for d in report["decisions"]
+    }
+    accepted_identity = next(
+        (
+            ("isbn:" if p == "openlibrary" else "doi:") + identifier
+            for p, identifier in proposal_identifiers.items()
+            if identifier
+        ),
+        None,
+    )
     if resolved:
         isbn = resolved["provenance"]["provider"] == "openlibrary"
         source_identifier = anchors["_field_status"].get("ISBN" if isbn else "DOI") == "source-supported"
-        match = match_candidate(anchors, resolved["candidate"], min_score=config.online_enrich_min_score,
-                                existing_identifier=source_identifier, isbn=isbn)
+        match = match_candidate(
+            anchors,
+            resolved["candidate"],
+            min_score=config.online_enrich_min_score,
+            existing_identifier=source_identifier,
+            isbn=isbn,
+        )
         if match["accepted"] and (accepted_identity is None or accepted_identity == _identity(resolved)):
             tier = "T2" if isbn else "T1"
             protected = {d["field"] for d in report["decisions"] if int(d["tier"][1:]) < int(tier[1:])}
@@ -453,25 +630,44 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
             accepted_identity = _identity(resolved)
         else:
             report["rejected_candidates"].append({"identity": _identity(resolved), "match": match})
-    order = ["openlibrary", "crossref", "datacite", "openalex"] if anchors.get("type") == "book" else ["datacite", "crossref", "openalex", "openlibrary"] if anchors.get("type") in {"thesis", "report", "dataset"} else ["crossref", "openalex", "datacite", "openlibrary"]
+    order = (
+        ["openlibrary", "crossref", "datacite", "openalex"]
+        if anchors.get("type") == "book"
+        else ["datacite", "crossref", "openalex", "openlibrary"]
+        if anchors.get("type") in {"thesis", "report", "dataset"}
+        else ["crossref", "openalex", "datacite", "openlibrary"]
+    )
     results = []
     for provider in order:
         if provider not in config.online_enrich_providers or client.remaining() <= 0:
             continue
-        if (provider == "crossref" and not config.crossref_enabled) or (provider == "openlibrary" and not config.openlibrary_enabled):
+        if (provider == "crossref" and not config.crossref_enabled) or (
+            provider == "openlibrary" and not config.openlibrary_enabled
+        ):
             continue
         if not any(current.get(field) is None for field in target_fields(current)):
             break
-        results.extend(client.search(provider, anchors["title"],
-                                     author=next(iter(sorted(_names(anchors))), None) if anchors["_field_status"].get("author") == "source-supported" else None,
-                                     year=_year(anchors) if anchors["_field_status"].get("issued") == "source-supported" else None))
+        results.extend(
+            client.search(
+                provider,
+                anchors["title"],
+                author=next(iter(sorted(_names(anchors))), None)
+                if anchors["_field_status"].get("author") == "source-supported"
+                else None,
+                year=_year(anchors) if anchors["_field_status"].get("issued") == "source-supported" else None,
+            )
+        )
     winner, rejected = select_candidate(anchors, results, config.online_enrich_min_score)
     report["rejected_candidates"].extend(rejected)
     if winner:
         authority = _resolve(client, config, winner["candidate"])
         if authority:
-            match = match_candidate(anchors, authority["candidate"], min_score=config.online_enrich_min_score,
-                                    isbn=authority["provenance"]["provider"] == "openlibrary")
+            match = match_candidate(
+                anchors,
+                authority["candidate"],
+                min_score=config.online_enrich_min_score,
+                isbn=authority["provenance"]["provider"] == "openlibrary",
+            )
             if match["accepted"] and (accepted_identity is None or accepted_identity == _identity(authority)):
                 authority["provenance"] = {**authority["provenance"], "search_evidence": winner["provenance"]}
                 tier = "T2" if authority["provenance"]["provider"] == "openlibrary" else "T1"
@@ -481,17 +677,30 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
                 report["decisions"].extend(decisions)
                 accepted_identity = _identity(authority)
         else:
-            report["rejected_candidates"].append({"identity": _identity(winner), "reason": "identifier_free_writes_deferred"})
-    if config.online_enrich_ai_fallback and accepted_identity is None and client.remaining() > 5 and client.request_count < 12:
+            report["rejected_candidates"].append(
+                {"identity": _identity(winner), "reason": "identifier_free_writes_deferred"}
+            )
+    report["authority_decisions"] = resolve_authority_entities(anchors, client, config)
+    if (
+        config.online_enrich_ai_fallback
+        and accepted_identity is None
+        and client.remaining() > 5
+        and client.request_count < 12
+    ):
         from .ai_discovery import discover_identifier
+
         try:
             timeout = client.reserve_request(timeout=client.remaining() - 5)
         except ValueError:
             report["reason"] = "budget_exhausted"
             return finish()
         discovery = discover_identifier(
-            anchors, config, timeout=timeout,
-            resolve_source_url=lambda url, remaining: resolve_citation_url(url, remaining, client, config.online_enrich_ai_domains),
+            anchors,
+            config,
+            timeout=timeout,
+            resolve_source_url=lambda url, remaining: resolve_citation_url(
+                url, remaining, client, config.online_enrich_ai_domains
+            ),
         )
         report["ai_discovery"] = discovery
         verified = {}
@@ -499,10 +708,18 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
             authority = _resolve(client, config, {identifier["kind"]: identifier["value"]})
             if not authority:
                 continue
-            match = match_candidate(anchors, authority["candidate"], min_score=config.online_enrich_min_score,
-                                    isbn=identifier["kind"] == "ISBN")
+            match = match_candidate(
+                anchors,
+                authority["candidate"],
+                min_score=config.online_enrich_min_score,
+                isbn=identifier["kind"] == "ISBN",
+            )
             if match["accepted"]:
-                authority["provenance"] = {**authority["provenance"], "discovery_evidence": identifier.get("evidence"), "ai_provenance": discovery.get("provenance")}
+                authority["provenance"] = {
+                    **authority["provenance"],
+                    "discovery_evidence": identifier.get("evidence"),
+                    "ai_provenance": discovery.get("provenance"),
+                }
                 verified[_identity(authority)] = authority, match
         if len(verified) == 1:
             authority, match = next(iter(verified.values()))
@@ -511,5 +728,7 @@ def enrich_metadata(csl: dict, document: dict | None, resource_type: str, extra:
         elif verified:
             report["rejected_candidates"].append({"reason": "ambiguous_ai_identifiers", "identities": sorted(verified)})
     report["status"] = "unresolved"
-    report["reason"] = "budget_exhausted" if client.remaining() <= 0 or client.request_count >= 12 else "no_additional_verified_fields"
+    report["reason"] = (
+        "budget_exhausted" if client.remaining() <= 0 or client.request_count >= 12 else "no_additional_verified_fields"
+    )
     return finish()

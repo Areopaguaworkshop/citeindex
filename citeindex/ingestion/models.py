@@ -77,8 +77,10 @@ class IngestionConfig:
 
     def __post_init__(self) -> None:
         providers = self.online_enrich_providers
+        # Keep in sync with metadata_registry._PROVIDER_URLS (authority names added by P2 D1).
+        supported = {"crossref", "openalex", "openlibrary", "datacite", "orcid", "wikidata", "geonames"}
         if (not isinstance(providers, (tuple, list)) or not providers
-                or any(not isinstance(p, str) or p not in {"crossref", "openalex", "openlibrary", "datacite"} for p in providers)
+                or any(not isinstance(p, str) or p not in supported for p in providers)
                 or len(set(providers)) != len(providers)):
             raise ValueError("online_enrich_providers must contain unique supported registry names")
         self.online_enrich_providers = tuple(providers)

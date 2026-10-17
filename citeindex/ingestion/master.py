@@ -11,7 +11,7 @@ from .citation_verification import verify_citation_metadata
 from .deterministic import hash_payload
 from .markdown_export import write_library_markdown
 from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, PipelineResult
-from .online_enrichment import enrich_metadata
+from .online_enrichment import build_authority_links, enrich_metadata
 from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
 from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 from .url_security import UnsafeUrlError, validate_public_url
@@ -75,7 +75,8 @@ class CiteIndexIngestionOrchestrator:
                         next_action="Ensure LibreOffice is installed",
                     )
                 resource_type = self._pdf_kind(
-                    temp_pdf, force_kind=cfg.force_pdf_kind,
+                    temp_pdf,
+                    force_kind=cfg.force_pdf_kind,
                     strip_existing_ocr=cfg.strip_existing_ocr,
                 )
                 normalized = temp_pdf
@@ -91,7 +92,8 @@ class CiteIndexIngestionOrchestrator:
                         next_action="Ensure djvulibre-bin is installed",
                     )
                 resource_type = self._pdf_kind(
-                    temp_pdf, force_kind=cfg.force_pdf_kind,
+                    temp_pdf,
+                    force_kind=cfg.force_pdf_kind,
                     strip_existing_ocr=cfg.strip_existing_ocr,
                 )
                 normalized = temp_pdf
@@ -101,9 +103,11 @@ class CiteIndexIngestionOrchestrator:
                 sub_result = self.route_to_pipeline(resource_type, normalized, cfg)
                 for key in ("source_snapshot_path", "_images_tmpdir"):
                     path = sub_result.extra.get(key)
-                    if isinstance(path, str) and sub_result.extra.get(
-                        "cleanup_source_snapshot" if key == "source_snapshot_path" else key
-                    ) is not None:
+                    if (
+                        isinstance(path, str)
+                        and sub_result.extra.get("cleanup_source_snapshot" if key == "source_snapshot_path" else key)
+                        is not None
+                    ):
                         cleanup_paths.append(path)
             finally:
                 # Clean up temp PDF from Office/DJVU conversion
@@ -118,6 +122,7 @@ class CiteIndexIngestionOrchestrator:
             validated_authors = validate_authors(existing_authors, input_ref) if existing_authors else None
             if resource_type in {"url_article", "media"}:
                 from .csl import valid_host_value
+
                 validated_authors = existing_authors if valid_host_value("author", existing_authors) else None
 
             if validated_authors:
@@ -142,45 +147,74 @@ class CiteIndexIngestionOrchestrator:
                         logger.info("Author provided interactively: %s", author_from_prompt)
 
             registry_client = None
-            if (cfg.online_enrich or cfg.enrich_proposal) and resource_type in {"digital_pdf", "scanned_pdf"} and input_ref.lower().endswith(".pdf"):
+            if (
+                (cfg.online_enrich or cfg.enrich_proposal)
+                and resource_type in {"digital_pdf", "scanned_pdf"}
+                and input_ref.lower().endswith(".pdf")
+            ):
                 from .metadata_registry import RegistryClient
+
                 registry_client = RegistryClient(cfg, cache_dir=os.path.join(self.corpus_root, ".registry-cache"))
             citation_verification = None
             if cfg.verify_citations:
                 registry_kwargs = {"registry_client": registry_client} if registry_client is not None else {}
                 candidate_csl, citation_verification = verify_citation_metadata(
-                    candidate_csl, sub_result.document_json, resource_type, sub_result.extra, cfg,
+                    candidate_csl,
+                    sub_result.document_json,
+                    resource_type,
+                    sub_result.extra,
+                    cfg,
                     **registry_kwargs,
                 )
                 for correction in citation_verification.get("applied_corrections", []):
                     candidate_csl.setdefault("_field_evidence", {})[correction["field"]] = {
-                        "quote": correction["quote"], "locator": correction["locator"],
-                        **({"block_id": correction["locator"]["block_id"]} if correction["locator"].get("block_id") else {}),
+                        "quote": correction["quote"],
+                        "locator": correction["locator"],
+                        **(
+                            {"block_id": correction["locator"]["block_id"]}
+                            if correction["locator"].get("block_id")
+                            else {}
+                        ),
                     }
 
             if cfg.repair_proposal:
                 candidate_csl = self._apply_repair_proposal(
-                    candidate_csl, cfg.repair_proposal, input_ref, sub_result,
+                    candidate_csl,
+                    cfg.repair_proposal,
+                    input_ref,
+                    sub_result,
                 )
                 if citation_verification:
                     citation_verification["status"] = "needs_review"
                     citation_verification["verified"] = False
             candidate_csl, online_enrichment = enrich_metadata(
-                candidate_csl, sub_result.document_json, resource_type, sub_result.extra,
-                cfg, input_ref, client=registry_client,
+                candidate_csl,
+                sub_result.document_json,
+                resource_type,
+                sub_result.extra,
+                cfg,
+                input_ref,
+                client=registry_client,
             )
             sub_result.extra["online_enrichment"] = online_enrichment
+            authority_links = build_authority_links(online_enrichment)
+            if authority_links is not None:
+                sub_result.extra["authority_links"] = authority_links
             if online_enrichment["decisions"]:
                 if citation_verification:
                     citation_verification["status"] = "needs_review"
                     citation_verification["verified"] = False
-                    citation_verification["superseded_by_enrichment"] = [d["field"] for d in online_enrichment["decisions"]]
+                    citation_verification["superseded_by_enrichment"] = [
+                        d["field"] for d in online_enrichment["decisions"]
+                    ]
                 for repair in sub_result.extra.get("citation_repair", {}).get("applied", []):
                     changes = [d for d in online_enrichment["decisions"] if d["field"] == repair["field"]]
                     if changes:
                         repair["superseded_by_enrichment"] = changes[-1]
             standardized_csl = self.standardize_csl_json(
-                candidate_csl, sub_result.merkle_tree or {}, resource_type,
+                candidate_csl,
+                sub_result.merkle_tree or {},
+                resource_type,
             )
             logger.info("Standardized CSL JSON for: %s", standardized_csl.get("title", "unknown"))
 
@@ -193,8 +227,10 @@ class CiteIndexIngestionOrchestrator:
             tree = sub_result.extra.get("pageindex_tree")
             if tree:
                 from .pipelines.pageindex_tree import _build_level0
-                tree["level_0"] = _build_level0(standardized_csl, sub_result.source_id,
-                                               (sub_result.merkle_tree or {}).get("root"))
+
+                tree["level_0"] = _build_level0(
+                    standardized_csl, sub_result.source_id, (sub_result.merkle_tree or {}).get("root")
+                )
             redirect_html = []
             if resource_type == "url_article":
                 for index, redirect in enumerate(sub_result.extra.get("redirect_snapshots", []), start=1):
@@ -258,6 +294,7 @@ class CiteIndexIngestionOrchestrator:
             if resource_type in {"digital_pdf", "scanned_pdf"}:
                 from ..citation_style import format_bibliography
                 from .csl import export_csl
+
                 render_item = export_csl(standardized_csl)
                 render_item.pop("custom", None)
                 rendered_citation, _ = format_bibliography([render_item], cfg.citation_style)
@@ -275,6 +312,7 @@ class CiteIndexIngestionOrchestrator:
                     resource_type=resource_type,
                     verification_status=citation_verification["status"] if citation_verification else None,
                     rendered_citation=rendered_citation,
+                    authority_links=authority_links,
                 )
                 output["library_md_path"] = library_md_path
             except Exception:
@@ -304,6 +342,7 @@ class CiteIndexIngestionOrchestrator:
         with open(proposal_path, encoding="utf-8") as handle:
             payload = json.load(handle)
         from .citation_verification import _find_evidence, _text_items, valid_host_value, validate_block_evidence
+
         if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
             raise ValueError("repair proposal must contain a proposals array")
         source_path = sub_result.extra.get("source_snapshot_path") or input_ref
@@ -330,14 +369,14 @@ class CiteIndexIngestionOrchestrator:
             if not isinstance(locator, dict) or not isinstance(quote, str) or not quote.strip():
                 raise ValueError("repair requires a quote and exact locator")
             if locator.get("block_id"):
-                evidence = validate_block_evidence(field, value, {
-                    "block_id": locator["block_id"], "quote": quote}, blocks)
+                evidence = validate_block_evidence(
+                    field, value, {"block_id": locator["block_id"], "quote": quote}, blocks
+                )
                 supported = evidence is not None and evidence["locator"] == locator
             else:
                 # URL/document locators must resolve to actual text, never metadata or summaries.
                 supported = any(
-                    item["quote"] == quote and item["locator"] == locator
-                    and _find_evidence(value, [item])
+                    item["quote"] == quote and item["locator"] == locator and _find_evidence(value, [item])
                     for item in _text_items(sub_result.document_json, sub_result.resource_type)
                 )
             if not supported:
@@ -377,7 +416,8 @@ class CiteIndexIngestionOrchestrator:
         if ext == ".pdf":
             force_kind = config.force_pdf_kind if config else None
             return self._pdf_kind(
-                input_ref, force_kind=force_kind,
+                input_ref,
+                force_kind=force_kind,
                 strip_existing_ocr=config.strip_existing_ocr if config else False,
             ), os.path.abspath(input_ref)
         if ext in _OFFICE_EXTENSIONS:
@@ -389,7 +429,9 @@ class CiteIndexIngestionOrchestrator:
         return "unsupported", input_ref
 
     def _pdf_kind(
-        self, pdf_path: str, force_kind: str | None = None,
+        self,
+        pdf_path: str,
+        force_kind: str | None = None,
         strip_existing_ocr: bool = False,
     ) -> str:
         """Classify a PDF as digital, scanned, or mixed.
@@ -413,6 +455,7 @@ class CiteIndexIngestionOrchestrator:
             One of 'digital_pdf', 'scanned_pdf', or 'mixed_pdf'.
         """
         from .pdf_classifier import DocumentKind, classify_pdf
+
         logger.info("Classifying PDF: %s (force_kind=%s)", os.path.basename(pdf_path), force_kind)
         force_doc_kind = None
         if force_kind == "force_ocr":
@@ -423,33 +466,41 @@ class CiteIndexIngestionOrchestrator:
             force_doc_kind = DocumentKind(force_kind)
 
         classification = classify_pdf(
-            pdf_path, force_kind=force_doc_kind, strip_existing_ocr=strip_existing_ocr,
+            pdf_path,
+            force_kind=force_doc_kind,
+            strip_existing_ocr=strip_existing_ocr,
         )
         kind = classification.document_kind.value
         # For mixed_pdf, route to scanned pipeline (OCR handles both text and images)
         if classification.document_kind == DocumentKind.MIXED_PDF:
-            logger.info("Mixed PDF detected (%d digital, %d scanned, %d mixed pages) — routing to scanned pipeline",
-                        classification.digital_page_count,
-                        classification.scanned_page_count,
-                        classification.mixed_page_count)
+            logger.info(
+                "Mixed PDF detected (%d digital, %d scanned, %d mixed pages) — routing to scanned pipeline",
+                classification.digital_page_count,
+                classification.scanned_page_count,
+                classification.mixed_page_count,
+            )
             kind = "scanned_pdf"
         else:
-            logger.info("PDF classified as %s (%d digital, %d scanned, %d mixed, %d empty pages)",
-                        kind,
-                        classification.digital_page_count,
-                        classification.scanned_page_count,
-                        classification.mixed_page_count,
-                        classification.empty_page_count)
+            logger.info(
+                "PDF classified as %s (%d digital, %d scanned, %d mixed, %d empty pages)",
+                kind,
+                classification.digital_page_count,
+                classification.scanned_page_count,
+                classification.mixed_page_count,
+                classification.empty_page_count,
+            )
         return kind
 
     def _convert_office_to_pdf(self, doc_path: str, config: IngestionConfig) -> str | None:
         """Convert Office document to PDF using legacy file_converter."""
         from ..file_converter import convert_to_pdf
+
         return convert_to_pdf(doc_path)
 
     def _convert_djvu_to_pdf(self, doc_path: str, config: IngestionConfig) -> str | None:
         """Convert DJVU document to PDF using legacy file_converter."""
         from ..file_converter import convert_to_pdf
+
         return convert_to_pdf(doc_path)
 
     def route_to_pipeline(
@@ -460,15 +511,19 @@ class CiteIndexIngestionOrchestrator:
     ) -> PipelineResult:
         if resource_type == "digital_pdf":
             from .pipelines import digital_pdf
+
             return digital_pdf.run(normalized_input, source_type="digital_pdf", config=config)
         if resource_type == "scanned_pdf":
             from .pipelines import scanned_pdf
+
             return scanned_pdf.run(normalized_input, config=config)
         if resource_type == "url_article":
             from .pipelines import url_article
+
             return url_article.run(normalized_input, config=config)
         if resource_type == "media":
             from .pipelines import media
+
             return media.run(normalized_input, config=config)
         raise ValueError(f"No route for resource type: {resource_type}")
 
@@ -561,8 +616,7 @@ class CiteIndexIngestionOrchestrator:
         """
         from .url_crawler import discover_article_urls, fetch_content_hash
 
-        logger.info("Discovering article URLs from %s (depth=%d, max_pages=%d)",
-                     root_url, max_depth, max_pages)
+        logger.info("Discovering article URLs from %s (depth=%d, max_pages=%d)", root_url, max_depth, max_pages)
         discovered = discover_article_urls(root_url, max_depth=max_depth, max_pages=max_pages)
 
         stored_hashes: dict[str, str] = {}
@@ -593,8 +647,7 @@ class CiteIndexIngestionOrchestrator:
                 new_hash = None
                 is_update = False
 
-            logger.info("[%d/%d] %s: %s", idx, len(discovered),
-                        "Updating" if is_update else "Ingesting", url)
+            logger.info("[%d/%d] %s: %s", idx, len(discovered), "Updating" if is_update else "Ingesting", url)
             try:
                 output = self.ingest(url, config=config)
                 status = output.get("status", "unknown")
@@ -634,7 +687,11 @@ class CiteIndexIngestionOrchestrator:
         }
         logger.info(
             "Batch complete: discovered=%d ingested=%d updated=%d skipped=%d failed=%d",
-            len(discovered), ingested_count, updated_count, skipped_count, failed_count,
+            len(discovered),
+            ingested_count,
+            updated_count,
+            skipped_count,
+            failed_count,
         )
         return summary
 

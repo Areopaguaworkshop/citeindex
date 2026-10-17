@@ -1,0 +1,531 @@
+{
+  "gold_rows": 20,
+  "latency_seconds_per_100": 0.04,
+  "systems": {
+    "new": {
+      "place": {
+        "rows": 20,
+        "present": 20,
+        "absent": 0,
+        "tp": 6,
+        "fp": 0,
+        "fn": 14,
+        "tn": 0,
+        "precision": 1.0,
+        "recall": 0.3,
+        "f1": 0.4615,
+        "no_match_rate": 0.7,
+        "correct_no_match_rate": null
+      }
+    },
+    "baseline": {
+      "place": {
+        "rows": 20,
+        "present": 20,
+        "absent": 0,
+        "tp": 10,
+        "fp": 1,
+        "fn": 9,
+        "tn": 0,
+        "precision": 0.9091,
+        "recall": 0.5,
+        "f1": 0.6452,
+        "no_match_rate": 0.45,
+        "correct_no_match_rate": null
+      }
+    }
+  },
+  "outcome_rows": [
+    {
+      "id": "place-0001",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q1721",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0001",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q1721",
+      "outcome": {
+        "status": "linked",
+        "id": "Q1721",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0002",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q1524",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "below_threshold",
+        "score": 0.4637
+      }
+    },
+    {
+      "id": "place-0002",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q1524",
+      "outcome": {
+        "status": "no_match",
+        "reason": "below_threshold"
+      }
+    },
+    {
+      "id": "place-0003",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q61",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0003",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q61",
+      "outcome": {
+        "status": "linked",
+        "id": "Q61",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0004",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q580478",
+      "outcome": {
+        "status": "linked",
+        "id": "Q580478",
+        "reason": null,
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0004",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q580478",
+      "outcome": {
+        "status": "no_match",
+        "reason": "below_threshold"
+      }
+    },
+    {
+      "id": "place-0005",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q3820",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0005",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q3820",
+      "outcome": {
+        "status": "linked",
+        "id": "Q3820",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0006",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q1428659",
+      "outcome": {
+        "status": "linked",
+        "id": "Q1428659",
+        "reason": null,
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0006",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q1428659",
+      "outcome": {
+        "status": "linked",
+        "id": "Q1428659",
+        "score": 0.8696
+      }
+    },
+    {
+      "id": "place-0007",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q956",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "below_threshold",
+        "score": 0.0
+      }
+    },
+    {
+      "id": "place-0007",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q956",
+      "outcome": {
+        "status": "no_match",
+        "reason": "no_candidates"
+      }
+    },
+    {
+      "id": "place-0008",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q90",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0008",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q90",
+      "outcome": {
+        "status": "linked",
+        "id": "Q90",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0009",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q8686",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "below_threshold",
+        "score": 0.0
+      }
+    },
+    {
+      "id": "place-0009",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q8686",
+      "outcome": {
+        "status": "no_match",
+        "reason": "no_candidates"
+      }
+    },
+    {
+      "id": "place-0010",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q167155",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0010",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q167155",
+      "outcome": {
+        "status": "no_match",
+        "reason": "below_threshold"
+      }
+    },
+    {
+      "id": "place-0011",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q49142",
+      "outcome": {
+        "status": "linked",
+        "id": "Q49142",
+        "reason": null,
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0011",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q49142",
+      "outcome": {
+        "status": "no_match",
+        "reason": "below_threshold"
+      }
+    },
+    {
+      "id": "place-0012",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q2426756",
+      "outcome": {
+        "status": "linked",
+        "id": "Q2426756",
+        "reason": null,
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0012",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q2426756",
+      "outcome": {
+        "status": "linked",
+        "id": "Q2426756",
+        "score": 0.8571
+      }
+    },
+    {
+      "id": "place-0013",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q2079",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0013",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q2079",
+      "outcome": {
+        "status": "linked",
+        "id": "Q2079",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0014",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q60",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0014",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q60",
+      "outcome": {
+        "status": "linked",
+        "id": "Q3339031",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0015",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q36091",
+      "outcome": {
+        "status": "linked",
+        "id": "Q36091",
+        "reason": null,
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0015",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q36091",
+      "outcome": {
+        "status": "linked",
+        "id": "Q36091",
+        "score": 0.88
+      }
+    },
+    {
+      "id": "place-0016",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q816096",
+      "outcome": {
+        "status": "linked",
+        "id": "Q816096",
+        "reason": null,
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0016",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q816096",
+      "outcome": {
+        "status": "no_match",
+        "reason": "below_threshold"
+      }
+    },
+    {
+      "id": "place-0017",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q3766",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0017",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q3766",
+      "outcome": {
+        "status": "linked",
+        "id": "Q3766",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0018",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q321381",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "below_threshold",
+        "score": 0.6476
+      }
+    },
+    {
+      "id": "place-0018",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q321381",
+      "outcome": {
+        "status": "no_match",
+        "reason": "below_threshold"
+      }
+    },
+    {
+      "id": "place-0019",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q43631",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "ambiguous_identity",
+        "score": 0.85
+      }
+    },
+    {
+      "id": "place-0019",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q43631",
+      "outcome": {
+        "status": "linked",
+        "id": "Q43631",
+        "score": 1.0
+      }
+    },
+    {
+      "id": "place-0020",
+      "entity_type": "place",
+      "system": "new",
+      "label_status": "present",
+      "label_id": "Q84",
+      "outcome": {
+        "status": "no_match",
+        "id": null,
+        "reason": "below_threshold",
+        "score": 0.0
+      }
+    },
+    {
+      "id": "place-0020",
+      "entity_type": "place",
+      "system": "baseline",
+      "label_status": "present",
+      "label_id": "Q84",
+      "outcome": {
+        "status": "no_match",
+        "reason": "no_candidates"
+      }
+    }
+  ]
+}

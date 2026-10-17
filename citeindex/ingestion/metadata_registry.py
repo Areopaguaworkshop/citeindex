@@ -24,6 +24,18 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 import requests
 from urllib3.exceptions import HTTPError, ReadTimeoutError
 
+from .authority import (
+    GEONAMES_SEARCH_URL,
+    ORCID_HEADERS,
+    ORCID_SEARCH_URL,
+    WIKIDATA_SEARCH_URL,
+    geonames_search_params,
+    normalize_geonames_place,
+    normalize_orcid_person,
+    normalize_wikidata_entity,
+    orcid_search_params,
+    wikidata_search_params,
+)
 from .pipelines.frontmatter import validate_isbn13
 
 _DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
@@ -176,7 +188,8 @@ def normalize_openlibrary_edition(record: Mapping[str, Any], isbn: str) -> dict[
         publishers = record.get(source_key)
         joined = (
             " and ".join(item.strip() for item in publishers if isinstance(item, str) and item.strip())
-            if isinstance(publishers, list) and publishers else _first_string(publishers)
+            if isinstance(publishers, list) and publishers
+            else _first_string(publishers)
         )
         if joined:
             candidate[csl_key] = joined
@@ -194,8 +207,12 @@ def normalize_openlibrary_edition(record: Mapping[str, Any], isbn: str) -> dict[
             candidate["language"] = language
     people = record.get("authors")
     if isinstance(people, list):
-        names = [{"literal": name} for person in people if isinstance(person, Mapping)
-                 if (name := _first_string(person.get("name")))]
+        names = [
+            {"literal": name}
+            for person in people
+            if isinstance(person, Mapping)
+            if (name := _first_string(person.get("name")))
+        ]
         if names:
             candidate["author"] = names
     return candidate
@@ -271,9 +288,13 @@ def lookup_crossref_doi(
     digest = hashlib.sha256(raw_response).hexdigest()
     http_status = response.status_code
     if http_status == 404:
-        return _result("not_found", normalized_doi, request_url=request_url, http_status=http_status, response_digest=digest)
+        return _result(
+            "not_found", normalized_doi, request_url=request_url, http_status=http_status, response_digest=digest
+        )
     if not 200 <= http_status < 300:
-        return _result("error", normalized_doi, request_url=request_url, http_status=http_status, response_digest=digest)
+        return _result(
+            "error", normalized_doi, request_url=request_url, http_status=http_status, response_digest=digest
+        )
 
     try:
         payload = response.json()
@@ -282,19 +303,31 @@ def lookup_crossref_doi(
             raise ValueError("Crossref message is not an object")
     except (ValueError, KeyError, TypeError):
         return _result(
-            "error", normalized_doi, request_url=request_url, http_status=http_status,
-            response_digest=digest, error="malformed_response",
+            "error",
+            normalized_doi,
+            request_url=request_url,
+            http_status=http_status,
+            response_digest=digest,
+            error="malformed_response",
         )
 
     candidate = normalize_crossref_work(work)
     if candidate.get("DOI") != normalized_doi:
         return _result(
-            "error", normalized_doi, request_url=request_url, http_status=http_status,
-            response_digest=digest, error="doi_mismatch",
+            "error",
+            normalized_doi,
+            request_url=request_url,
+            http_status=http_status,
+            response_digest=digest,
+            error="doi_mismatch",
         )
     return _result(
-        "found", normalized_doi, request_url=request_url, http_status=http_status,
-        response_digest=digest, candidate=candidate,
+        "found",
+        normalized_doi,
+        request_url=request_url,
+        http_status=http_status,
+        response_digest=digest,
+        candidate=candidate,
     )
 
 
@@ -332,17 +365,35 @@ def lookup_openlibrary_isbn(
                 if attempt:
                     raise
         if response is None:  # Defensive; the loop either returns a response or raises.
-            return _result("error", normalized_isbn, provider="openlibrary", request_url=request_url, error="request_failed")
+            return _result(
+                "error", normalized_isbn, provider="openlibrary", request_url=request_url, error="request_failed"
+            )
     except requests.RequestException as exc:
-        return _result("error", normalized_isbn, provider="openlibrary", request_url=request_url, error=type(exc).__name__)
+        return _result(
+            "error", normalized_isbn, provider="openlibrary", request_url=request_url, error=type(exc).__name__
+        )
 
     raw_response = response.content
     digest = hashlib.sha256(raw_response).hexdigest()
     http_status = response.status_code
     if http_status == 404:
-        return _result("not_found", normalized_isbn, provider="openlibrary", request_url=request_url, http_status=http_status, response_digest=digest)
+        return _result(
+            "not_found",
+            normalized_isbn,
+            provider="openlibrary",
+            request_url=request_url,
+            http_status=http_status,
+            response_digest=digest,
+        )
     if not 200 <= http_status < 300:
-        return _result("error", normalized_isbn, provider="openlibrary", request_url=request_url, http_status=http_status, response_digest=digest)
+        return _result(
+            "error",
+            normalized_isbn,
+            provider="openlibrary",
+            request_url=request_url,
+            http_status=http_status,
+            response_digest=digest,
+        )
 
     try:
         edition = response.json()
@@ -350,14 +401,24 @@ def lookup_openlibrary_isbn(
             raise ValueError("OpenLibrary edition is not an object")
     except (ValueError, KeyError, TypeError):
         return _result(
-            "error", normalized_isbn, provider="openlibrary", request_url=request_url, http_status=http_status,
-            response_digest=digest, error="malformed_response",
+            "error",
+            normalized_isbn,
+            provider="openlibrary",
+            request_url=request_url,
+            http_status=http_status,
+            response_digest=digest,
+            error="malformed_response",
         )
 
     candidate = normalize_openlibrary_edition(edition, normalized_isbn)
     return _result(
-        "found", normalized_isbn, provider="openlibrary", request_url=request_url, http_status=http_status,
-        response_digest=digest, candidate=candidate,
+        "found",
+        normalized_isbn,
+        provider="openlibrary",
+        request_url=request_url,
+        http_status=http_status,
+        response_digest=digest,
+        candidate=candidate,
     )
 
 
@@ -367,13 +428,39 @@ _PROVIDER_URLS = {
     "datacite": "https://api.datacite.org/dois",
     "openalex": "https://api.openalex.org/works",
     "openlibrary": "https://openlibrary.org",
+    "orcid": ORCID_SEARCH_URL,
+    "wikidata": WIKIDATA_SEARCH_URL,
+    "geonames": GEONAMES_SEARCH_URL,
 }
-_PROVIDER_INTERVALS = {"crossref": 0.1, "datacite": 0.6, "openalex": 0.1, "openlibrary": 1.0}
+_PROVIDER_INTERVALS = {
+    "crossref": 0.1,
+    "datacite": 0.6,
+    "openalex": 0.1,
+    "openlibrary": 1.0,
+    "orcid": 0.5,
+    "wikidata": 0.2,
+    "geonames": 0.2,
+}
+# ORCID returns XML unless JSON is negotiated; other providers default to JSON.
+_PROVIDER_HEADERS = {"orcid": ORCID_HEADERS}
+# Response record paths for search(); authority providers are not work-shaped
+# (no CSL title), so identity comes from the candidate's authority block.
+_SEARCH_RECORD_PATHS = {
+    "crossref": ("message", "items"),
+    "datacite": ("data",),
+    "openalex": ("results",),
+    "openlibrary": ("docs",),
+    "orcid": ("expanded-result",),
+    "wikidata": ("search",),
+    "geonames": ("geonames",),
+}
+_WORK_SEARCH_PROVIDERS = {"crossref", "datacite", "openalex"}
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
-def bounded_response_bytes(response: Any, deadline: float, clock: Any = time.monotonic,
-                           max_bytes: int = _MAX_RESPONSE_BYTES) -> bytes:
+def bounded_response_bytes(
+    response: Any, deadline: float, clock: Any = time.monotonic, max_bytes: int = _MAX_RESPONSE_BYTES
+) -> bytes:
     """Read available bytes while shrinking socket timeouts to the stage deadline.
 
     Requests must use ``Accept-Encoding: identity``. Fixture response objects may
@@ -436,14 +523,27 @@ def normalize_datacite_work(record: Mapping[str, Any]) -> dict[str, Any]:
     people = attrs.get("creators", [])
     types = attrs.get("types", {})
     general_type = types.get("resourceTypeGeneral", "") if isinstance(types, Mapping) else ""
-    candidate = normalize_crossref_work({
-        "DOI": attrs.get("doi"), "title": [item.get("title") for item in titles if isinstance(item, Mapping)],
-        "publisher": attrs.get("publisher"), "language": attrs.get("language"),
-        "author": [{"family": person.get("familyName"), "given": person.get("givenName"),
-                    "name": person.get("name")} for person in people if isinstance(person, Mapping)],
-    })
-    candidate["type"] = {"Dissertation": "thesis", "Report": "report", "Dataset": "dataset",
-                         "Book": "book", "BookChapter": "chapter", "JournalArticle": "article-journal"}.get(general_type, "article")
+    candidate = normalize_crossref_work(
+        {
+            "DOI": attrs.get("doi"),
+            "title": [item.get("title") for item in titles if isinstance(item, Mapping)],
+            "publisher": attrs.get("publisher"),
+            "language": attrs.get("language"),
+            "author": [
+                {"family": person.get("familyName"), "given": person.get("givenName"), "name": person.get("name")}
+                for person in people
+                if isinstance(person, Mapping)
+            ],
+        }
+    )
+    candidate["type"] = {
+        "Dissertation": "thesis",
+        "Report": "report",
+        "Dataset": "dataset",
+        "Book": "book",
+        "BookChapter": "chapter",
+        "JournalArticle": "article-journal",
+    }.get(general_type, "article")
     if general_type in {"Text", "Other", ""} and isinstance(types, Mapping):
         specific_type = str(types.get("resourceType") or "").strip().casefold()
         if specific_type in {"thesis", "dissertation"}:
@@ -455,9 +555,15 @@ def normalize_datacite_work(record: Mapping[str, Any]) -> dict[str, Any]:
         candidate["issued"] = {"date-parts": [[int(year)]]}
     contributors = attrs.get("contributors", [])
     for role, source_role in (("editor", "Editor"), ("translator", "Translator")):
-        names = _authors({"author": [{"family": person.get("familyName"), "given": person.get("givenName"),
-                                    "name": person.get("name")} for person in contributors
-                                   if isinstance(person, Mapping) and person.get("contributorType") == source_role]})
+        names = _authors(
+            {
+                "author": [
+                    {"family": person.get("familyName"), "given": person.get("givenName"), "name": person.get("name")}
+                    for person in contributors
+                    if isinstance(person, Mapping) and person.get("contributorType") == source_role
+                ]
+            }
+        )
         if names:
             candidate[role] = names
     return candidate
@@ -469,18 +575,26 @@ def normalize_openalex_work(record: Mapping[str, Any]) -> dict[str, Any]:
     location = record.get("primary_location") or {}
     source = location.get("source") or {} if isinstance(location, Mapping) else {}
     biblio = record.get("biblio") or {}
-    candidate = normalize_crossref_work({
-        "DOI": record.get("doi"), "title": record.get("title") or record.get("display_name"),
-        "type": {"article": "journal-article", "dissertation": "dissertation", "book-chapter": "book-chapter"}.get(str(record.get("type") or ""), record.get("type")),
-        "author": [{"name": person["author"].get("display_name")} for person in authorships
-                   if isinstance(person, Mapping) and isinstance(person.get("author"), Mapping)],
-        "container-title": source.get("display_name") if isinstance(source, Mapping) else None,
-        "publisher": source.get("host_organization_name") if isinstance(source, Mapping) else None,
-        "ISSN": source.get("issn") if isinstance(source, Mapping) else None,
-        "volume": biblio.get("volume") if isinstance(biblio, Mapping) else None,
-        "issue": biblio.get("issue") if isinstance(biblio, Mapping) else None,
-        "language": record.get("language"),
-    })
+    candidate = normalize_crossref_work(
+        {
+            "DOI": record.get("doi"),
+            "title": record.get("title") or record.get("display_name"),
+            "type": {"article": "journal-article", "dissertation": "dissertation", "book-chapter": "book-chapter"}.get(
+                str(record.get("type") or ""), record.get("type")
+            ),
+            "author": [
+                {"name": person["author"].get("display_name")}
+                for person in authorships
+                if isinstance(person, Mapping) and isinstance(person.get("author"), Mapping)
+            ],
+            "container-title": source.get("display_name") if isinstance(source, Mapping) else None,
+            "publisher": source.get("host_organization_name") if isinstance(source, Mapping) else None,
+            "ISSN": source.get("issn") if isinstance(source, Mapping) else None,
+            "volume": biblio.get("volume") if isinstance(biblio, Mapping) else None,
+            "issue": biblio.get("issue") if isinstance(biblio, Mapping) else None,
+            "language": record.get("language"),
+        }
+    )
     if isinstance(biblio, Mapping) and biblio.get("first_page"):
         candidate["page"] = str(biblio["first_page"])
         if biblio.get("last_page") and biblio["last_page"] != biblio["first_page"]:
@@ -493,8 +607,23 @@ def normalize_openalex_work(record: Mapping[str, Any]) -> dict[str, Any]:
 
 def _sanitized_url(url: str) -> str:
     parts = urlsplit(url)
-    query = [(key, value) for key, value in parse_qsl(parts.query)
-             if key.lower() not in {"mailto", "email", "contact_email", "api_key", "apikey", "key", "token", "access_token", "authorization"}]
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query)
+        if key.lower()
+        not in {
+            "mailto",
+            "email",
+            "contact_email",
+            "api_key",
+            "apikey",
+            "key",
+            "token",
+            "access_token",
+            "authorization",
+            "username",
+        }
+    ]
     return urlunsplit((parts.scheme, parts.hostname or "", parts.path, urlencode(query), ""))
 
 
@@ -505,8 +634,15 @@ class RegistryClient:
     The legacy lookup functions remain available with their original signatures.
     """
 
-    def __init__(self, config: Any, cache_dir: str | Path | None = None, *, session: Any = requests,
-                 clock: Any = time.monotonic, sleep: Any = time.sleep):
+    def __init__(
+        self,
+        config: Any,
+        cache_dir: str | Path | None = None,
+        *,
+        session: Any = requests,
+        clock: Any = time.monotonic,
+        sleep: Any = time.sleep,
+    ):
         self.config, self.session, self.clock, self.sleep = config, session, clock, sleep
         self.deadline = clock() + float(self._config("online_enrich_timeout", 20.0))
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
@@ -535,6 +671,8 @@ class RegistryClient:
     def _enabled(self, provider: str) -> str | None:
         if provider not in _PROVIDER_URLS:
             return "unsupported_provider"
+        if provider == "geonames" and not os.environ.get("GEONAMES_USERNAME", "").strip():
+            return "geonames_no_username"
         if self._config("offline_verification", False):
             return "offline_verification"
         if not self._config(provider + "_enabled", True):
@@ -575,8 +713,12 @@ class RegistryClient:
             interval = float(str(headers.get("x-rate-limit-interval", "1s")).rstrip("s"))
             if limit > 0:
                 self._intervals[provider] = max(self._intervals[provider], interval / limit)
-                self._next_request[provider] = max(self._next_request.get(provider, 0), self.clock() + self._intervals[provider])
-            remaining = headers.get("x-ratelimit-remaining", headers.get("x-rate-limit-remaining", headers.get("ratelimit-remaining")))
+                self._next_request[provider] = max(
+                    self._next_request.get(provider, 0), self.clock() + self._intervals[provider]
+                )
+            remaining = headers.get(
+                "x-ratelimit-remaining", headers.get("x-rate-limit-remaining", headers.get("ratelimit-remaining"))
+            )
             reset = headers.get("x-ratelimit-reset", headers.get("x-rate-limit-reset", headers.get("ratelimit-reset")))
             if remaining is not None and float(remaining) <= 0 and reset is not None:
                 wait = float(reset)
@@ -586,10 +728,12 @@ class RegistryClient:
         except (ValueError, TypeError):
             pass
 
-    def _request(self, provider: str, url: str, identifier: str | None,
-                 params: Mapping[str, Any] | None = None) -> tuple[Any, dict[str, Any]]:
+    def _request(
+        self, provider: str, url: str, identifier: str | None, params: Mapping[str, Any] | None = None
+    ) -> tuple[Any, dict[str, Any]]:
         params = dict(params or {})
         headers = {"User-Agent": "CiteIndex/0.12", "Accept-Encoding": "identity"}
+        headers.update(_PROVIDER_HEADERS.get(provider, {}))
         contact = self._config("registry_contact_email")
         if contact:
             headers["User-Agent"] += " (mailto:" + str(contact) + ")"
@@ -603,8 +747,14 @@ class RegistryClient:
             self._next_request[provider] = self.clock() + self._intervals[provider]
             response = None
             try:
-                response = self.session.get(url, params=params, headers=headers, timeout=min(5.0, self.remaining()),
-                                            stream=True, allow_redirects=False)
+                response = self.session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=min(5.0, self.remaining()),
+                    stream=True,
+                    allow_redirects=False,
+                )
                 if not self.remaining():
                     return None, self._failure(provider, identifier, "budget_exhausted", "budget_exhausted")
                 self._next_request[provider] = self.clock() + self._intervals[provider]
@@ -615,13 +765,24 @@ class RegistryClient:
                     raw = bounded_response_bytes(response, self.deadline, self.clock)
                 except ValueError as exc:
                     reason = str(exc)
-                    if reason not in {"budget_exhausted", "response_too_large", "unsupported_bounded_stream", "unsupported_content_encoding"}:
+                    if reason not in {
+                        "budget_exhausted",
+                        "response_too_large",
+                        "unsupported_bounded_stream",
+                        "unsupported_content_encoding",
+                    }:
                         reason = "malformed_response"
-                    return None, self._failure(provider, identifier, reason,
-                                               "budget_exhausted" if reason == "budget_exhausted" else "error")
-                result = _result("found" if 200 <= status < 300 else "not_found" if status == 404 else "error",
-                                 identifier, provider=provider, request_url=request_url, http_status=status,
-                                 response_digest=hashlib.sha256(raw).hexdigest())
+                    return None, self._failure(
+                        provider, identifier, reason, "budget_exhausted" if reason == "budget_exhausted" else "error"
+                    )
+                result = _result(
+                    "found" if 200 <= status < 300 else "not_found" if status == 404 else "error",
+                    identifier,
+                    provider=provider,
+                    request_url=request_url,
+                    http_status=status,
+                    response_digest=hashlib.sha256(raw).hexdigest(),
+                )
                 result["provenance"]["retrieved_at"] = datetime.now(UTC).isoformat()
                 self.attempts.append(result)
                 if status == 429 or 500 <= status < 600:
@@ -640,9 +801,13 @@ class RegistryClient:
                     result.update(status="error", error="malformed_response")
                     return None, result
             except requests.RequestException as exc:
-                self.attempts.append(_result("error", identifier, provider=provider, request_url=request_url, error=type(exc).__name__))
+                self.attempts.append(
+                    _result("error", identifier, provider=provider, request_url=request_url, error=type(exc).__name__)
+                )
                 if attempt:
-                    return None, _result("error", identifier, provider=provider, request_url=request_url, error=type(exc).__name__)
+                    return None, _result(
+                        "error", identifier, provider=provider, request_url=request_url, error=type(exc).__name__
+                    )
                 if not self._wait(0.5):
                     return None, self._failure(provider, identifier, "budget_exhausted", "budget_exhausted")
             except (ValueError, TypeError, AttributeError):
@@ -668,8 +833,12 @@ class RegistryClient:
                 return None
             result = copy.deepcopy(entry["result"])
             results = result if isinstance(result, list) else [result]
-            if any(not isinstance(item, dict) or item.get("status") not in {"found", "not_found"}
-                   or not isinstance(item.get("provenance"), dict) for item in results):
+            if any(
+                not isinstance(item, dict)
+                or item.get("status") not in {"found", "not_found"}
+                or not isinstance(item.get("provenance"), dict)
+                for item in results
+            ):
                 return None
             for item in results:
                 item["provenance"]["cache_hit"] = True
@@ -683,8 +852,11 @@ class RegistryClient:
         results = result if isinstance(result, list) else [result]
         if not results or any(item.get("status") not in {"found", "not_found"} for item in results):
             return
-        if any(evidence.get("status") != "found" for item in results
-               for evidence in item.get("provenance", {}).get("hydration", [])):
+        if any(
+            evidence.get("status") != "found"
+            for item in results
+            for evidence in item.get("provenance", {}).get("hydration", [])
+        ):
             return
         positive = any(item["status"] == "found" for item in results)
         ttl = float(self._config("online_enrich_cache_ttl", 7 * 86400)) if positive else 3600
@@ -693,6 +865,7 @@ class RegistryClient:
         if self.cache_dir is not None:
             try:
                 from .storage import write_json
+
                 write_json(str(self.cache_dir / (key + ".json")), entry)
             except (OSError, ValueError, TypeError):
                 pass
@@ -719,11 +892,20 @@ class RegistryClient:
             try:
                 if provider == "openlibrary":
                     return copy.deepcopy(self._edition_result(payload, result, normalized, key))
-                work = payload["message"] if provider == "crossref" else payload["data"] if provider == "datacite" else payload
+                work = (
+                    payload["message"]
+                    if provider == "crossref"
+                    else payload["data"]
+                    if provider == "datacite"
+                    else payload
+                )
                 if not isinstance(work, Mapping):
                     raise ValueError("expected work")
-                normalizer = {"crossref": normalize_crossref_work, "datacite": normalize_datacite_work,
-                              "openalex": normalize_openalex_work}[provider]
+                normalizer = {
+                    "crossref": normalize_crossref_work,
+                    "datacite": normalize_datacite_work,
+                    "openalex": normalize_openalex_work,
+                }[provider]
                 candidate = normalizer(work)
                 if candidate.get("URL"):
                     candidate["URL"] = _sanitized_url(candidate["URL"])
@@ -737,14 +919,21 @@ class RegistryClient:
         self._store(key, result)
         return copy.deepcopy(result)
 
-    def _edition_result(self, edition: Mapping[str, Any], result: dict[str, Any],
-                        isbn: str | None = None, cache_key: str | None = None) -> dict[str, Any]:
+    def _edition_result(
+        self, edition: Mapping[str, Any], result: dict[str, Any], isbn: str | None = None, cache_key: str | None = None
+    ) -> dict[str, Any]:
         edition_key = edition.get("key")
-        if not isinstance(edition_key, str) or not re.fullmatch(r"/books/OL\d+M", edition_key) or not _first_string(edition.get("title")):
+        if (
+            not isinstance(edition_key, str)
+            or not re.fullmatch(r"/books/OL\d+M", edition_key)
+            or not _first_string(edition.get("title"))
+        ):
             result.update(status="error", error="malformed_edition", candidate=None)
             return result
         identifiers = edition.get("isbn_13", [])
-        returned = [value for item in identifiers if (value := normalize_isbn(item))] if isinstance(identifiers, list) else []
+        returned = (
+            [value for item in identifiers if (value := normalize_isbn(item))] if isinstance(identifiers, list) else []
+        )
         if isbn and isbn not in returned:
             result.update(status="error", error="isbn_mismatch", candidate=None)
             return result
@@ -774,9 +963,15 @@ class RegistryClient:
             if len(evidence) >= 3:
                 incomplete_authors = True
                 continue
-            payload, fetched = self._request("openlibrary", _PROVIDER_URLS["openlibrary"] + author_key + ".json", author_key)
+            payload, fetched = self._request(
+                "openlibrary", _PROVIDER_URLS["openlibrary"] + author_key + ".json", author_key
+            )
             evidence.append(fetched)
-            if payload is not None and payload.get("key") == author_key and (name := _first_string(payload.get("name"))):
+            if (
+                payload is not None
+                and payload.get("key") == author_key
+                and (name := _first_string(payload.get("name")))
+            ):
                 authors.append({"literal": name})
             else:
                 incomplete_authors = True
@@ -793,7 +988,9 @@ class RegistryClient:
             self._store(cache_key, result)
         return result
 
-    def search(self, provider: str, title: str, author: str | None = None, year: int | None = None) -> list[dict[str, Any]]:
+    def search(
+        self, provider: str, title: str, author: str | None = None, year: int | None = None
+    ) -> list[dict[str, Any]]:
         """Search at most five records; OpenLibrary work hits become edition records."""
         if reason := self._enabled(provider):
             return [self._failure(provider, None, reason, "skipped")]
@@ -804,21 +1001,37 @@ class RegistryClient:
         if (cached := self._cached(key)) is not None:
             return cached
         query = title + (" " + author if author else "")
+        url: str
+        params: dict[str, Any]
         if provider == "crossref":
             url, params = _PROVIDER_URLS[provider], {"query.bibliographic": query, "rows": 5}
         elif provider == "openalex":
             url, params = _PROVIDER_URLS[provider], {"search": query, "per-page": 5}
         elif provider == "datacite":
             url, params = _PROVIDER_URLS[provider], {"query": query, "page[size]": 5}
+        elif provider == "orcid":
+            url, params = ORCID_SEARCH_URL, orcid_search_params(title, author)
+        elif provider == "wikidata":
+            url, params = WIKIDATA_SEARCH_URL, wikidata_search_params(title)
+        elif provider == "geonames":
+            url, params = GEONAMES_SEARCH_URL, geonames_search_params(title)
         else:
-            url, params = _PROVIDER_URLS[provider] + "/search.json", {"title": title, "limit": 5, "fields": "key,title,author_name,edition_key,editions"}
+            url, params = (
+                _PROVIDER_URLS[provider] + "/search.json",
+                {"title": title, "limit": 5, "fields": "key,title,author_name,edition_key,editions"},
+            )
             if author:
                 params["author"] = author
         payload, fetched = self._request(provider, url, title, params)
         if payload is None:
             return [fetched]
         try:
-            records = payload["message"]["items"] if provider == "crossref" else payload["results"] if provider == "openalex" else payload["data"] if provider == "datacite" else payload["docs"]
+            records: Any = payload
+            for segment in _SEARCH_RECORD_PATHS[provider]:
+                records = records.get(segment) if isinstance(records, Mapping) else None
+            if records is None:
+                # ORCID returns {"expanded-result": null, ...} on zero hits; that is not_found.
+                records = []
             if not isinstance(records, list) or any(not isinstance(item, Mapping) for item in records[:5]):
                 raise ValueError("expected records")
             results: list[dict[str, Any]] = []
@@ -839,7 +1052,9 @@ class RegistryClient:
                         if not re.fullmatch(r"/books/OL\d+M", edition_key) or edition_key in seen or len(results) >= 5:
                             continue
                         seen.add(edition_key)
-                        edition, result = self._request(provider, _PROVIDER_URLS[provider] + edition_key + ".json", edition_key)
+                        edition, result = self._request(
+                            provider, _PROVIDER_URLS[provider] + edition_key + ".json", edition_key
+                        )
                         if edition is not None:
                             if edition.get("key") != edition_key:
                                 result.update(status="error", error="edition_mismatch")
@@ -850,13 +1065,28 @@ class RegistryClient:
                         if result["status"] == "budget_exhausted":
                             break
                 else:
-                    normalizer = {"crossref": normalize_crossref_work, "datacite": normalize_datacite_work, "openalex": normalize_openalex_work}[provider]
+                    normalizer = {
+                        "crossref": normalize_crossref_work,
+                        "datacite": normalize_datacite_work,
+                        "openalex": normalize_openalex_work,
+                        "orcid": normalize_orcid_person,
+                        "wikidata": normalize_wikidata_entity,
+                        "geonames": normalize_geonames_place,
+                    }[provider]
                     candidate = normalizer(record)
                     if candidate.get("URL"):
                         candidate["URL"] = _sanitized_url(candidate["URL"])
-                    if not candidate.get("title"):
+                    if provider in _WORK_SEARCH_PROVIDERS and not candidate.get("title"):
                         raise ValueError("missing title")
-                    identity = str(candidate.get("DOI") or record.get("id") or candidate["title"])
+                    identity = str(
+                        candidate.get("DOI")
+                        or record.get("id")
+                        or (candidate.get("authority") or {}).get("id")
+                        or candidate.get("title")
+                        or ""
+                    )
+                    if not identity:
+                        raise ValueError("missing_identity")
                     if identity in seen:
                         continue
                     seen.add(identity)

@@ -147,6 +147,34 @@ def test_store_corpus_artifacts_writes_pageindex_tree_json(tmp_path):
     assert json.loads(tree_path.read_text())["level_1"][0]["heading"] == "Origins"
 
 
+def test_store_corpus_artifacts_writes_and_removes_authority_links_json(tmp_path):
+    links = {
+        "schema_version": 1,
+        "links": [
+            {
+                "entity_type": "person",
+                "field": "author",
+                "source": {"family": "Jones", "given": "Indiana"},
+                "system": "orcid",
+                "id": "0000-0002-0000-0001",
+                "uri": "https://orcid.org/0000-0002-0000-0001",
+                "score": 1.0,
+                "provenance": {"provider": "orcid"},
+            }
+        ],
+    }
+
+    store_corpus_artifacts(str(tmp_path), "sample_doc", artifacts={"authority_links": links})
+    sidecar_path = tmp_path / "sample_doc" / "authority_links.json"
+    assert sidecar_path.exists()
+    assert json.loads(sidecar_path.read_text())["links"][0]["id"] == "0000-0002-0000-0001"
+
+    # Re-ingestion without links must remove the stale sidecar.
+    store_corpus_artifacts(str(tmp_path), "sample_doc",
+                            artifacts={"csl_json": {"type": "book", "id": "x", "title": "Sans links"}})
+    assert not sidecar_path.exists()
+
+
 def test_clean_page_texts_strips_repeated_running_headers_and_page_numbers():
     page_texts = [
         "1\nOrigins\nA Culture of Encounter and Contact\nBody page one.",
@@ -523,7 +551,11 @@ def test_detect_footnotes_old_threshold_would_miss():
     blocks = [
         {"text": "Regular body text.", "bbox": [72, 71, 360, 200], "font_size": 11.0},
         {"text": "More body text.", "bbox": [72, 200, 360, 400], "font_size": 11.0},
-        {"text": "14 In English, there are several articles on this topic.", "bbox": [72, 515, 360, 540], "font_size": 10.0},
+        {
+            "text": "14 In English, there are several articles on this topic.",
+            "bbox": [72, 515, 360, 540],
+            "font_size": 10.0,
+        },
     ]
 
     body, footnotes = detect_footnotes(blocks, page_height)
@@ -575,7 +607,11 @@ def test_attach_layout_footnotes_removes_footnote_text_from_paragraphs():
                 "page_number": 1,
                 "paragraphs": [
                     {"paragraph_id": "p1_1", "text": "Body text paragraph.", "type": "text"},
-                    {"paragraph_id": "p1_2", "text": "9 Specifically aimed at Byzantinists, a summary guide.", "type": "text"},
+                    {
+                        "paragraph_id": "p1_2",
+                        "text": "9 Specifically aimed at Byzantinists, a summary guide.",
+                        "type": "text",
+                    },
                 ],
                 "footnotes": [],
             },
@@ -655,7 +691,11 @@ def test_detect_page_numbers_finds_candidates_in_header():
         # Header block with page number (top of page, y0 < 12%)
         {"text": "TOOLS 49", "bbox": [72, 35, 404, 49], "font_size": 9.0},
         # Body text (mid-page, NOT a header)
-        {"text": "The Mongol period is well covered in the short book.", "bbox": [72, 200, 360, 300], "font_size": 11.0},
+        {
+            "text": "The Mongol period is well covered in the short book.",
+            "bbox": [72, 200, 360, 300],
+            "font_size": 11.0,
+        },
         # Body text 2
         {"text": "Another paragraph.", "bbox": [72, 350, 360, 400], "font_size": 11.0},
     ]
@@ -707,8 +747,11 @@ def test_detect_page_numbers_ignores_long_blocks():
     page_height = 648
     blocks = [
         # Long text at top of page — not a simple header
-        {"text": "This is a very long paragraph that spans multiple sentences and is clearly body text, not a header.",
-         "bbox": [72, 35, 400, 70], "font_size": 11.0},
+        {
+            "text": "This is a very long paragraph that spans multiple sentences and is clearly body text, not a header.",
+            "bbox": [72, 35, 400, 70],
+            "font_size": 11.0,
+        },
     ]
 
     hf_blocks, candidates = detect_page_numbers(blocks, page_height)
