@@ -16,6 +16,7 @@ wheels/
 # Corpus (user data, never committed)
 corpus/**/*
 library/**/*
+logs/
 benchmarks/citations/input/
 benchmarks/citations/predictions/
 benchmarks/citations/reports/
