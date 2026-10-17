@@ -1,0 +1,30 @@
+{
+  "run_id": "20261016-235324-9dc5f09",
+  "git_sha": "9dc5f09",
+  "finished_at": "2026-10-17T02:08:53+00:00",
+  "documents": 4,
+  "ok_documents": 2,
+  "total_pages_all": 2730,
+  "ok_pages": 1457,
+  "wall_seconds": 8129.3,
+  "pages_per_minute_wall": 10.8,
+  "pages_per_minute_ok_only": 26.3,
+  "by_status": {
+    "ok": 2,
+    "timeout": 2
+  },
+  "failures": [
+    {
+      "path": "/tmp/opencode/scale-recover/patrologiaecursu38mignuoft.pdf",
+      "status": "timeout",
+      "error_code": null,
+      "stage": null
+    },
+    {
+      "path": "/tmp/opencode/scale-recover/patrologicursus45migngoog_text.pdf",
+      "status": "timeout",
+      "error_code": null,
+      "stage": null
+    }
+  ]
+}

@@ -1,18 +1,17 @@
 import json
 import logging
-import os
 import math
-from importlib.util import find_spec
+import os
 import subprocess
 import tempfile
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from importlib.util import find_spec
+from typing import Any
 
-from ..models import IngestionConfig, PipelineResult
 from ..csl import evaluation_fields
 from ..markdown_export import _format_timestamp
-from .multimodal_metadata import extract_multimodal_metadata, metadata_blocks, transcript_blocks
+from ..models import IngestionConfig, PipelineResult
 from ..url_security import validate_public_url
 from .common import (
     build_merkle_for_nodes,
@@ -21,6 +20,7 @@ from .common import (
     make_basic_csl,
     make_source_id,
 )
+from .multimodal_metadata import extract_multimodal_metadata, metadata_blocks, transcript_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +33,8 @@ def _is_url(value: str) -> bool:
 # Media source probing
 # ---------------------------------------------------------------------------
 
-def _probe_local_media(path: str) -> Dict[str, Any]:
-    metadata: Dict[str, Any] = {"source_path": os.path.abspath(path), "filename": os.path.basename(path)}
+def _probe_local_media(path: str) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"source_path": os.path.abspath(path), "filename": os.path.basename(path)}
     try:
         from pymediainfo import MediaInfo
 
@@ -54,8 +54,8 @@ def _probe_local_media(path: str) -> Dict[str, Any]:
     return metadata
 
 
-def _probe_url_media(url: str) -> Dict[str, Any]:
-    metadata: Dict[str, Any] = {"url": url, "title": url}
+def _probe_url_media(url: str) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"url": url, "title": url}
     cmd = ["yt-dlp", "--dump-single-json", "--no-warnings", url]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, start_new_session=True)
@@ -86,9 +86,9 @@ def _probe_url_media(url: str) -> Dict[str, Any]:
 # Media download (URL → file)
 # ---------------------------------------------------------------------------
 
-def _download_media(url: str) -> Optional[str]:
+def _download_media(url: str) -> str | None:
     """Download media from URL using yt-dlp. Returns path to downloaded file."""
-    dst: Optional[str] = None
+    dst: str | None = None
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_template = os.path.join(tmpdir, "%(title)s.%(ext)s")
@@ -124,9 +124,9 @@ def _download_media(url: str) -> Optional[str]:
 # Audio extraction with ffmpeg
 # ---------------------------------------------------------------------------
 
-def _extract_audio(media_path: str) -> Optional[str]:
+def _extract_audio(media_path: str) -> str | None:
     """Extract audio track from media file using ffmpeg. Returns path to WAV."""
-    output_path: Optional[str] = None
+    output_path: str | None = None
     try:
         fd, output_path = tempfile.mkstemp(prefix="citeindex_audio_", suffix=".wav")
         os.close(fd)
@@ -155,7 +155,7 @@ def _extract_audio(media_path: str) -> Optional[str]:
 # Transcription with WhisperX
 # ---------------------------------------------------------------------------
 
-def _transcribe_whisperx(audio_path: str) -> List[Dict[str, Any]]:
+def _transcribe_whisperx(audio_path: str) -> list[dict[str, Any]]:
     """Generate timestamped transcript using WhisperX."""
     try:
         import whisperx
@@ -173,7 +173,7 @@ def _transcribe_whisperx(audio_path: str) -> List[Dict[str, Any]]:
             result["segments"], align_model, align_metadata, audio, device
         )
 
-        segments: List[Dict[str, Any]] = []
+        segments: list[dict[str, Any]] = []
         for seg in aligned.get("segments", result.get("segments", [])):
             segments.append({
                 "start": seg.get("start", 0.0),
@@ -191,13 +191,15 @@ def _transcribe_whisperx(audio_path: str) -> List[Dict[str, Any]]:
         return []
 
 
-def _normalize_segments(segments: Any, duration: float | None = None) -> List[Dict[str, Any]]:
+def _normalize_segments(segments: Any, duration: float | None = None) -> list[dict[str, Any]]:
     """Keep source-relative times/text and reject malformed ASR output."""
     normalized = []
     for raw in segments if isinstance(segments, list) else []:
         if not isinstance(raw, dict):
             continue
-        start, end, text = raw.get("start"), raw.get("end"), raw.get("text")
+        start: Any = raw.get("start")
+        end: Any = raw.get("end")
+        text: Any = raw.get("text")
         if (type(start) not in (int, float) or type(end) not in (int, float)
                 or not math.isfinite(start) or not math.isfinite(end)
                 or start < 0 or start >= end or not isinstance(text, str) or not text.strip()
@@ -211,7 +213,7 @@ def _normalize_segments(segments: Any, duration: float | None = None) -> List[Di
     return normalized
 
 
-def _transcribe_wenbi(audio_path: str, config: IngestionConfig, duration: float | None) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def _transcribe_wenbi(audio_path: str, config: IngestionConfig, duration: float | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Use only Wenbi's raw ASR boundary; never rewrite, translate, or auto-route."""
     if config.wenbi_asr_provider not in {"funasr", "whisper", "gladia"}:
         raise ValueError("Wenbi ASR provider must be explicit: funasr, whisper, or gladia")
@@ -271,7 +273,7 @@ def _transcribe_wenbi(audio_path: str, config: IngestionConfig, duration: float 
 # Speaker diarization with pyannote (optional)
 # ---------------------------------------------------------------------------
 
-def _diarize_speakers(audio_path: str) -> List[Dict[str, Any]]:
+def _diarize_speakers(audio_path: str) -> list[dict[str, Any]]:
     """Identify speaker segments using pyannote.audio."""
     try:
         from pyannote.audio import Pipeline
@@ -279,7 +281,7 @@ def _diarize_speakers(audio_path: str) -> List[Dict[str, Any]]:
         pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
         diarization = pipeline(audio_path)
 
-        speaker_segments: List[Dict[str, Any]] = []
+        speaker_segments: list[dict[str, Any]] = []
         for turn, _, speaker in diarization.itertracks(yield_label=True):
             speaker_segments.append({
                 "start": turn.start,
@@ -302,7 +304,7 @@ def _diarize_speakers(audio_path: str) -> List[Dict[str, Any]]:
 # Pipeline entry point
 # ---------------------------------------------------------------------------
 
-def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineResult:
+def run(media_ref: str, config: IngestionConfig | None = None) -> PipelineResult:
     cfg = config or IngestionConfig()
     if _is_url(media_ref):
         validate_public_url(media_ref)
@@ -311,7 +313,7 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
 
     # Step 1: Probe metadata
     media_metadata = _probe_url_media(media_ref) if input_type == "url" else _probe_local_media(media_ref)
-    duration = media_metadata.get("duration_seconds")
+    duration: Any = media_metadata.get("duration_seconds")
     if duration is None and media_metadata.get("duration_ms") is not None:
         try:
             duration = float(media_metadata["duration_ms"]) / 1000
@@ -321,7 +323,7 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
         duration = None
 
     # Step 2: Resolve media file path
-    media_file_path: Optional[str] = None
+    media_file_path: str | None = None
     downloaded = False
 
     if input_type == "file":
@@ -331,16 +333,16 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
         downloaded = True
 
     # Step 3: Extract audio only when the configured backend can run.
-    asr_provenance: Dict[str, Any] = {"adapter": cfg.media_asr_backend}
+    asr_provenance: dict[str, Any] = {"adapter": cfg.media_asr_backend}
     asr_available = cfg.media_asr_backend != "whisperx" or find_spec("whisperx") is not None
     if not asr_available:
         asr_provenance.update(status="unavailable", error="WhisperX is not installed")
-    audio_path: Optional[str] = None
+    audio_path: str | None = None
     if asr_available and media_file_path and os.path.exists(media_file_path):
         audio_path = _extract_audio(media_file_path)
 
     # Step 4: Transcribe
-    transcript_segments: List[Dict[str, Any]] = []
+    transcript_segments: list[dict[str, Any]] = []
     if audio_path and os.path.exists(audio_path):
         try:
             if cfg.media_asr_backend == "wenbi":
@@ -355,7 +357,7 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
             asr_provenance.update(status="failed", error=str(exc))
 
     # Step 5: Speaker diarization (optional)
-    speaker_segments: List[Dict[str, Any]] = []
+    speaker_segments: list[dict[str, Any]] = []
     if cfg.media_asr_backend == "wenbi":
         speaker_segments = [
             {"start": segment["start"], "end": segment["end"], "speaker": segment["speaker"]}
@@ -373,8 +375,8 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
     retrieval_index = build_retrieval_index(nodes)
 
     # Retain observed probe fields separately from inferred contributor identities.
-    now = datetime.now(timezone.utc)
-    csl_extra: Dict[str, Any] = {}
+    now = datetime.now(UTC)
+    csl_extra: dict[str, Any] = {}
     if input_type == "url":
         csl_extra.update(URL=media_ref, accessed={"date-parts": [[now.year, now.month, now.day]]})
     if duration is not None:
@@ -418,7 +420,7 @@ def run(media_ref: str, config: Optional[IngestionConfig] = None) -> PipelineRes
         "nodes": nodes,
     }
 
-    extra: Dict[str, Any] = {
+    extra: dict[str, Any] = {
         "source_blocks": source_blocks,
         "source_path": media_file_path,
         "retrieval_metadata": retrieval_metadata,

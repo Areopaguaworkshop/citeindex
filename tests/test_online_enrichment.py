@@ -1,14 +1,14 @@
 """Identity, policy and finalization regressions; no network or model calls."""
-from copy import deepcopy
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
 from citeindex.ingestion import online_enrichment as enrichment
-from citeindex.ingestion.models import IngestionConfig, PipelineResult
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
+from citeindex.ingestion.models import IngestionConfig, PipelineResult
 from citeindex.ingestion.storage import store_corpus_artifacts
 
 TITLE = "Specific studies in manuscript transmission"
@@ -168,7 +168,8 @@ def test_t4_fills_only_and_missing_provenance_blocks_all_writes():
     result, decisions = enrichment.merge_registry(csl, registry(), "T4", "ai_search", match)
     assert result["issued"] == csl["issued"] and result["publisher"] == "Registry Press"
     assert all(d["action"] == "fill" for d in decisions)
-    no_provenance = registry(); no_provenance["provenance"].pop("response_digest")
+    no_provenance = registry()
+    no_provenance["provenance"].pop("response_digest")
     assert enrichment.merge_registry(csl, no_provenance, "T1", "source_identifier", match) == (csl, [])
 
 
@@ -179,14 +180,18 @@ def test_t4_fills_only_and_missing_provenance_blocks_all_writes():
     (IngestionConfig(online_enrich=True), "media", "pdf_only"),
 ])
 def test_disabled_offline_and_non_pdf_gates_make_zero_registry_calls(tmp_path, config, modality, reason):
-    csl, extra = source_csl(); client = Client(registry())
+    csl, extra = source_csl()
+    client = Client(registry())
+    result, report = enrichment.enrich_metadata(csl, {}, modality, extra, config, pdf(tmp_path), client=client)
     result, report = enrichment.enrich_metadata(csl, {}, modality, extra, config, pdf(tmp_path), client=client)
     assert report["reason"] == reason and result == csl and not client.calls
 
 
 def test_unvalidated_title_gate_and_ordinary_complete_record_skip(tmp_path):
-    path = pdf(tmp_path); client = Client(registry())
-    csl, extra = source_csl(); csl["_field_evidence"].pop("title")
+    path = pdf(tmp_path)
+    client = Client(registry())
+    csl, extra = source_csl()
+    csl["_field_evidence"].pop("title")
     result, report = enrichment.enrich_metadata(csl, {}, "digital_pdf", extra, IngestionConfig(online_enrich=True), path, client=client)
     assert report["reason"] == "no_source_supported_title" and not client.calls
     csl, extra = source_csl()
@@ -206,8 +211,11 @@ def proposal(csl, path, **entry_updates):
 
 
 def test_proposal_fresh_lookup_and_atomic_validation(tmp_path):
-    csl = refreshed(); path = pdf(tmp_path); cfg = IngestionConfig()
-    client = Client(registry()); payload = proposal(csl, path)
+    csl = refreshed()
+    path = pdf(tmp_path)
+    cfg = IngestionConfig()
+    client = Client(registry())
+    payload = proposal(csl, path)
     result, decisions = enrichment.apply_enrichment_proposal(csl, payload, enrichment.source_digest(path), client, cfg)
     assert result["issued"] == {"date-parts": [[2019]]} and decisions[0]["tier"] == "T1"
     assert client.calls[0][-1] is True
@@ -220,7 +228,9 @@ def test_proposal_fresh_lookup_and_atomic_validation(tmp_path):
 
 @pytest.mark.parametrize("tamper", ["source_sha256", "base_candidate_digest", "old_value", "duplicate", "value", "kind", "provider"])
 def test_stale_tampered_proposals_reject(tmp_path, tamper):
-    csl = refreshed(); path = pdf(tmp_path); payload = proposal(csl, path)
+    csl = refreshed()
+    path = pdf(tmp_path)
+    payload = proposal(csl, path)
     if tamper in {"source_sha256", "base_candidate_digest"}:
         payload[tamper] = "stale"
     elif tamper == "duplicate":
@@ -267,12 +277,14 @@ def test_orchestrator_finalizes_all_copies_and_stable_identity(tmp_path, monkeyp
 
 
 def test_source_repair_then_registry_overwrite_keeps_both_events(tmp_path, monkeypatch):
-    path = pdf(tmp_path); csl, extra = source_csl()
+    path = pdf(tmp_path)
+    csl, extra = source_csl()
     extra["source_blocks"].append({"id": "repair-year", "text": "2021", "physical_page_index": 0})
     evidence = enrichment.validate_block_evidence("issued", {"date-parts": [[2021]]}, {"block_id": "repair-year", "quote": "2021"}, extra["source_blocks"])
     repair = {"source_sha256": enrichment.source_digest(path), "proposals": [{"status": "proposed", "field": "issued",
               "old_value": csl["issued"], "proposed_value": {"date-parts": [[2021]]}, "quote": "2021", "locator": evidence["locator"], "reason": "Printed year"}]}
-    repair_path = tmp_path / "repair.json"; repair_path.write_text(json.dumps(repair))
+    repair_path = tmp_path / "repair.json"
+    repair_path.write_text(json.dumps(repair))
     orch = CiteIndexIngestionOrchestrator(str(tmp_path / "corpus"))
     monkeypatch.setattr(orch, "detect_resource_type", lambda *a, **k: ("digital_pdf", path))
     monkeypatch.setattr(orch, "route_to_pipeline", lambda *a: PipelineResult("ok", "source", "digital_pdf", deepcopy(csl), merkle_tree={"root": "root"}, extra=deepcopy(extra)))
@@ -288,7 +300,8 @@ def test_source_repair_then_registry_overwrite_keeps_both_events(tmp_path, monke
 
 def test_enrichment_sidecar_removed_when_artifact_set_no_longer_has_it(tmp_path):
     csl = {"id": "one", "title": TITLE, "type": "book"}
-    corpus = tmp_path / "corpus"; corpus.mkdir()
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
     directory = Path(store_corpus_artifacts(str(corpus), "one", {"csl_json": csl, "online_enrichment": {"status": "enriched"}}))
     assert (directory / "online_enrichment.json").is_file()
     store_corpus_artifacts(str(corpus), "one", {"csl_json": csl})
@@ -313,7 +326,8 @@ def test_unverified_identifier_cannot_override_conflicting_source_author(tmp_pat
 
 
 def test_arbitrary_proposal_identifier_requires_source_anchor_agreement(tmp_path):
-    csl = refreshed(); path = pdf(tmp_path)
+    csl = refreshed()
+    path = pdf(tmp_path)
     candidate = {**registry()["candidate"], "DOI": "10.1000/namesake", "author": [{"family": "Smith"}]}
     payload = proposal(csl, path, identifier=candidate["DOI"])
     with pytest.raises(ValueError, match="host identity"):
@@ -339,7 +353,8 @@ def test_multiple_matching_ai_identifiers_abstain(tmp_path, monkeypatch):
 
 
 def test_validated_proposal_identity_survives_automatic_discovery(tmp_path):
-    csl, extra = source_csl(); path = pdf(tmp_path)
+    csl, extra = source_csl()
+    path = pdf(tmp_path)
     new_doi = "10.1000/accepted"
     payload = proposal(refreshed(csl, extra), path, field="DOI", old_value=DOI,
                        proposed_value=new_doi, identifier=new_doi)

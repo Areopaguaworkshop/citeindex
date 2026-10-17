@@ -12,7 +12,6 @@ import requests
 
 from citeindex.ingestion import ai_discovery as ai
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "online_enrichment" / "ai"
 CSL = {"title": "The structure of DNA", "author": [{"family": "Watson"}, {"family": "Crick"}]}
 DOI = "10.1038/171737a0"

@@ -14,16 +14,16 @@ import logging
 import re
 import statistics
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
-
-from .common import extract_page_number_candidates
+from typing import Any
 
 import fitz
+
+from .common import extract_page_number_candidates
 
 logger = logging.getLogger(__name__)
 
 
-def extract_text_blocks(page: fitz.Page) -> List[Dict[str, Any]]:
+def extract_text_blocks(page: fitz.Page) -> list[dict[str, Any]]:
     """Extract text blocks with positional coordinates and font info from a page.
 
     Returns list of dicts with keys:
@@ -31,15 +31,15 @@ def extract_text_blocks(page: fitz.Page) -> List[Dict[str, Any]]:
     """
     page_dict = page.get_text("dict")
     page_number = page.number + 1
-    blocks: List[Dict[str, Any]] = []
+    blocks: list[dict[str, Any]] = []
 
     for block_idx, block in enumerate(page_dict.get("blocks", [])):
         if "lines" not in block:
             continue
 
-        lines: List[Dict[str, Any]] = []
-        font_sizes: List[float] = []
-        font_names: List[str] = []
+        lines: list[dict[str, Any]] = []
+        font_sizes: list[float] = []
+        font_names: list[str] = []
 
         for line in block["lines"]:
             spans = line.get("spans", [])
@@ -82,8 +82,8 @@ def extract_text_blocks(page: fitz.Page) -> List[Dict[str, Any]]:
 
 
 def detect_columns(
-    blocks: List[Dict[str, Any]], page_width: float
-) -> List[List[Dict[str, Any]]]:
+    blocks: list[dict[str, Any]], page_width: float
+) -> list[list[dict[str, Any]]]:
     """Detect column boundaries using x-coordinate clustering.
 
     Groups blocks into columns by clustering their x0 coordinates.
@@ -95,7 +95,7 @@ def detect_columns(
     sorted_blocks = sorted(blocks, key=lambda b: b["bbox"][0])
     gap_threshold = page_width * 0.10
 
-    columns: List[List[Dict[str, Any]]] = [[sorted_blocks[0]]]
+    columns: list[list[dict[str, Any]]] = [[sorted_blocks[0]]]
     for block in sorted_blocks[1:]:
         prev_x1_values = [b["bbox"][2] for b in columns[-1]]
         prev_x1_max = max(prev_x1_values)
@@ -109,7 +109,7 @@ def detect_columns(
     return columns
 
 
-def _find_footnote_separator(page: fitz.Page) -> Optional[float]:
+def _find_footnote_separator(page: fitz.Page) -> float | None:
     """Find a footnote separator line (footnote rule) on the page.
 
     Looks for thin horizontal vector drawings typical of LaTeX's
@@ -147,8 +147,8 @@ def _find_footnote_separator(page: fitz.Page) -> Optional[float]:
 
 
 def _compute_font_size_clusters(
-    blocks: List[Dict[str, Any]], n_clusters: int = 3
-) -> Dict[float, str]:
+    blocks: list[dict[str, Any]], n_clusters: int = 3
+) -> dict[float, str]:
     """Classify font sizes into clusters: small (footnotes), medium (body), large (headings).
 
     Uses median font size as the body reference (robust against footnote-heavy
@@ -168,7 +168,7 @@ def _compute_font_size_clusters(
     # Body font = median (robust against footnote-heavy pages)
     body_size = statistics.median(font_sizes)
 
-    result: Dict[float, str] = {}
+    result: dict[float, str] = {}
     for sz in set(font_sizes):
         ratio = sz / body_size if body_size > 0 else 1.0
         if ratio < 0.93:
@@ -182,10 +182,10 @@ def _compute_font_size_clusters(
 
 
 def detect_footnotes(
-    blocks: List[Dict[str, Any]],
+    blocks: list[dict[str, Any]],
     page_height: float,
-    separator_y: Optional[float] = None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    separator_y: float | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Identify footnotes using a composite of heuristics.
 
     Detection strategy (in priority order, based on PDF parsing research):
@@ -223,8 +223,8 @@ def detect_footnotes(
         """True if text is long enough to be a meaningful footnote."""
         return len(text.split()) >= MIN_FOOTNOTE_WORDS
 
-    body: List[Dict[str, Any]] = []
-    footnotes: List[Dict[str, Any]] = []
+    body: list[dict[str, Any]] = []
+    footnotes: list[dict[str, Any]] = []
 
     for block in blocks:
         y0 = block["bbox"][1]
@@ -284,12 +284,12 @@ _MAX_HEADER_FOOTER_WORDS = 8
 
 
 def detect_page_numbers(
-    blocks: List[Dict[str, Any]],
+    blocks: list[dict[str, Any]],
     page_height: float,
     header_zone: float = _HEADER_ZONE,
     footer_zone: float = _FOOTER_ZONE,
     max_words: int = _MAX_HEADER_FOOTER_WORDS,
-) -> Tuple[List[Dict[str, Any]], List[int]]:
+) -> tuple[list[dict[str, Any]], list[int]]:
     """Identify page numbers in header/footer blocks.
 
     Mirrors ``detect_footnotes``: scans raw layout blocks, identifies header/
@@ -323,8 +323,8 @@ def detect_page_numbers(
 
     font_clusters = _compute_font_size_clusters(blocks)
 
-    header_footer: List[Dict[str, Any]] = []
-    candidates: List[int] = []
+    header_footer: list[dict[str, Any]] = []
+    candidates: list[int] = []
 
     for block in blocks:
         y0 = block["bbox"][1]
@@ -362,8 +362,8 @@ def detect_page_numbers(
 
 
 def resolve_reading_order(
-    columns: List[List[Dict[str, Any]]], footnotes: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+    columns: list[list[dict[str, Any]]], footnotes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Construct deterministic reading order across columns.
 
     Algorithm from YAML:
@@ -373,7 +373,7 @@ def resolve_reading_order(
 
     Returns ordered list of all blocks.
     """
-    ordered: List[Dict[str, Any]] = []
+    ordered: list[dict[str, Any]] = []
 
     cols_sorted = sorted(columns, key=lambda col: min(b["bbox"][0] for b in col))
     for col in cols_sorted:
@@ -386,7 +386,7 @@ def resolve_reading_order(
     return ordered
 
 
-def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
+def analyze_page_layout(page: fitz.Page, page_number: int) -> dict[str, Any]:
     """Main entry point: analyze a single page's layout.
 
     Returns structured dict:
@@ -423,10 +423,10 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
     columns = detect_columns(body_blocks, page.rect.width)
     ordered = resolve_reading_order(columns, footnote_blocks)
 
-    column_dicts: List[Dict[str, Any]] = []
+    column_dicts: list[dict[str, Any]] = []
     for col_idx, col_blocks in enumerate(columns):
         col_sorted = sorted(col_blocks, key=lambda b: b["bbox"][1])
-        paragraphs: List[Dict[str, Any]] = []
+        paragraphs: list[dict[str, Any]] = []
         for para_idx, block in enumerate(col_sorted, start=1):
             paragraphs.append({
                 "paragraph_id": f"p{page_number}_c{col_idx}_para{para_idx}",
@@ -439,7 +439,7 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
             "paragraphs": paragraphs,
         })
 
-    fn_dicts: List[Dict[str, Any]] = []
+    fn_dicts: list[dict[str, Any]] = []
     for fn_idx, fn_block in enumerate(
         sorted(footnote_blocks, key=lambda b: b["bbox"][1]), start=1
     ):
@@ -450,7 +450,7 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
         })
 
     # Build header/footer dicts
-    hf_dicts: List[Dict[str, Any]] = []
+    hf_dicts: list[dict[str, Any]] = []
     for hf_block in sorted(header_footer_blocks, key=lambda b: b["bbox"][1]):
         hf_dicts.append({
             "text": hf_block["text"],
@@ -469,13 +469,13 @@ def analyze_page_layout(page: fitz.Page, page_number: int) -> Dict[str, Any]:
     }
 
 
-def analyze_document_layout(pdf_path: str) -> List[Dict[str, Any]]:
+def analyze_document_layout(pdf_path: str) -> list[dict[str, Any]]:
     """Analyze layout for all pages in a PDF document.
 
     Returns list of page layout dicts from analyze_page_layout().
     """
     doc = fitz.open(pdf_path)
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for page_idx in range(doc.page_count):
         page = doc[page_idx]
         page_number = page_idx + 1
@@ -499,7 +499,7 @@ def analyze_document_layout(pdf_path: str) -> List[Dict[str, Any]]:
 def _gnn_classified_blocks_to_layout(
     pdoc,
     pdf_path: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Convert PyMuPDF4LLM ParsedDocument to our layout dict shape.
 
     Uses GNN classification for headers/footers (excellent accuracy)
@@ -513,24 +513,24 @@ def _gnn_classified_blocks_to_layout(
     # Open the PDF again for footnote-separator detection
     # (which needs fitz.Page drawing access not available through ParsedDocument)
     sep_doc = fitz.open(pdf_path)
-    separator_cache: Dict[int, Optional[float]] = {}
+    separator_cache: dict[int, float | None] = {}
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     for page in pdoc.pages:
         page_number = page.page_number  # 1-based
 
         # ── Collect GNN-classified blocks per category ──
-        gnn_footnote_blocks: List[Dict[str, Any]] = []
-        gnn_header_blocks: List[Dict[str, Any]] = []
-        gnn_footer_blocks: List[Dict[str, Any]] = []
-        gnn_body_blocks: List[Dict[str, Any]] = []
+        gnn_footnote_blocks: list[dict[str, Any]] = []
+        gnn_header_blocks: list[dict[str, Any]] = []
+        gnn_footer_blocks: list[dict[str, Any]] = []
+        gnn_body_blocks: list[dict[str, Any]] = []
 
         for box in page.boxes:
             btype = box.boxclass
             text = ""
-            lines_data: List[Dict[str, Any]] = []
-            font_sizes: List[float] = []
+            lines_data: list[dict[str, Any]] = []
+            font_sizes: list[float] = []
 
             if box.textlines:
                 for tl in box.textlines:
@@ -625,7 +625,7 @@ def _gnn_classified_blocks_to_layout(
             b.pop("_gnn_class", None)
 
         # ── Header/footer dicts ──
-        hf_dicts: List[Dict[str, Any]] = []
+        hf_dicts: list[dict[str, Any]] = []
         for hf_block in sorted(gnn_header_blocks + gnn_footer_blocks, key=lambda b: b["bbox"][1]):
             hf_dicts.append({
                 "text": hf_block["text"],
@@ -633,7 +633,7 @@ def _gnn_classified_blocks_to_layout(
             })
 
         # ── Page number candidates from headers/footers ──
-        page_num_candidates: List[int] = []
+        page_num_candidates: list[int] = []
         for hf_block in gnn_header_blocks + gnn_footer_blocks:
             page_num_candidates.extend(
                 extract_page_number_candidates(hf_block["text"])
@@ -643,10 +643,10 @@ def _gnn_classified_blocks_to_layout(
         columns = detect_columns(final_body_blocks, page.width)
 
         # ── Build output dicts (same shape as analyze_page_layout) ──
-        column_dicts: List[Dict[str, Any]] = []
+        column_dicts: list[dict[str, Any]] = []
         for col_idx, col_blocks in enumerate(columns):
             col_sorted = sorted(col_blocks, key=lambda b: b["bbox"][1])
-            paragraphs: List[Dict[str, Any]] = []
+            paragraphs: list[dict[str, Any]] = []
             for para_idx, block in enumerate(col_sorted, start=1):
                 paragraphs.append({
                     "paragraph_id": f"p{page_number}_c{col_idx}_para{para_idx}",
@@ -659,7 +659,7 @@ def _gnn_classified_blocks_to_layout(
                 "paragraphs": paragraphs,
             })
 
-        fn_dicts: List[Dict[str, Any]] = []
+        fn_dicts: list[dict[str, Any]] = []
         for fn_idx, fn_block in enumerate(
             sorted(all_footnote_blocks, key=lambda b: b["bbox"][1]), start=1
         ):
@@ -687,7 +687,7 @@ def _gnn_classified_blocks_to_layout(
     return results
 
 
-def analyze_document_layout_pymupdf4llm(pdf_path: str) -> List[Dict[str, Any]]:
+def analyze_document_layout_pymupdf4llm(pdf_path: str) -> list[dict[str, Any]]:
     """Analyze layout using PyMuPDF4LLM's GNN classification.
 
     Hybrid approach:
@@ -729,8 +729,8 @@ def analyze_document_layout_pymupdf4llm(pdf_path: str) -> List[Dict[str, Any]]:
 
 
 def build_page_number_map(
-    page_layouts: List[Dict[str, Any]],
-) -> Dict[int, int]:
+    page_layouts: list[dict[str, Any]],
+) -> dict[int, int]:
     """Build physical→printed page number map from layout analysis results.
 
     Uses ``_select_continuous_sequence`` (from dspy_extract) to find the
@@ -750,7 +750,7 @@ def build_page_number_map(
     """
     from .dspy_extract import _select_continuous_sequence
 
-    candidates: Dict[int, List[int]] = {}
+    candidates: dict[int, list[int]] = {}
     for layout in page_layouts:
         # page_number in layout is 1-based physical index
         physical_1based = layout.get("page_number")

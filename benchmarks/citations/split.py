@@ -35,7 +35,7 @@ def main(manifest_path: str, output_path: str) -> None:
             counts[index] += 1
     with Path(output_path).open("x", encoding="utf-8") as output:
         output.write("".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows))
-    print(json.dumps({"rows": total, "counts": dict(zip(split_names, counts))}, indent=2))
+    print(json.dumps({"rows": total, "counts": dict(zip(split_names, counts, strict=False))}, indent=2))
 
 
 if __name__ == "__main__":

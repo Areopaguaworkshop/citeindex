@@ -6,12 +6,12 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from citeindex.ingestion.csl import export_csl, evaluation_fields, valid_host_value
 from citeindex.ingestion.citation_verification import validate_block_evidence
-from citeindex.ingestion.models import IngestionConfig
-from citeindex.ingestion.pipelines import multimodal_metadata as contracts
-from citeindex.ingestion.pipelines import url_article, media, mineru
+from citeindex.ingestion.csl import evaluation_fields, export_csl, valid_host_value
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
+from citeindex.ingestion.models import IngestionConfig
+from citeindex.ingestion.pipelines import media, mineru, url_article
+from citeindex.ingestion.pipelines import multimodal_metadata as contracts
 from citeindex.ingestion.storage import write_json
 
 

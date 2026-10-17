@@ -11,23 +11,22 @@ Workflow:
   8. Merkle tree (no retrieval index)
 """
 
-import logging
 import hashlib
+import logging
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
 import trafilatura
 
+from ..csl import evaluation_fields, valid_host_value
 from ..models import IngestionConfig, PipelineResult
-from ..csl import valid_host_value, evaluation_fields
-from .multimodal_metadata import extract_multimodal_metadata, web_source_blocks, metadata_blocks
-from ..url_security import UnsafeUrlError, fetch_text, validate_public_url, MAX_RESPONSE_BYTES, MAX_REDIRECTS
+from ..url_security import MAX_REDIRECTS, MAX_RESPONSE_BYTES, UnsafeUrlError, fetch_text, validate_public_url
 from .common import (
     attach_evidence_locators,
     build_merkle_for_nodes,
@@ -36,6 +35,7 @@ from .common import (
     make_source_id,
     split_paragraphs,
 )
+from .multimodal_metadata import extract_multimodal_metadata, metadata_blocks, web_source_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def _write_html_snapshot(html: str) -> str:
 # Fetching: Playwright primary, requests fallback
 # ---------------------------------------------------------------------------
 
-def _fetch_with_playwright(url: str) -> Optional[str]:
+def _fetch_with_playwright(url: str) -> str | None:
     """Fetch a URL rendering JavaScript via Playwright."""
     try:
         from playwright.sync_api import sync_playwright
@@ -98,10 +98,10 @@ def _meta_refresh_target(html: str, base_url: str) -> str | None:
     class Refresh(HTMLParser):
         target = None
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-            attrs = dict(attrs)
-            if tag != "meta" or str(attrs.get("http-equiv", "")).casefold() != "refresh":
+            attr_map = dict(attrs)
+            if tag != "meta" or str(attr_map.get("http-equiv", "")).casefold() != "refresh":
                 return
-            match = re.fullmatch(r"\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\";]+)['\"]?\s*", attrs.get("content") or "", re.I)
+            match = re.fullmatch(r"\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\";]+)['\"]?\s*", attr_map.get("content") or "", re.I)
             if match:
                 self.target = urljoin(base_url, match.group(1).strip())
     parser = Refresh()
@@ -111,7 +111,9 @@ def _meta_refresh_target(html: str, base_url: str) -> str | None:
 
 def _fetch_article(url: str) -> tuple[str, str, list[dict]]:
     """Follow bounded HTML meta refreshes using the same public-URL guard."""
-    current, visited, redirects = url, set(), []
+    current = url
+    visited: set[str] = set()
+    redirects: list[dict] = []
     for _ in range(MAX_REDIRECTS + 1):
         if current in visited:
             raise UnsafeUrlError("meta refresh cycle")
@@ -173,7 +175,7 @@ def _extract_markdown(html: str) -> str:
 # Metadata extraction: Zotero → trafilatura
 # ---------------------------------------------------------------------------
 
-def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
+def _extract_metadata_zotero(url: str) -> dict[str, Any]:
     """Try zotero translation-server for rich metadata."""
     try:
         resp = requests.post(
@@ -186,7 +188,7 @@ def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
             items = resp.json()
             if items and isinstance(items, list) and items[0]:
                 item = items[0]
-                meta: Dict[str, Any] = {}
+                meta: dict[str, Any] = {}
                 meta["type"] = {"journalArticle": "article-journal", "newspaperArticle": "article-newspaper",
                                 "magazineArticle": "article-magazine", "blogPost": "post-weblog",
                                 "book": "book", "bookSection": "chapter", "interview": "interview"}.get(item.get("itemType"), "webpage")
@@ -196,7 +198,7 @@ def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
                     authors = []
                     for c in item["creators"]:
                         if c.get("lastName"):
-                            name: Dict[str, str] = {"family": c["lastName"]}
+                            name: dict[str, str] = {"family": c["lastName"]}
                             if c.get("firstName"):
                                 name["given"] = c["firstName"]
                             role = c.get("creatorType", "author")
@@ -221,7 +223,7 @@ def _extract_metadata_zotero(url: str) -> Dict[str, Any]:
     return {}
 
 
-def _extract_metadata(html: str, url: str) -> Dict[str, Any]:
+def _extract_metadata(html: str, url: str) -> dict[str, Any]:
     """Extract metadata with Zotero primary, trafilatura fallback."""
     meta = _extract_metadata_zotero(url)
     if meta.get("title"):
@@ -306,7 +308,7 @@ _CHICAGO_CITE_RE = re.compile(
 )
 
 
-def _find_citation_guidance(text: str) -> Optional[str]:
+def _find_citation_guidance(text: str) -> str | None:
     """Scan text for citation guidance blocks, return the citation string."""
     for pat in _CITE_GUIDANCE_PATTERNS:
         m = pat.search(text)
@@ -321,7 +323,7 @@ def _find_citation_guidance(text: str) -> Optional[str]:
     return None
 
 
-def _parse_citation_string(cite_str: str) -> Dict[str, Any]:
+def _parse_citation_string(cite_str: str) -> dict[str, Any]:
     """Parse a citation guidance string into CSL fields (regex first)."""
     m = _CN_TRANSLATION_IN_RE.search(cite_str)
     if m:
@@ -339,7 +341,7 @@ def _parse_citation_string(cite_str: str) -> Dict[str, Any]:
         m = _CN_CITE_SIMPLE_RE.search(cite_str)
 
     if m:
-        result: Dict[str, Any] = {}
+        result = {}
         result["author"] = [{"literal": m.group("author").strip()}]
         result["title"] = m.group("title").strip()
         if m.group("publisher"):
@@ -387,7 +389,7 @@ def _parse_citation_string(cite_str: str) -> Dict[str, Any]:
     return {}
 
 
-def _parse_date_string(date_str: str) -> Optional[Dict[str, Any]]:
+def _parse_date_string(date_str: str) -> dict[str, Any] | None:
     """Parse various date formats into CSL date-parts."""
     # Chinese: 2025年10月29日
     m = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", date_str)
@@ -433,8 +435,8 @@ def _parse_date_string(date_str: str) -> Optional[Dict[str, Any]]:
 
 def _extract_citation_from_guidance(
     text: str,
-    config: Optional[IngestionConfig] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+) -> dict[str, Any]:
     """Find and parse in-page citation guidance. DSPy fallback for unparseable strings."""
     cite_str = _find_citation_guidance(text)
     if not cite_str:
@@ -454,6 +456,7 @@ def _extract_citation_from_guidance(
     cfg = config or IngestionConfig()
     try:
         import dspy
+
         from ...llm import get_llm_model
         from ...model import ParseCitationString
 
@@ -491,7 +494,7 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)(?:\s*\[#\].*)?$")
 
 def _parse_markdown_sections(
     markdown_text: str, url: str
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Tuple[int, List[str]]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[tuple[int, list[str]]]]:
     """Parse markdown into section-hierarchical pages and paragraph list.
 
     Returns:
@@ -504,15 +507,15 @@ def _parse_markdown_sections(
     lines = markdown_text.split("\n")
 
     # First pass: identify sections and their content
-    sections: List[Dict[str, Any]] = []
-    current_section: Dict[str, Any] = {
+    sections: list[dict[str, Any]] = []
+    current_section: dict[str, Any] = {
         "title": "(intro)",
         "level": 0,
         "paragraphs": [],
         "anchor": "",
     }
 
-    buf: List[str] = []
+    buf: list[str] = []
 
     def flush_buf():
         if buf:
@@ -555,18 +558,18 @@ def _parse_markdown_sections(
         sections.append(current_section)
 
     # Build pages (one per section), section_tree, and page_paragraphs
-    pages: List[Dict[str, Any]] = []
-    page_paragraphs: List[Tuple[int, List[str]]] = []
-    section_tree: List[Dict[str, Any]] = []
-    tree_stack: List[Dict[str, Any]] = []
+    pages: list[dict[str, Any]] = []
+    page_paragraphs: list[tuple[int, list[str]]] = []
+    section_tree: list[dict[str, Any]] = []
+    tree_stack: list[dict[str, Any]] = []
 
     for sec_idx, sec in enumerate(sections):
         sec_num = sec_idx + 1
         sec_url = f"{url}#{sec['anchor']}" if sec["anchor"] else url
 
         # Build paragraphs for this section-page
-        para_list: List[Dict[str, Any]] = []
-        para_texts: List[str] = []
+        para_list: list[dict[str, Any]] = []
+        para_texts: list[str] = []
         for pi, para_text in enumerate(sec["paragraphs"], start=1):
             # Split further by double-newline within the paragraph
             sub_paras = split_paragraphs(para_text)
@@ -590,7 +593,7 @@ def _parse_markdown_sections(
         page_paragraphs.append((sec_num, para_texts))
 
         # Build section tree
-        tree_node: Dict[str, Any] = {
+        tree_node: dict[str, Any] = {
             "title": sec["title"],
             "level": sec["level"],
             "section_number": sec_num,
@@ -618,14 +621,14 @@ def _parse_markdown_sections(
 
 def run(
     url: str,
-    config: Optional[IngestionConfig] = None,
+    config: IngestionConfig | None = None,
 ) -> PipelineResult:
     cfg = config or IngestionConfig()
     source_id = make_source_id(url)
 
     # ── Step 1: Fetch ──────────────────────────────────────────────
     final_url, html, redirects = _fetch_article(url)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # ── Step 2: Extract content as markdown (preserves headings) ──
     markdown_text = _extract_markdown(html)
@@ -645,7 +648,7 @@ def run(
     source_blocks += metadata_blocks(retrieval_metadata, "retrieval_metadata.json")
 
     # ── Step 6: Reconcile — citation guidance wins ────────────────
-    csl_extra: Dict[str, Any] = {
+    csl_extra: dict[str, Any] = {
         "URL": final_url,
         "accessed": {
             "date-parts": [[now.year, now.month, now.day]],
@@ -683,7 +686,7 @@ def run(
             if not value:
                 continue
             if field == "author" and field_evidence.get("author"):
-                existing = csl_extra.get("author")
+                existing: Any = csl_extra.get("author")
                 surname = existing[0].get("family") if isinstance(existing, list) and len(existing) == 1 else None
                 if (surname and existing[0].get("given") and isinstance(value, list) and len(value) == 1 and
                         re.search(rf"\b{re.escape(surname)}\b", value[0].get("literal", ""), re.I) and
@@ -728,7 +731,7 @@ def run(
     merkle_tree = build_merkle_for_nodes(nodes)
 
     # ── PageIndex enhancement (optional) ──────────────────────────
-    extra: Dict[str, Any] = {
+    extra: dict[str, Any] = {
         "source_snapshot_path": _write_html_snapshot(html),
         "cleanup_source_snapshot": True,
         "source_blocks": source_blocks,
@@ -737,7 +740,7 @@ def run(
         "redirect_snapshots": redirects,
     }
     if cfg.use_pageindex and markdown_text.strip():
-        from .pageindex_tree import run_pageindex_md_tree, pageindex_to_citeindex_tree
+        from .pageindex_tree import pageindex_to_citeindex_tree, run_pageindex_md_tree
         pi_result = run_pageindex_md_tree(markdown_text, model=cfg.pageindex_model)
         if pi_result and pi_result.get("structure"):
             ci_tree = pageindex_to_citeindex_tree(
@@ -752,7 +755,7 @@ def run(
             logger.info("PageIndex tree built for URL: %d sections",
                         len(ci_tree.get("level_1", [])))
 
-    document_json: Dict[str, Any] = {
+    document_json: dict[str, Any] = {
         "source_id": source_id,
         "source_type": "url_article",
         "metadata": {

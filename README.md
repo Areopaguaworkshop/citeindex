@@ -7,6 +7,27 @@ Optional verification traces accepted metadata corrections to source evidence.
 
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/citeindex?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=RED&left_text=downloads)](https://pepy.tech/projects/citeindex)
 
+## Quickstart
+
+```bash
+pip install citeindex
+citeindex paper.pdf
+```
+
+Outputs land next to where you run it: `corpus/<doc-id>/` (CSL JSON, Merkle
+manifest, ingestion log), `library/<doc-id>.md`, and `logs/`. See
+[Install](#install) for OCR/media/browser extras and [CLI](#cli) for every
+flag. Architecture: [docs/design.md](docs/design.md).
+
+Reproduce the citation benchmark on a checkout (reviewed local gold manifest
+required — model output is never gold):
+
+```bash
+python benchmarks/citations/run.py manifest.jsonl predictions.jsonl
+```
+
+See [benchmarks/citations/README.md](benchmarks/citations/README.md).
+
 ## Install
 
 ```bash
@@ -24,11 +45,25 @@ pages need `web-browser` plus `playwright install chromium`, while
 Enhanced PDF layout extraction uses `layout`; otherwise it falls back to the
 built-in heuristic. Install several extras together as needed.
 
+### Docker
+
+```bash
+docker build -t citeindex .
+docker run --rm -v "$PWD:/data" citeindex /data/paper.pdf
+```
+
+The image installs the base package (digital PDFs and HTML URLs) and writes
+corpus outputs under `/data/corpus` on the mounted directory. Add the extras
+you need to the `pip install` line in the `Dockerfile` for OCR or media.
+
 ## CLI
 
 ```bash
 # Ingest a PDF
 citeindex paper.pdf
+
+# Structured logs: one JSON object per line on stderr
+citeindex paper.pdf --log-format json
 
 # Ingest a scanned PDF with the default MinerU backend
 citeindex scanned.pdf --ocr-engine mineru
@@ -579,7 +614,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.13.4). MIT. https://github.com/ajia/citeindex
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.15.0). MIT. https://github.com/ajia/citeindex
 
 **BibTeX:**
 
@@ -587,12 +622,23 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.13.4},
+  version = {0.15.0},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},
 }
 ```
+
+## Status (2026-10-17)
+
+- Tests: 379 passing; CI (ruff + mypy + pytest) on Python 3.12/3.13
+  (`.github/workflows/tests.yml`). Branch-coverage gate at ~40%, ratcheting
+  toward 85% as legacy modules gain tests.
+- Scale benchmark (default pipeline, digital PDFs, 3 workers):
+  **10,052 pages across 14 volumes** at **44.1 ok-pages/min wall**; per-document
+  results and failure modes in [benchmarks/scale/README.md](benchmarks/scale/README.md).
+- Docker: 494 MB image (`python:3.12-slim`, non-root); the Quickstart flow is verified.
+- PyPI downloads: 8,614 total / 1,951 last 30 days (pepy.tech snapshot 2026-10-16).
 
 ## License
 

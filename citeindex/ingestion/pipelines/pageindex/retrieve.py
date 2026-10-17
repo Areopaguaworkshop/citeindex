@@ -1,17 +1,18 @@
 import json
+
 import PyPDF2
 
 try:
     from .utils import get_number_of_pages, remove_fields
 except ImportError:
-    from utils import get_number_of_pages, remove_fields
+    from utils import get_number_of_pages, remove_fields  # type: ignore[no-redef]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _parse_pages(pages: str) -> list[int]:
     """Parse a pages string like '5-7', '3,8', or '12' into a sorted list of ints."""
-    result = []
+    result: list[int] = []
     for part in pages.split(','):
         part = part.strip()
         if '-' in part:

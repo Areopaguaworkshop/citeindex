@@ -1,6 +1,6 @@
-import dspy
 import logging
-from typing import Dict
+
+import dspy
 
 
 def get_llm_model(model_name: str = "ollama/deepseek-v4.1-flash:cloud", temperature: float = 0.1) -> dspy.LM:
@@ -43,7 +43,7 @@ def get_llm_model(model_name: str = "ollama/deepseek-v4.1-flash:cloud", temperat
     return dspy.LM(model=model_name, model_kwargs={"temperature": temperature})
 
 
-def get_provider_info() -> Dict[str, str]:
+def get_provider_info() -> dict[str, str]:
     """
     Get information about supported providers and their URL formats.
     

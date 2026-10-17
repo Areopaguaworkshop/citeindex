@@ -1,13 +1,14 @@
-import os
-import subprocess
 import logging
+import os
+import re
+import subprocess
+import tempfile
+from typing import Any
+from urllib.parse import urlparse
+
 import fitz  # PyMuPDF
 import requests
-from urllib.parse import urlparse
-from typing import Optional, Dict, Tuple, List
-import re
-import tempfile
-from pypinyin import pinyin, Style
+from pypinyin import Style, pinyin
 
 # --- Supported File Extensions ---
 
@@ -59,7 +60,7 @@ def get_input_type(input_string: str) -> str:
     return "UNSUPPORTED"
 
 
-def parse_page_range(page_range_str: str, total_pages: int) -> List[int]:
+def parse_page_range(page_range_str: str, total_pages: int) -> list[int]:
     """
     Parse a page range string (e.g., "1-5, -3") into a sorted list of 1-based page numbers.
     Returns an empty list if the range is invalid or empty.
@@ -67,7 +68,7 @@ def parse_page_range(page_range_str: str, total_pages: int) -> List[int]:
     if not page_range_str:
         return []
 
-    pages_to_process = set()
+    pages_to_process: set[int] = set()
     parts = page_range_str.split(",")
 
     for part in parts:
@@ -169,7 +170,7 @@ def ensure_searchable_pdf(pdf_path: str, lang: str = "eng+chi_sim") -> str:
 
 def create_subset_pdf(
     doc_path: str, page_range: str, total_pages: int
-) -> Optional[str]:
+) -> str | None:
     """
     Creates a temporary PDF file containing only the pages specified in the page range
     from any PyMuPDF-supported document.
@@ -286,7 +287,7 @@ def determine_url_type(url: str) -> str:
         logging.error(f"Error determining URL type: {e}")
         return "text"
 
-def save_citation(csl_data: Dict, output_dir: str):
+def save_citation(csl_data: dict, output_dir: str):
     """Save citation information as a CSL JSON file."""
     import json
 
@@ -309,7 +310,7 @@ def save_citation(csl_data: Dict, output_dir: str):
 
 def clean_url(url: str) -> str:
     """Clean URL by removing tracking parameters while preserving original format."""
-    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
     # Common tracking parameters to remove
     tracking_params = {
@@ -369,7 +370,7 @@ AUTHOR_TITLES = [
     "博士", "神父", "教授", "老师", "先生"
 ]
 
-def extract_dynasty_author_role(text: str) -> Tuple[str, str, str]:
+def extract_dynasty_author_role(text: str) -> tuple[str, str, str]:
     """Extract dynasty, author name, and role from text like '【宋】朱熹撰'"""
     dynasty = ""
     author_name = ""
@@ -403,7 +404,7 @@ def extract_dynasty_author_role(text: str) -> Tuple[str, str, str]:
 
     return dynasty, author_name, role
 
-def parse_multiple_authors(author_string: str) -> List[Dict]:
+def parse_multiple_authors(author_string: str) -> list[dict]:
     """
     Parse multiple authors with dynasty and role indicators, and split CJK names.
     Returns a list of structured dictionaries for each author.
@@ -566,9 +567,9 @@ def format_author_csl(author_input) -> list:
 
 
 
-def to_csl_json(data: Dict, doc_type: str) -> Dict:
+def to_csl_json(data: dict, doc_type: str) -> dict:
     """Converts the internal dictionary to a CSL-JSON compliant dictionary."""
-    csl = {}
+    csl: dict[str, Any] = {}
 
     # 1. Map Type
     type_mapping = {
@@ -679,7 +680,7 @@ def to_csl_json(data: Dict, doc_type: str) -> Dict:
 
 
 
-def extract_publisher_from_domain(url: str) -> Optional[str]:
+def extract_publisher_from_domain(url: str) -> str | None:
     """Extract publisher name from domain."""
     try:
         from urllib.parse import urlparse

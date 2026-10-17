@@ -1,26 +1,29 @@
-import litellm
+import asyncio
+import copy
+import json
 import logging
 import os
 import textwrap
-from datetime import datetime
 import time
-import json
-import PyPDF2
-import copy
-import asyncio
-import pymupdf
+from datetime import datetime
 from io import BytesIO
+
+import litellm
+import pymupdf
+import PyPDF2
 from dotenv import load_dotenv
+
 load_dotenv()
-import yaml
 from pathlib import Path
 from types import SimpleNamespace as config
+
+import yaml
 
 from ..pdf_text_cleanup import clean_page_texts
 
 # Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
-if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = os.getenv("CHATGPT_API_KEY")
+if not os.getenv("OPENAI_API_KEY") and (chatgpt_key := os.getenv("CHATGPT_API_KEY")):
+    os.environ["OPENAI_API_KEY"] = chatgpt_key
 
 litellm.drop_params = True
 
@@ -477,7 +480,9 @@ def clean_structure_post(data):
             clean_structure_post(section)
     return data
 
-def remove_fields(data, fields=['text']):
+def remove_fields(data, fields=None):
+    if fields is None:
+        fields = ['text']
     if isinstance(data, dict):
         return {k: remove_fields(v, fields)
             for k, v in data.items() if k not in fields}
@@ -605,7 +610,7 @@ async def generate_summaries_for_structure(structure, model=None):
     tasks = [generate_node_summary(node, model=model) for node in nodes]
     summaries = await asyncio.gather(*tasks)
     
-    for node, summary in zip(nodes, summaries):
+    for node, summary in zip(nodes, summaries, strict=False):
         node['summary'] = summary
     return structure
 
@@ -666,14 +671,14 @@ def format_structure(structure, order=None):
 
 
 class ConfigLoader:
-    def __init__(self, default_path: str = None):
+    def __init__(self, default_path: str | None = None):
         if default_path is None:
-            default_path = Path(__file__).parent / "config.yaml"
+            default_path = str(Path(__file__).parent / "config.yaml")
         self._default_dict = self._load_yaml(default_path)
 
     @staticmethod
     def _load_yaml(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
     def _validate_keys(self, user_dict):

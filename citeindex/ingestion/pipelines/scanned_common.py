@@ -1,7 +1,7 @@
 import logging
 import os
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..deterministic import build_hierarchical_merkle_tree
 from ..models import IngestionConfig, PipelineResult
@@ -25,7 +25,7 @@ from .pageindex_tree import pageindex_to_citeindex_tree, run_pageindex_md_tree
 logger = logging.getLogger(__name__)
 
 
-def build_page_number_map_from_content_list(content_list: List[Dict[str, Any]]) -> Dict[int, int]:
+def build_page_number_map_from_content_list(content_list: list[dict[str, Any]]) -> dict[int, int]:
     page_number_map = extract_page_numbers_from_content_list(content_list)
     if page_number_map:
         return page_number_map
@@ -34,7 +34,7 @@ def build_page_number_map_from_content_list(content_list: List[Dict[str, Any]]) 
     return {idx: idx + 1 for idx in range(max_page_idx + 1)}
 
 
-def _heading_level_for_item(item: Dict[str, Any], text: str) -> int:
+def _heading_level_for_item(item: dict[str, Any], text: str) -> int:
     explicit_level = item.get("heading_level")
     if isinstance(explicit_level, int) and explicit_level > 0:
         return max(1, min(explicit_level, 6))
@@ -46,7 +46,7 @@ def _heading_level_for_item(item: Dict[str, Any], text: str) -> int:
     return _infer_heading_level(text)
 
 
-def _image_overlap_ratio(item_bbox: List[float], image_bbox: List[float]) -> float:
+def _image_overlap_ratio(item_bbox: list[float], image_bbox: list[float]) -> float:
     if len(item_bbox) < 4 or len(image_bbox) < 4:
         return 0.0
 
@@ -60,8 +60,8 @@ def _image_overlap_ratio(item_bbox: List[float], image_bbox: List[float]) -> flo
 
 
 def attach_image_paths_to_content_list(
-    content_list: List[Dict[str, Any]],
-    images: Optional[List[Dict[str, Any]]],
+    content_list: list[dict[str, Any]],
+    images: list[dict[str, Any]] | None,
 ) -> None:
     if not images:
         return
@@ -72,7 +72,7 @@ def attach_image_paths_to_content_list(
 
         page_idx = item.get("page_idx", 0)
         item_bbox = item.get("bbox", [])
-        fallback_path: Optional[str] = None
+        fallback_path: str | None = None
 
         for image in images:
             if image.get("page_idx") != page_idx:
@@ -89,11 +89,11 @@ def attach_image_paths_to_content_list(
 
 
 def content_list_to_markdown(
-    content_list: List[Dict[str, Any]],
-    page_number_map: Dict[int, int],
+    content_list: list[dict[str, Any]],
+    page_number_map: dict[int, int],
 ) -> str:
-    lines: List[str] = []
-    current_page: Optional[int] = None
+    lines: list[str] = []
+    current_page: int | None = None
 
     for item in content_list:
         page_idx = item.get("page_idx", 0)
@@ -143,12 +143,12 @@ def build_scanned_pipeline_result(
     backend_name: str,
     source_type: str,
     config: IngestionConfig,
-    content_list: List[Dict[str, Any]],
-    document_structure: Dict[str, Any],
-    page_paragraphs: List[Tuple[int, List[str]]],
-    markdown_text: Optional[str] = None,
-    images_tmpdir: Optional[str] = None,
-    images_list: Optional[List[Dict[str, Any]]] = None,
+    content_list: list[dict[str, Any]],
+    document_structure: dict[str, Any],
+    page_paragraphs: list[tuple[int, list[str]]],
+    markdown_text: str | None = None,
+    images_tmpdir: str | None = None,
+    images_list: list[dict[str, Any]] | None = None,
 ) -> PipelineResult:
     source_id = make_source_id(pdf_path)
     import fitz
@@ -218,7 +218,7 @@ def build_scanned_pipeline_result(
         merkle_tree["hierarchical_root"] = hierarchical.get("root")
         merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
 
-    extra: Dict[str, Any] = {}
+    extra: dict[str, Any] = {}
     extra["source_blocks"] = source_blocks
     if config.use_pageindex and normalized_markdown.strip():
         try:
@@ -245,7 +245,7 @@ def build_scanned_pipeline_result(
         extra["_images_tmpdir"] = images_tmpdir
         extra["_images_list"] = images_list
 
-    document_json: Dict[str, Any] = {
+    document_json: dict[str, Any] = {
         "source_id": source_id,
         "source_type": source_type,
         "metadata": {

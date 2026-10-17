@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 from lxml import etree
@@ -23,7 +23,7 @@ def is_grobid_available(grobid_url: str = "http://localhost:8070") -> bool:
 # TEI XML parsing helpers
 # ---------------------------------------------------------------------------
 
-def _text_or_none(element: Optional[etree._Element]) -> Optional[str]:
+def _text_or_none(element: etree._Element | None) -> str | None:
     """Return stripped text content of an element, or None."""
     if element is None:
         return None
@@ -32,7 +32,7 @@ def _text_or_none(element: Optional[etree._Element]) -> Optional[str]:
     return text if text else None
 
 
-def _parse_author(author_el: etree._Element) -> Optional[Dict[str, str]]:
+def _parse_author(author_el: etree._Element) -> dict[str, str] | None:
     """Parse a single TEI <author> into a CSL name dict."""
     # Personal name
     persname = author_el.find("tei:persName", _NS)
@@ -42,7 +42,7 @@ def _parse_author(author_el: etree._Element) -> Optional[Dict[str, str]]:
         ) or None
         family = _text_or_none(persname.find("tei:surname", _NS))
         if family:
-            name: Dict[str, str] = {"family": family}
+            name: dict[str, str] = {"family": family}
             if given:
                 name["given"] = given
             return name
@@ -55,7 +55,7 @@ def _parse_author(author_el: etree._Element) -> Optional[Dict[str, str]]:
     return None
 
 
-def _parse_date_parts(date_el: Optional[etree._Element]) -> Optional[List[List[int]]]:
+def _parse_date_parts(date_el: etree._Element | None) -> list[list[int]] | None:
     """Convert a TEI <date> element to CSL date-parts."""
     if date_el is None:
         return None
@@ -70,9 +70,9 @@ def _parse_date_parts(date_el: Optional[etree._Element]) -> Optional[List[List[i
     return [int_parts] if int_parts else None
 
 
-def _parse_bibl_struct(bibl: etree._Element) -> Dict[str, Any]:
+def _parse_bibl_struct(bibl: etree._Element) -> dict[str, Any]:
     """Convert a single <biblStruct> element to a CSL JSON dict."""
-    csl: Dict[str, Any] = {"type": "article-journal", "parse_status": "partial"}
+    csl: dict[str, Any] = {"type": "article-journal", "parse_status": "partial"}
 
     # --- analytic level (article title, authors) ---
     analytic = bibl.find("tei:analytic", _NS)
@@ -89,7 +89,7 @@ def _parse_bibl_struct(bibl: etree._Element) -> Dict[str, Any]:
         csl["title"] = title
 
     # Authors
-    authors: List[Dict[str, str]] = []
+    authors: list[dict[str, str]] = []
     author_source = analytic if analytic is not None else monogr
     if author_source is not None:
         for author_el in author_source.findall("tei:author", _NS):
@@ -156,7 +156,7 @@ def _parse_bibl_struct(bibl: etree._Element) -> Dict[str, Any]:
     return csl
 
 
-def _parse_tei_references(tei_xml: str) -> List[Dict[str, Any]]:
+def _parse_tei_references(tei_xml: str) -> list[dict[str, Any]]:
     """Parse TEI XML and extract bibliographic references as CSL JSON dicts.
 
     Looks for ``<biblStruct>`` elements inside the back-matter
@@ -175,7 +175,7 @@ def _parse_tei_references(tei_xml: str) -> List[Dict[str, Any]]:
         # Fallback: search anywhere in the document
         bibl_structs = root.findall(f".//{{{TEI_NS}}}biblStruct")
 
-    references: List[Dict[str, Any]] = []
+    references: list[dict[str, Any]] = []
     for bibl in bibl_structs:
         ref = _parse_bibl_struct(bibl)
         ref["tei_id"] = bibl.get("{http://www.w3.org/XML/1998/namespace}id")
@@ -192,7 +192,7 @@ def _parse_tei_references(tei_xml: str) -> List[Dict[str, Any]]:
 def extract_citations_grobid(
     pdf_path: str,
     grobid_url: str = "http://localhost:8070",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Extract cited references from a PDF using GROBID's fulltext endpoint.
 
     Sends the PDF to ``/api/processFulltextDocument``, parses the returned
@@ -229,7 +229,7 @@ def extract_citations_grobid(
 def extract_document_bundle_grobid(
     pdf_path: str,
     grobid_url: str = "http://localhost:8070",
-) -> tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Extract host metadata and references from one TEI full-text request."""
     with open(pdf_path, "rb") as fh:
         resp = requests.post(
@@ -246,9 +246,9 @@ def extract_document_bundle_grobid(
     return metadata, ({"references": references} if references else {})
 
 
-def _parse_ris_csl(ris_text: str) -> Dict[str, Any]:
+def _parse_ris_csl(ris_text: str) -> dict[str, Any]:
     """Parse RIS format response into CSL dict."""
-    csl: Dict[str, Any] = {}
+    csl: dict[str, Any] = {}
     lines = ris_text.strip().split("\n")
     authors = []
     
@@ -291,9 +291,9 @@ def _parse_ris_csl(ris_text: str) -> Dict[str, Any]:
     return csl
 
 
-def _extract_metadata_from_tei(root: etree._Element) -> Dict[str, Any]:
+def _extract_metadata_from_tei(root: etree._Element) -> dict[str, Any]:
     """Extract metadata from TEI XML response."""
-    csl: Dict[str, Any] = {}
+    csl: dict[str, Any] = {}
 
     # Title - try main title first, then any title
     title_el = root.find(f".//{{{TEI_NS}}}titleStmt/{{{TEI_NS}}}title[@level='a'][@type='main']")
@@ -304,7 +304,7 @@ def _extract_metadata_from_tei(root: etree._Element) -> Dict[str, Any]:
         csl["title"] = title
 
     # Authors
-    authors: List[Dict[str, str]] = []
+    authors: list[dict[str, str]] = []
     for author_el in root.findall(
         f".//{{{TEI_NS}}}fileDesc/{{{TEI_NS}}}sourceDesc"
         f"//{{{TEI_NS}}}author"
@@ -344,7 +344,7 @@ def _extract_metadata_from_tei(root: etree._Element) -> Dict[str, Any]:
 def extract_document_metadata_grobid(
     pdf_path: str,
     grobid_url: str = "http://localhost:8070",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Extract the document's own metadata via GROBID.
 
     Tries fulltext endpoint first (returns TEI), then header endpoint.
@@ -369,7 +369,7 @@ def extract_document_metadata_grobid(
     return {}
 
 
-def _try_grobid_fulltext(pdf_path: str, grobid_url: str) -> Dict[str, Any]:
+def _try_grobid_fulltext(pdf_path: str, grobid_url: str) -> dict[str, Any]:
     """Try extracting metadata via fulltext endpoint."""
     try:
         with open(pdf_path, "rb") as fh:
@@ -402,7 +402,7 @@ def _try_grobid_fulltext(pdf_path: str, grobid_url: str) -> Dict[str, Any]:
         return {}
 
 
-def _try_grobid_header(pdf_path: str, grobid_url: str) -> Dict[str, Any]:
+def _try_grobid_header(pdf_path: str, grobid_url: str) -> dict[str, Any]:
     """Try extracting metadata via header endpoint."""
     try:
         with open(pdf_path, "rb") as fh:

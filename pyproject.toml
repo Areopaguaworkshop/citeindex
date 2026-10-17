@@ -1,6 +1,6 @@
 [project]
 name = "citeindex"
-version = "0.14.0"
+version = "0.15.0"
 description = "Ingest sources with proper citation — PDF, URL, media, Office, DJVU"
 authors = [{ name = "ajia", email = "yyjfwoaini@gmail.com" }]
 dependencies = [
@@ -34,6 +34,7 @@ media-wenbi = ["pymediainfo>=7.0.1", "yt-dlp>=2025.7.21"]
 web-browser = ["playwright>=1.40.0"]
 crawl = ["crawl4ai>=0.7.0"]
 layout = ["pymupdf4llm>=1.27.2.3"]
+dev = ["pytest>=7.0.0", "pytest-cov>=2.12.1", "psutil>=6.1.1", "ruff>=0.17", "mypy>=2.4"]
 
 [build-system]
 requires = ["hatchling==1.26.3", "hatch-vcs"]
@@ -49,8 +50,36 @@ packages = ["citeindex"]
 [tool.hatch.build.targets.sdist]
 only-include = ["citeindex", "README.md"]
 
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+# E501 excluded: legacy long lines across 46 files (measured 2026-10-16).
+# E4/E7/E9 + F/I/UP/B is the enforced set.
 [tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "citeindex/vertical_llm.py" = ["F811", "F821"]
 "citeindex/ingestion/pipelines/pageindex/*.py" = ["E402", "E722", "F401", "F403", "F405", "F811", "F821"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "benchmarks"]
+addopts = "--cov=citeindex --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+
+# Legacy escape hatch: vertical_llm.py has 104 errors (duplicate defs,
+# undefined names; measured 2026-10-16). TODO: clean up module, then drop.
+[[tool.mypy.overrides]]
+module = ["citeindex.vertical_llm"]
+ignore_errors = true
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 39

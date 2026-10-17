@@ -7,12 +7,11 @@ It removes irrelevant content and focuses on citation-relevant information.
 
 import logging
 import re
-from typing import Dict, List
 
 # Import existing functions
 
 
-def get_multilingual_content_keywords() -> Dict[str, List[str]]:
+def get_multilingual_content_keywords() -> dict[str, list[str]]:
     """Return content page keywords for all supported languages."""
     return {
         'english': ['contents', 'table of contents', 'toc'],
@@ -29,7 +28,7 @@ def clean_extracted_text(
     num_pages: int, 
     text_direction: str, 
     page_range: str, 
-    extracted_pages: List[int]
+    extracted_pages: list[int]
 ) -> str:
     """
     Main function to clean extracted text based on document characteristics.
@@ -95,7 +94,7 @@ def filter_blank_and_cover_pages(text: str) -> str:
     return '\n\n'.join(filtered_pages)
 
 
-def split_text_by_pages(text: str) -> List[str]:
+def split_text_by_pages(text: str) -> list[str]:
     """
     Split text into individual pages.
     This is a helper function to work with page-based text.
@@ -119,7 +118,7 @@ def split_text_by_pages(text: str) -> List[str]:
 
 # Placeholder for remaining functions - to be implemented in next steps
 
-def detect_content_pages_in_range(text: str, extracted_pages: List[int], text_direction: str) -> List[int]:
+def detect_content_pages_in_range(text: str, extracted_pages: list[int], text_direction: str) -> list[int]:
     """
     Detect content pages within the extracted page range.
     Look for "Contents" keywords in first line with larger font size.
@@ -141,7 +140,7 @@ def detect_content_pages_in_range(text: str, extracted_pages: List[int], text_di
             line_lower = line.lower().strip()
             
             # Check all multilingual keywords
-            for lang, keyword_list in keywords.items():
+            for _lang, keyword_list in keywords.items():
                 for keyword in keyword_list:
                     if keyword.lower() in line_lower:
                         # For now, assume it's large font if it's in first line and standalone
@@ -157,7 +156,7 @@ def detect_content_pages_in_range(text: str, extracted_pages: List[int], text_di
     return content_pages
 
 
-def process_large_document_text(text: str, content_pages: List[int]) -> str:
+def process_large_document_text(text: str, content_pages: list[int]) -> str:
     """
     Process text for documents >= 70 pages.
     Remove content pages and everything after them while preserving structure.

@@ -1,7 +1,6 @@
 """Phase 1 frontmatter module tests (plan v2 §3.1, offline, no LLM)."""
 
 from citeindex.ingestion.pipelines.frontmatter import (
-    load_pdf_pages,
     parse_cip,
     parse_loc_cip,
     rank_candidate_pages,

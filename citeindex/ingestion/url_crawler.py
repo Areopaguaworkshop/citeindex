@@ -9,7 +9,6 @@ import asyncio
 import hashlib
 import logging
 import re
-from typing import List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 import trafilatura
@@ -60,7 +59,7 @@ async def _discover_urls_async(
     root_url: str,
     max_depth: int = 2,
     max_pages: int = 100,
-) -> List[str]:
+) -> list[str]:
     """Use crawl4ai BFS to discover article URLs from a root page."""
     validate_public_url(root_url)
     try:
@@ -68,7 +67,7 @@ async def _discover_urls_async(
     except ImportError as exc:
         raise RuntimeError("Website crawling requires citeindex[crawl]") from exc
     from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-    from crawl4ai.deep_crawling.filters import FilterChain, ContentTypeFilter
+    from crawl4ai.deep_crawling.filters import ContentTypeFilter, FilterChain
 
     root_domain = urlparse(root_url).netloc.lower()
 
@@ -88,7 +87,7 @@ async def _discover_urls_async(
         stream=True,
     )
 
-    discovered: Set[str] = set()
+    discovered: set[str] = set()
 
     async with AsyncWebCrawler() as crawler:
         async for result in await crawler.arun(root_url, config=config):
@@ -117,7 +116,7 @@ def discover_article_urls(
     root_url: str,
     max_depth: int = 2,
     max_pages: int = 100,
-) -> List[str]:
+) -> list[str]:
     """Synchronous wrapper: discover article URLs from a root page.
 
     Uses crawl4ai's AsyncWebCrawler with BFS to crawl the site and
@@ -130,7 +129,7 @@ def discover_article_urls(
 # Lightweight content hashing for update detection
 # ---------------------------------------------------------------------------
 
-def fetch_content_hash(url: str) -> Optional[str]:
+def fetch_content_hash(url: str) -> str | None:
     """Fetch a URL, extract main text via trafilatura, return its SHA-256 hash.
 
     Returns None if the fetch or extraction fails. The hash is computed

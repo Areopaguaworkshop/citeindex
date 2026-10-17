@@ -24,7 +24,7 @@ Data flow (URL/Markdown):
 import logging
 import os
 import tempfile
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,8 @@ PAGEINDEX_MODEL = "ollama/deepseek-v4.1-flash:cloud"
 
 def run_pageindex_tree(
     pdf_path: str,
-    model: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    model: str | None = None,
+) -> dict[str, Any] | None:
     """Run PageIndex tree-building on a PDF.
 
     Returns the raw PageIndex result dict with ``doc_name`` and ``structure``,
@@ -75,8 +75,8 @@ def run_pageindex_tree(
 
 def run_pageindex_md_tree(
     markdown_text: str,
-    model: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    model: str | None = None,
+) -> dict[str, Any] | None:
     """Run PageIndex tree-building on markdown text (e.g. from URL articles).
 
     Writes markdown to a temp file, runs ``md_to_tree()``, returns the raw
@@ -131,13 +131,13 @@ def run_pageindex_md_tree(
 
 
 def pageindex_to_citeindex_tree(
-    pi_result: Dict[str, Any],
+    pi_result: dict[str, Any],
     doc_id: str,
-    csl_data: Dict[str, Any],
-    page_number_map: Dict[int, int],
-    merkle_root: Optional[str] = None,
-    page_layouts: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    csl_data: dict[str, Any],
+    page_number_map: dict[int, int],
+    merkle_root: str | None = None,
+    page_layouts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Convert a PageIndex result to CiteIndex PageIndexTree JSON.
 
     Parameters
@@ -177,7 +177,7 @@ def pageindex_to_citeindex_tree(
 # ---------------------------------------------------------------------------
 
 
-def _map_page(physical_index: Optional[int], page_number_map: Dict[int, int]) -> Optional[int]:
+def _map_page(physical_index: int | None, page_number_map: dict[int, int]) -> int | None:
     """Map a 1-based physical PDF page index to the actual page number.
 
     PageIndex ``start_index`` / ``end_index`` are 1-based.
@@ -190,10 +190,10 @@ def _map_page(physical_index: Optional[int], page_number_map: Dict[int, int]) ->
 
 
 def _page_range_str(
-    start_idx: Optional[int],
-    end_idx: Optional[int],
-    page_number_map: Dict[int, int],
-) -> Optional[str]:
+    start_idx: int | None,
+    end_idx: int | None,
+    page_number_map: dict[int, int],
+) -> str | None:
     start = _map_page(start_idx, page_number_map)
     end = _map_page(end_idx, page_number_map)
     if start is None and end is None:
@@ -204,11 +204,11 @@ def _page_range_str(
 
 
 def _collect_footnotes_for_range(
-    start_page: Optional[int],
-    end_page: Optional[int],
-    page_layouts: Optional[List[Dict[str, Any]]],
-    assigned_ids: Optional[set] = None,
-) -> List[Dict[str, Any]]:
+    start_page: int | None,
+    end_page: int | None,
+    page_layouts: list[dict[str, Any]] | None,
+    assigned_ids: set | None = None,
+) -> list[dict[str, Any]]:
     """Collect footnotes from page_layouts that fall within a page range.
 
     Parameters
@@ -233,7 +233,7 @@ def _collect_footnotes_for_range(
     if assigned_ids is None:
         assigned_ids = set()
 
-    footnotes: List[Dict[str, Any]] = []
+    footnotes: list[dict[str, Any]] = []
     for layout in page_layouts:
         page_num = layout.get("page_number")
         if not isinstance(page_num, int):
@@ -243,7 +243,7 @@ def _collect_footnotes_for_range(
                 fn_id = fn.get("footnote_id", "")
                 if fn_id and fn_id in assigned_ids:
                     continue
-                entry: Dict[str, Any] = {
+                entry: dict[str, Any] = {
                     "footnote_id": fn_id,
                     "text": fn.get("text", ""),
                 }
@@ -256,16 +256,16 @@ def _collect_footnotes_for_range(
 
 
 def _convert_sections(
-    nodes: List[Dict[str, Any]],
+    nodes: list[dict[str, Any]],
     doc_id: str,
-    page_number_map: Dict[int, int],
-    page_layouts: Optional[List[Dict[str, Any]]] = None,
-    assigned_fn_ids: Optional[set] = None,
-) -> List[Dict[str, Any]]:
+    page_number_map: dict[int, int],
+    page_layouts: list[dict[str, Any]] | None = None,
+    assigned_fn_ids: set | None = None,
+) -> list[dict[str, Any]]:
     """Convert top-level PageIndex nodes → CiteIndex level_1 SectionNodes."""
     if assigned_fn_ids is None:
         assigned_fn_ids = set()
-    sections: List[Dict[str, Any]] = []
+    sections: list[dict[str, Any]] = []
     for node in nodes:
         pi_id = node.get("node_id", "")
         section = {
@@ -287,13 +287,13 @@ def _convert_sections(
 
 
 def _convert_subsections(
-    nodes: List[Dict[str, Any]],
+    nodes: list[dict[str, Any]],
     doc_id: str,
     parent_id: str,
-    page_number_map: Dict[int, int],
-    page_layouts: Optional[List[Dict[str, Any]]] = None,
-    assigned_fn_ids: Optional[set] = None,
-) -> List[Dict[str, Any]]:
+    page_number_map: dict[int, int],
+    page_layouts: list[dict[str, Any]] | None = None,
+    assigned_fn_ids: set | None = None,
+) -> list[dict[str, Any]]:
     """Convert child PageIndex nodes → CiteIndex SubsectionNodes.
 
     Leaf nodes (no children) become a SubsectionNode wrapping a single
@@ -302,7 +302,7 @@ def _convert_subsections(
     """
     if assigned_fn_ids is None:
         assigned_fn_ids = set()
-    subsections: List[Dict[str, Any]] = []
+    subsections: list[dict[str, Any]] = []
     for node in nodes:
         pi_id = node.get("node_id", "")
         children_nodes = node.get("nodes", [])
@@ -345,28 +345,28 @@ def _convert_subsections(
 
 
 def _convert_to_locators(
-    nodes: List[Dict[str, Any]],
+    nodes: list[dict[str, Any]],
     doc_id: str,
     parent_id: str,
-    page_number_map: Dict[int, int],
-    page_layouts: Optional[List[Dict[str, Any]]] = None,
-    assigned_fn_ids: Optional[set] = None,
-) -> List[Dict[str, Any]]:
+    page_number_map: dict[int, int],
+    page_layouts: list[dict[str, Any]] | None = None,
+    assigned_fn_ids: set | None = None,
+) -> list[dict[str, Any]]:
     """Convert deepest PageIndex nodes → CiteIndex LocatorNodes."""
-    locators: List[Dict[str, Any]] = []
+    locators: list[dict[str, Any]] = []
     for node in nodes:
         locators.append(_make_locator(node, doc_id, parent_id, page_number_map, page_layouts, assigned_fn_ids))
     return locators
 
 
 def _make_locator(
-    node: Dict[str, Any],
+    node: dict[str, Any],
     doc_id: str,
     parent_id: str,
-    page_number_map: Dict[int, int],
-    page_layouts: Optional[List[Dict[str, Any]]] = None,
-    assigned_fn_ids: Optional[set] = None,
-) -> Dict[str, Any]:
+    page_number_map: dict[int, int],
+    page_layouts: list[dict[str, Any]] | None = None,
+    assigned_fn_ids: set | None = None,
+) -> dict[str, Any]:
     """Build a single CiteIndex LocatorNode from a PageIndex leaf node."""
     pi_id = node.get("node_id", "")
     start_page = _map_page(node.get("start_index"), page_number_map)
@@ -399,10 +399,10 @@ def _make_locator(
 
 
 def _build_level0(
-    csl_data: Dict[str, Any],
+    csl_data: dict[str, Any],
     doc_id: str,
-    merkle_root: Optional[str] = None,
-) -> Dict[str, Any]:
+    merkle_root: str | None = None,
+) -> dict[str, Any]:
     """Build CiteIndex level_0 (citation root) from CSL-JSON metadata."""
     return {
         "id": csl_data.get("id", doc_id),

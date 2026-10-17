@@ -259,7 +259,6 @@ def test_loc_entry_title_not_seeded_without_loc_anchor():
 
 def test_garbled_pattern_title_is_not_filled(monkeypatch):
     """The C1 pattern layer must not pin OCR garble as a title (astudy)."""
-    import json
     from citeindex.ingestion.pipelines import dspy_extract
 
     def locate_predict(**kwargs):

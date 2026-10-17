@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import dspy
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def select_source_evidence(
     source_text: str,
     budget: int = 8000,
-    region_hints: Optional[List[str]] = None,
+    region_hints: list[str] | None = None,
 ) -> str:
     """Select front matter plus later identity-bearing regions within a budget."""
     if len(source_text) <= budget:
@@ -38,9 +38,9 @@ def select_source_evidence(
     return "\n\n[additional source evidence]\n\n".join(chunks)
 
 
-def build_source_blocks(page_paragraphs: List[Any]) -> List[Dict[str, Any]]:
+def build_source_blocks(page_paragraphs: list[Any]) -> list[dict[str, Any]]:
     """Create physical-page blocks; printed page labels never replace coordinates."""
-    blocks: List[Dict[str, Any]] = []
+    blocks: list[dict[str, Any]] = []
     for physical_page_index, paragraphs in enumerate(page_paragraphs):
         page_index = physical_page_index + 1
         if isinstance(paragraphs, tuple) and len(paragraphs) == 2:
@@ -61,7 +61,7 @@ def build_source_blocks(page_paragraphs: List[Any]) -> List[Dict[str, Any]]:
     return blocks
 
 
-def gather_evidence_candidates(source_blocks: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
+def gather_evidence_candidates(source_blocks: list[dict[str, Any]], query: str = "") -> list[dict[str, Any]]:
     """Gather source blocks and rank them lexically; no extra model call required."""
     terms = {term.casefold() for term in re.findall(r"[\w\u3400-\u9fff]+", query) if len(term) > 2}
     anchors = {block.get("physical_page_index") for block in source_blocks
@@ -86,11 +86,11 @@ def gather_evidence_candidates(source_blocks: List[Dict[str, Any]], query: str =
     return sorted(candidates, key=lambda item: (-item["score"], item.get("physical_page_index", 0), item["_source_order"]))
 
 
-def select_candidate_regions(pageindex_result: Optional[Dict[str, Any]], max_regions: int = 12) -> List[Dict[str, Any]]:
+def select_candidate_regions(pageindex_result: dict[str, Any] | None, max_regions: int = 12) -> list[dict[str, Any]]:
     """Flatten PageIndex ranges into retrieval hints without treating summaries as evidence."""
     if not pageindex_result:
         return []
-    regions: List[Dict[str, Any]] = []
+    regions: list[dict[str, Any]] = []
 
     def visit(nodes: Any) -> None:
         for node in nodes or []:
@@ -167,18 +167,18 @@ class LocateBibliographicPages(dspy.Signature):
     quote establishing its role. Give type_evidence as block_id/quote spans.
     If evidence is insufficient return unknown; never guess from a filename.
     """
-    page_blocks: List[Dict[str, Any]] = dspy.InputField()
+    page_blocks: list[dict[str, Any]] = dspy.InputField()
     type_hint: str = dspy.InputField(desc="Weak heuristic hint; not evidence.")
     type_override: str = dspy.InputField(desc="Explicit user choice, if supplied. Use it when compatible with evidence; otherwise return unknown.")
     document_type: str = dspy.OutputField()
-    type_evidence: List[Dict[str, str]] = dspy.OutputField()
-    selected_pages: List[Dict[str, Any]] = dspy.OutputField()
+    type_evidence: list[dict[str, str]] = dspy.OutputField()
+    selected_pages: list[dict[str, Any]] = dspy.OutputField()
 
 
 def _pages_from_blocks(blocks):
     """Group blocks into frontmatter-style page dicts {"page": 1-based, "text"}."""
-    pages: List[Dict[str, Any]] = []
-    by_index: Dict[int, List[str]] = {}
+    pages: list[dict[str, Any]] = []
+    by_index: dict[int, list[str]] = {}
     for block in blocks:
         index = block.get("physical_page_index")
         if isinstance(index, int):
@@ -297,13 +297,13 @@ class ExtractDocumentMetadata(dspy.Signature):
     Omit unknown fields. For each value cite a block_id and exact supporting quote.
     A quoted reference to another work is NOT evidence of the host's identity.
     """
-    source_blocks: List[Dict[str, Any]] = dspy.InputField()
-    bibliographic_pages: List[Dict[str, Any]] = dspy.InputField(
+    source_blocks: list[dict[str, Any]] = dspy.InputField()
+    bibliographic_pages: list[dict[str, Any]] = dspy.InputField(
         desc="Selected pages with physical page, bibliographic role and evidence quote; use these roles to identify the host title and contributors.")
     doc_type: str = dspy.InputField(desc="Heuristic hint, not authoritative classification.")
-    missing_fields: List[str] = dspy.InputField()
-    csl: Dict[str, Any] = dspy.OutputField(desc="CSL metadata: typed name arrays, issued date-parts, other fields strings.")
-    field_evidence: Dict[str, Any] = dspy.OutputField(desc="CSL field -> {block_id, quote} or list of exact spans when names/title cross blocks. No invented IDs or quotations.")
+    missing_fields: list[str] = dspy.InputField()
+    csl: dict[str, Any] = dspy.OutputField(desc="CSL metadata: typed name arrays, issued date-parts, other fields strings.")
+    field_evidence: dict[str, Any] = dspy.OutputField(desc="CSL field -> {block_id, quote} or list of exact spans when names/title cross blocks. No invented IDs or quotations.")
 
 
 class ReconcileMetadata(dspy.Signature):
@@ -344,7 +344,7 @@ class ReconcileMetadata(dspy.Signature):
 # Author parsing
 # ---------------------------------------------------------------------------
 
-def _parse_authors(author_str: str) -> List[Dict[str, str]]:
+def _parse_authors(author_str: str) -> list[dict[str, str]]:
     """Parse an author string into a CSL author list.
 
     Handles:
@@ -358,7 +358,7 @@ def _parse_authors(author_str: str) -> List[Dict[str, str]]:
 
     # Step 1: split on semicolons (universal delimiter)
     segments = re.split(r"[;；]", author_str)
-    authors: List[Dict[str, str]] = []
+    authors: list[dict[str, str]] = []
 
     for segment in segments:
         segment = segment.strip()
@@ -388,7 +388,7 @@ def _parse_authors(author_str: str) -> List[Dict[str, str]]:
     return authors
 
 
-def _parse_single_western_name(name: str) -> List[Dict[str, str]]:
+def _parse_single_western_name(name: str) -> list[dict[str, str]]:
     """Parse a single Western-style name into CSL format."""
     name = name.strip()
     if not name:
@@ -441,12 +441,12 @@ _KEYWORD_LABELS = re.compile(
     re.IGNORECASE,
 )
 
-def _get_text(item: Dict[str, Any]) -> str:
+def _get_text(item: dict[str, Any]) -> str:
     """Extract text from a content_list item."""
     return (item.get("text") or "").strip()
 
 
-def _extract_doi(texts: List[str]) -> Optional[str]:
+def _extract_doi(texts: list[str]) -> str | None:
     """Find a DOI in a list of text strings."""
     for t in texts:
         m = _DOI_RE.search(t)
@@ -456,7 +456,7 @@ def _extract_doi(texts: List[str]) -> Optional[str]:
     return None
 
 
-def _extract_abstract(items: List[Dict[str, Any]], start_idx: int) -> Optional[str]:
+def _extract_abstract(items: list[dict[str, Any]], start_idx: int) -> str | None:
     """Starting from *start_idx*, collect contiguous text as abstract."""
     text = _get_text(items[start_idx])
     body = _ABSTRACT_LABELS.sub("", text).strip()
@@ -476,7 +476,7 @@ def _extract_abstract(items: List[Dict[str, Any]], start_idx: int) -> Optional[s
     return body.strip() if body.strip() else None
 
 
-def _extract_keywords(text: str) -> Optional[str]:
+def _extract_keywords(text: str) -> str | None:
     """Return keyword string from a keyword-labelled block.
 
     Stops before Chinese bibliographic codes like 中图分类号, 文献标识码, 文章编号.
@@ -490,7 +490,7 @@ def _extract_keywords(text: str) -> Optional[str]:
     return body if body else None
 
 
-def _parse_article_code(text: str) -> Dict[str, Any]:
+def _parse_article_code(text: str) -> dict[str, Any]:
     """Parse Chinese article code into ISSN, year, issue, page range."""
     m = _ARTICLE_CODE_RE.search(text)
     if not m:
@@ -507,7 +507,7 @@ def _parse_article_code(text: str) -> Dict[str, Any]:
     }
 
 
-def _extract_journal_from_header(text: str) -> Optional[str]:
+def _extract_journal_from_header(text: str) -> str | None:
     """Extract journal name from running header like 《西域研究》2022年第1期.
 
     Only accept short blocks (< 80 chars) that look like actual running headers,
@@ -521,7 +521,7 @@ def _extract_journal_from_header(text: str) -> Optional[str]:
     return None
 
 
-def _extract_year_issue_from_header(text: str) -> Dict[str, Any]:
+def _extract_year_issue_from_header(text: str) -> dict[str, Any]:
     """Extract year and issue from running header."""
     m = _CN_HEADER_YEAR_ISSUE_RE.search(text)
     if not m:
@@ -533,7 +533,7 @@ def _extract_year_issue_from_header(text: str) -> Dict[str, Any]:
     }
 
 
-def _extract_page_from_block(text: str) -> Optional[int]:
+def _extract_page_from_block(text: str) -> int | None:
     """Try each page-number pattern against *text*, return int or None."""
     for pat in _PAGE_NUM_PATTERNS:
         m = pat.search(text)
@@ -552,9 +552,9 @@ def _extract_page_from_block(text: str) -> Optional[int]:
 # ---------------------------------------------------------------------------
 
 def extract_metadata_from_content_list(
-    content_list: List[Dict],
-    discarded_blocks: Optional[List[Dict]] = None,
-) -> Dict[str, Any]:
+    content_list: list[dict],
+    discarded_blocks: list[dict] | None = None,
+) -> dict[str, Any]:
     """Pattern-based extraction from MinerU content_list. Returns CSL dict.
 
     Parameters
@@ -568,15 +568,15 @@ def extract_metadata_from_content_list(
     if not content_list:
         return {}
 
-    csl: Dict[str, Any] = {}
-    all_texts: List[str] = [_get_text(it) for it in content_list]
-    discarded_texts: List[str] = (
+    csl: dict[str, Any] = {}
+    all_texts: list[str] = [_get_text(it) for it in content_list]
+    discarded_texts: list[str] = (
         [_get_text(b) for b in discarded_blocks] if discarded_blocks else []
     )
     combined_texts = all_texts + discarded_texts
 
     # --- Title: first text_level==1 on page_idx 0 --------------------------
-    title_idx: Optional[int] = None
+    title_idx: int | None = None
     for i, item in enumerate(content_list):
         if item.get("page_idx", -1) == 0 and item.get("text_level") == 1:
             text = _get_text(item)
@@ -661,7 +661,7 @@ def extract_metadata_from_content_list(
 
     # --- Page numbers from discarded blocks ---------------------------------
     if "page" not in csl and discarded_texts:
-        page_nums: List[int] = []
+        page_nums: list[int] = []
         for t in discarded_texts:
             pn = _extract_page_from_block(t)
             if pn is not None:
@@ -679,8 +679,8 @@ def extract_metadata_from_content_list(
 # ---------------------------------------------------------------------------
 
 def extract_page_numbers_from_content_list(
-    content_list: List[Dict],
-) -> Dict[int, int]:
+    content_list: list[dict],
+) -> dict[int, int]:
     """Map page_idx → actual journal page number from discarded blocks.
 
     Scans discarded blocks for page-number patterns
@@ -689,7 +689,7 @@ def extract_page_numbers_from_content_list(
     numbers from footnote references or unrelated pages.
     """
     # Collect all candidates per page_idx: {page_idx: [candidate_nums]}
-    candidates: Dict[int, List[int]] = {}
+    candidates: dict[int, list[int]] = {}
 
     for item in content_list:
         page_idx = item.get("page_idx")
@@ -718,8 +718,8 @@ def extract_page_numbers_from_content_list(
 
 
 def _select_continuous_sequence(
-    candidates: Dict[int, List[int]],
-) -> Dict[int, int]:
+    candidates: dict[int, list[int]],
+) -> dict[int, int]:
     """Pick the best set of page numbers that forms a continuous sequence.
 
     For each page_idx that has candidates, try to find a consistent offset
@@ -741,8 +741,8 @@ def _select_continuous_sequence(
     best_offset, best_count = offset_votes.most_common(1)[0]
 
     # Build final map using this offset — only include pages that agree
-    page_map: Dict[int, int] = {}
-    for item_list in candidates.values():
+    page_map: dict[int, int] = {}
+    for _item_list in candidates.values():
         pass  # just need the keys
     for page_idx, nums in candidates.items():
         expected = page_idx + best_offset
@@ -769,12 +769,12 @@ def _select_continuous_sequence(
 # ---------------------------------------------------------------------------
 
 def extract_metadata_with_dspy_fallback(
-    content_list: List[Dict],
+    content_list: list[dict],
     mineru_markdown: str,
     doc_type: str,
-    config: Optional[IngestionConfig] = None,
-    discarded_blocks: Optional[List[Dict]] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+    discarded_blocks: list[dict] | None = None,
+) -> dict[str, Any]:
     """Pattern first, DSPy fallback for missing critical fields (title/author).
 
     Returns a CSL-compatible dict.
@@ -834,7 +834,7 @@ def _filter_repeated_lines(blocks, ranked, scan_ranked):
     if not blocks:
         return blocks, ranked
     try:
-        from .frontmatter import repeated_lines, _normalize_block_key
+        from .frontmatter import _normalize_block_key, repeated_lines
         repeated = repeated_lines(_pages_from_blocks(
             [b for b in blocks if isinstance(b.get("physical_page_index"), int)]))
         if not repeated:
@@ -991,7 +991,7 @@ def _roman_year(text: str):
     values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
     num = m.group("num")
     total = sum(values[c] for c in num)
-    for a, b in zip(num, num[1:]):
+    for a, b in zip(num, num[1:], strict=False):
         if values[a] < values[b]:
             total -= 2 * values[a]
     return total if 1400 <= total <= 2030 else None
@@ -1468,13 +1468,13 @@ def _equivalent_candidate_values(csl_field, deterministic, llm):
 def _run_dspy_extraction(
     source_text: str,
     doc_type: str,
-    config: Optional[IngestionConfig] = None,
-    region_hints: Optional[List[str]] = None,
-    source_blocks: Optional[List[Dict[str, Any]]] = None,
-    candidate_regions: Optional[List[Dict[str, Any]]] = None,
-    total_pages: Optional[int] = None,
-    content_list: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+    region_hints: list[str] | None = None,
+    source_blocks: list[dict[str, Any]] | None = None,
+    candidate_regions: list[dict[str, Any]] | None = None,
+    total_pages: int | None = None,
+    content_list: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Locate/classify PDF pages, extract and validate, with at most one refinement."""
     from ..citation_verification import HOST_FIELDS, validate_block_evidence
     from ..csl import evaluation_fields
@@ -1483,7 +1483,7 @@ def _run_dspy_extraction(
     blocks = source_blocks if source_blocks is not None else [
         {"id": f"text_{i}", "text": text, "char_start": start}
         for i, (start, text) in enumerate(
-            ((m.start(), m.group()) for m in re.finditer(r"[^\n]+", source_text))
+            (m.start(), m.group()) for m in re.finditer(r"[^\n]+", source_text)
         ) if text.strip()
     ]
     if not blocks:
@@ -1532,7 +1532,7 @@ def _run_dspy_extraction(
     # LLM-invented subtitle: the composed title would then diverge.
     if any(csl_field == "title" and cand.get("_no_subtitle") for csl_field, cand in seeded):
         profile.discard("subtitle")
-    carry = []
+    carry: list[dict] = []
     last_values = None
     try:
         if lm is None:
@@ -1540,7 +1540,7 @@ def _run_dspy_extraction(
         predictor = dspy.Predict(ExtractDocumentMetadata)
         for attempt in range(2):
             selected, remaining = list(carry), 12000 - sum(len(block["text"]) for block in carry)
-            page_allowance = {}
+            page_allowance: dict[int, int] = {}
             page_count = len({b.get("physical_page_index") for b in ranked})
             for block in ranked:
                 if remaining <= 0:
@@ -1629,23 +1629,23 @@ def _run_dspy_extraction(
 def extract_metadata_from_mineru(
     mineru_markdown: str,
     doc_type: str,
-    config: Optional[IngestionConfig] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+) -> dict[str, Any]:
     """Legacy entry point — delegates to DSPy extraction directly."""
     return _run_dspy_extraction(mineru_markdown, doc_type, config)
 
 
 def extract_metadata_with_dspy_priority(
-    content_list: List[Dict],
+    content_list: list[dict],
     normalized_markdown: str,
     doc_type: str,
-    config: Optional[IngestionConfig] = None,
-    discarded_blocks: Optional[List[Dict]] = None,
-    source_blocks: Optional[List[Dict[str, Any]]] = None,
-    candidate_regions: Optional[List[Dict[str, Any]]] = None,
-    region_hints: Optional[List[str]] = None,
-    total_pages: Optional[int] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+    discarded_blocks: list[dict] | None = None,
+    source_blocks: list[dict[str, Any]] | None = None,
+    candidate_regions: list[dict[str, Any]] | None = None,
+    region_hints: list[str] | None = None,
+    total_pages: int | None = None,
+) -> dict[str, Any]:
     """Pattern extraction followed by DSPy, allowing DSPy to overwrite fields.
 
     This is intended for scanned-document backends where structured OCR output
@@ -1710,11 +1710,11 @@ def extract_metadata_with_dspy_priority(
 # ---------------------------------------------------------------------------
 
 def reconcile_grobid_and_dspy(
-    grobid_csl: Dict[str, Any],
-    pattern_dspy_csl: Dict[str, Any],
+    grobid_csl: dict[str, Any],
+    pattern_dspy_csl: dict[str, Any],
     doc_type: str,
-    config: Optional[IngestionConfig] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+) -> dict[str, Any]:
     """Merge GROBID metadata with pattern+DSPy metadata.
 
     Strategy:
@@ -1746,8 +1746,8 @@ def reconcile_grobid_and_dspy(
         primary, secondary = grobid_csl, pattern_dspy_csl
         primary_label, secondary_label = "grobid", "pattern_dspy"
 
-    merged: Dict[str, Any] = {}
-    provenance: Dict[str, str] = {}
+    merged: dict[str, Any] = {}
+    provenance: dict[str, str] = {}
 
     simple_fields = [
         "title", "publisher", "volume", "issue", "page", "DOI",
@@ -1798,6 +1798,6 @@ def reconcile_grobid_and_dspy(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _set_if_present(d: Dict[str, Any], key: str, value: Any) -> None:
+def _set_if_present(d: dict[str, Any], key: str, value: Any) -> None:
     if value and isinstance(value, str) and value.strip():
         d[key] = value.strip()

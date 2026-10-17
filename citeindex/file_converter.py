@@ -1,16 +1,15 @@
+import logging
 import os
 import subprocess
-import logging
 import tempfile
-from typing import Optional, List
 
 
-def _temporary_pdf_path(prefix: str, directory: Optional[str] = None) -> str:
+def _temporary_pdf_path(prefix: str, directory: str | None = None) -> str:
     fd, path = tempfile.mkstemp(prefix=prefix, suffix=".pdf", dir=directory)
     os.close(fd)
     return path
 
-def parse_page_range(page_range_str: str, total_pages: int) -> List[int]:
+def parse_page_range(page_range_str: str, total_pages: int) -> list[int]:
     """
     Parse a page range string (e.g., "1-5, -3") into a sorted list of 1-based page numbers.
     Returns an empty list if the range is invalid or empty.
@@ -72,7 +71,7 @@ def parse_page_range(page_range_str: str, total_pages: int) -> List[int]:
     # Return sorted list of 1-based page numbers
     return sorted(list(pages_to_process))
 
-def convert_to_pdf(file_path: str) -> Optional[str]:
+def convert_to_pdf(file_path: str) -> str | None:
     """
     Converts a document to a temporary PDF file using LibreOffice or ddjvu.
     Returns the path to the temporary PDF, or None if the conversion fails.
@@ -136,7 +135,7 @@ def convert_to_pdf(file_path: str) -> Optional[str]:
         logging.error(f"An unexpected error occurred during file conversion: {e}")
         return None
 
-def convert_djvu_to_pdf(djvu_path: str, temp_dir: str) -> Optional[str]:
+def convert_djvu_to_pdf(djvu_path: str, temp_dir: str) -> str | None:
     """
     Converts a DJVU file to PDF using ddjvu, only converting first 10 pages to avoid memory issues.
     Returns the path to the temporary PDF, or None if the conversion fails.
@@ -182,7 +181,7 @@ def convert_djvu_to_pdf(djvu_path: str, temp_dir: str) -> Optional[str]:
         logging.error(f"An unexpected error occurred during DJVU conversion: {e}")
         return None
 
-def convert_djvu_to_pdf_range(djvu_path: str, page_range: str, num_pages: int) -> Optional[str]:
+def convert_djvu_to_pdf_range(djvu_path: str, page_range: str, num_pages: int) -> str | None:
     """
     Converts a specified page range of a DJVU file to PDF using ddjvu.
     Returns the path to the temporary PDF, or None if the conversion fails.
@@ -242,8 +241,7 @@ def count_djvu_pages(djvu_path: str) -> int:
     try:
         cmd = ["djvudump", djvu_path]
         result = subprocess.run(
-            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            timeout=60, start_new_session=True,
+            cmd, text=True, capture_output=True, timeout=60, start_new_session=True,
         )
         
         if result.returncode == 0:
@@ -328,7 +326,7 @@ def count_office_document_pages(doc_path: str) -> int:
         logging.error(f"Error counting office document pages: {e}")
         return 0
 
-def convert_pymupdf_to_pdf_range(doc_path: str, page_range: str, num_pages: int) -> Optional[str]:
+def convert_pymupdf_to_pdf_range(doc_path: str, page_range: str, num_pages: int) -> str | None:
     """
     Extract specified page range from PyMuPDF document to a new PDF.
     Returns the path to the temporary PDF, or None if the conversion fails.
@@ -371,7 +369,7 @@ def convert_pymupdf_to_pdf_range(doc_path: str, page_range: str, num_pages: int)
         logging.error(f"An unexpected error occurred during PyMuPDF page range extraction: {e}")
         return None
 
-def convert_office_to_pdf_range(doc_path: str, page_range: str, num_pages: int) -> Optional[str]:
+def convert_office_to_pdf_range(doc_path: str, page_range: str, num_pages: int) -> str | None:
     """
     Convert specified page range from Office document to PDF using LibreOffice.
     Returns the path to the temporary PDF, or None if the conversion fails.

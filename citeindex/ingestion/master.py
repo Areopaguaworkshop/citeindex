@@ -1,19 +1,19 @@
-import json
 import hashlib
+import json
 import logging
 import os
 import shutil
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
-from .deterministic import hash_payload
-from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, PipelineResult
-from .markdown_export import write_library_markdown
-from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
-from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
 from .citation_verification import verify_citation_metadata
+from .deterministic import hash_payload
+from .markdown_export import write_library_markdown
+from .models import IngestionConfig, IngestionFailure, IngestionLogEntry, PipelineResult
 from .online_enrichment import enrich_metadata
+from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
+from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
 from .url_security import UnsafeUrlError, validate_public_url
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,8 @@ class CiteIndexIngestionOrchestrator:
     def ingest(
         self,
         input_ref: str,
-        config: Optional[IngestionConfig] = None,
-    ) -> Dict[str, Any]:
+        config: IngestionConfig | None = None,
+    ) -> dict[str, Any]:
         cfg = config or IngestionConfig()
         cleanup_paths: list[str] = []
 
@@ -295,15 +295,15 @@ class CiteIndexIngestionOrchestrator:
 
     def _apply_repair_proposal(
         self,
-        csl: Dict[str, Any],
+        csl: dict[str, Any],
         proposal_path: str,
         input_ref: str,
         sub_result: PipelineResult,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Apply only quote-backed proposals, then use normal finalization."""
-        with open(proposal_path, "r", encoding="utf-8") as handle:
+        with open(proposal_path, encoding="utf-8") as handle:
             payload = json.load(handle)
-        from .citation_verification import valid_host_value, validate_block_evidence, _text_items, _find_evidence
+        from .citation_verification import _find_evidence, _text_items, valid_host_value, validate_block_evidence
         if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
             raise ValueError("repair proposal must contain a proposals array")
         source_path = sub_result.extra.get("source_snapshot_path") or input_ref
@@ -320,7 +320,8 @@ class CiteIndexIngestionOrchestrator:
         for proposal in payload["proposals"]:
             if not isinstance(proposal, dict) or proposal.get("status") != "proposed":
                 raise ValueError("each repair entry must have status=proposed")
-            field, value = proposal.get("field"), proposal.get("proposed_value")
+            field: Any = proposal.get("field")
+            value: Any = proposal.get("proposed_value")
             if not valid_host_value(field, value):
                 raise ValueError("invalid host metadata field or value")
             if "old_value" not in proposal or proposal["old_value"] != csl.get(field):
@@ -355,7 +356,7 @@ class CiteIndexIngestionOrchestrator:
         sub_result.extra["citation_repair"] = {"source_sha256": digest.hexdigest(), "applied": applied}
         return repaired
 
-    def detect_resource_type(self, input_ref: str, config: Optional[IngestionConfig] = None) -> tuple[str, str]:
+    def detect_resource_type(self, input_ref: str, config: IngestionConfig | None = None) -> tuple[str, str]:
         parsed = urlparse(input_ref)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
             try:
@@ -388,7 +389,7 @@ class CiteIndexIngestionOrchestrator:
         return "unsupported", input_ref
 
     def _pdf_kind(
-        self, pdf_path: str, force_kind: Optional[str] = None,
+        self, pdf_path: str, force_kind: str | None = None,
         strip_existing_ocr: bool = False,
     ) -> str:
         """Classify a PDF as digital, scanned, or mixed.
@@ -411,7 +412,7 @@ class CiteIndexIngestionOrchestrator:
         str
             One of 'digital_pdf', 'scanned_pdf', or 'mixed_pdf'.
         """
-        from .pdf_classifier import classify_pdf, DocumentKind
+        from .pdf_classifier import DocumentKind, classify_pdf
         logger.info("Classifying PDF: %s (force_kind=%s)", os.path.basename(pdf_path), force_kind)
         force_doc_kind = None
         if force_kind == "force_ocr":
@@ -441,12 +442,12 @@ class CiteIndexIngestionOrchestrator:
                         classification.empty_page_count)
         return kind
 
-    def _convert_office_to_pdf(self, doc_path: str, config: IngestionConfig) -> Optional[str]:
+    def _convert_office_to_pdf(self, doc_path: str, config: IngestionConfig) -> str | None:
         """Convert Office document to PDF using legacy file_converter."""
         from ..file_converter import convert_to_pdf
         return convert_to_pdf(doc_path)
 
-    def _convert_djvu_to_pdf(self, doc_path: str, config: IngestionConfig) -> Optional[str]:
+    def _convert_djvu_to_pdf(self, doc_path: str, config: IngestionConfig) -> str | None:
         """Convert DJVU document to PDF using legacy file_converter."""
         from ..file_converter import convert_to_pdf
         return convert_to_pdf(doc_path)
@@ -473,10 +474,10 @@ class CiteIndexIngestionOrchestrator:
 
     def standardize_csl_json(
         self,
-        csl_json: Dict[str, Any],
-        merkle_tree: Dict[str, Any],
+        csl_json: dict[str, Any],
+        merkle_tree: dict[str, Any],
         source_type: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         standardized = dict(csl_json)
         merkle_root = merkle_tree.get("root")
         # Artifact identity must follow the source content as well as its
@@ -487,16 +488,16 @@ class CiteIndexIngestionOrchestrator:
         standardized["content_hash"] = content_hash
         standardized["merkle_root"] = merkle_root
         standardized["source_type"] = source_type
-        standardized["ingestion_timestamp"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        standardized["ingestion_timestamp"] = datetime.now(UTC).replace(microsecond=0).isoformat()
         return standardized
 
     def log_ingestion(
         self,
         input_ref: str,
         resource_type: str,
-        standardized_csl: Dict[str, Any],
+        standardized_csl: dict[str, Any],
         result: PipelineResult,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         entry = IngestionLogEntry(
             input_ref=input_ref,
             resource_type=resource_type,
@@ -513,29 +514,29 @@ class CiteIndexIngestionOrchestrator:
 
     _CONTENT_HASHES_FILE = "_url_content_hashes.json"
 
-    def _load_content_hashes(self) -> Dict[str, str]:
+    def _load_content_hashes(self) -> dict[str, str]:
         """Load URL → content-hash mapping from corpus root."""
         path = os.path.join(self.corpus_root, self._CONTENT_HASHES_FILE)
         if not os.path.isfile(path):
             return {}
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def _save_content_hashes(self, hashes: Dict[str, str]) -> None:
+    def _save_content_hashes(self, hashes: dict[str, str]) -> None:
         """Persist URL → content-hash mapping to corpus root."""
         write_json(os.path.join(self.corpus_root, self._CONTENT_HASHES_FILE), hashes)
 
     def ingest_all_urls(
         self,
         root_url: str,
-        config: Optional[IngestionConfig] = None,
+        config: IngestionConfig | None = None,
         update: bool = False,
         max_depth: int = 2,
         max_pages: int = 100,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Crawl *root_url*, discover article links, and ingest each one.
 
         Parameters
@@ -564,12 +565,12 @@ class CiteIndexIngestionOrchestrator:
                      root_url, max_depth, max_pages)
         discovered = discover_article_urls(root_url, max_depth=max_depth, max_pages=max_pages)
 
-        stored_hashes: Dict[str, str] = {}
+        stored_hashes: dict[str, str] = {}
         if update:
             stored_hashes = self._load_content_hashes()
             logger.info("Update mode: %d stored content hashes", len(stored_hashes))
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         ingested_count = 0
         updated_count = 0
         skipped_count = 0
@@ -646,7 +647,7 @@ class CiteIndexIngestionOrchestrator:
         error_code: str,
         error_message: str,
         next_action: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return IngestionFailure(
             status="blocked",
             stage=stage,

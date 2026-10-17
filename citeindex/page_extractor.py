@@ -3,11 +3,11 @@
 Page number extraction utility for MinerU output
 Extracts page numbers from discarded blocks and maps them to content
 """
-import re
 import json
-from typing import Dict, List, Optional, Tuple
-from pathlib import Path
 import logging
+import re
+from pathlib import Path
+
 
 class PageNumberExtractor:
     """Extract page numbers from MinerU middle JSON and map to content"""
@@ -15,9 +15,9 @@ class PageNumberExtractor:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
-    def extract_text_from_lines(self, lines: List) -> List[str]:
+    def extract_text_from_lines(self, lines: list) -> list[str]:
         """Extract text content from lines structure"""
-        texts = []
+        texts: list[str] = []
         if not lines:
             return texts
         
@@ -40,7 +40,7 @@ class PageNumberExtractor:
         
         return texts
     
-    def extract_number_from_text(self, text: str) -> Optional[int]:
+    def extract_number_from_text(self, text: str) -> int | None:
         """Extract page numbers using comprehensive patterns with priority order"""
         if not text:
             return None
@@ -81,7 +81,7 @@ class PageNumberExtractor:
         
         return None
     
-    def _roman_to_int(self, roman: str) -> Optional[int]:
+    def _roman_to_int(self, roman: str) -> int | None:
         """Convert roman numerals to integers"""
         roman_values = {
             'I': 1, 'V': 5, 'X': 10, 'L': 50, 
@@ -103,7 +103,7 @@ class PageNumberExtractor:
         
         return total if total > 0 else None
     
-    def find_page_numbers_in_blocks(self, pdf_info: List[Dict]) -> Dict[int, int]:
+    def find_page_numbers_in_blocks(self, pdf_info: list[dict]) -> dict[int, int]:
         """Find page numbers prioritizing continuous sequences across pages"""
         block_types = ['discarded_blocks', 'preproc_blocks', 'para_blocks']
         
@@ -123,7 +123,7 @@ class PageNumberExtractor:
         self.logger.warning("No continuous page number sequence found in any block type")
         return {}
     
-    def _get_all_candidates(self, pdf_info: List[Dict], block_type: str) -> Dict[int, List[Tuple[int, str]]]:
+    def _get_all_candidates(self, pdf_info: list[dict], block_type: str) -> dict[int, list[tuple[int, str]]]:
         """Get all number candidates for each page with their source text"""
         all_candidates = {}
         
@@ -147,7 +147,7 @@ class PageNumberExtractor:
         
         return all_candidates
     
-    def _find_best_continuous_sequence(self, all_candidates: Dict[int, List[Tuple[int, str]]]) -> Dict[int, int]:
+    def _find_best_continuous_sequence(self, all_candidates: dict[int, list[tuple[int, str]]]) -> dict[int, int]:
         """Find the best continuous sequence from all candidates"""
         if len(all_candidates) < 2:
             return {}
@@ -159,13 +159,13 @@ class PageNumberExtractor:
         candidate_lists = [all_candidates[page_idx] for page_idx in page_indices]
         
         best_sequence = None
-        best_score = 0
+        best_score = 0.0
         
         # Try all combinations
         for combination in itertools.product(*candidate_lists):
             # Extract just the numbers
             sequence = {}
-            for i, (page_num, text) in enumerate(combination):
+            for i, (page_num, _text) in enumerate(combination):
                 sequence[page_indices[i]] = page_num
             
             # Score this sequence based on continuity
@@ -177,7 +177,7 @@ class PageNumberExtractor:
         
         return best_sequence if best_sequence else {}
     
-    def _score_sequence_continuity(self, sequence: Dict[int, int]) -> float:
+    def _score_sequence_continuity(self, sequence: dict[int, int]) -> float:
         """Score a sequence based on how continuous the numbers are"""
         if len(sequence) < 2:
             return 0
@@ -215,7 +215,7 @@ class PageNumberExtractor:
         
         return avg_score
     
-    def _extract_from_block_type(self, pdf_info: List[Dict], block_type: str) -> Dict[int, int]:
+    def _extract_from_block_type(self, pdf_info: list[dict], block_type: str) -> dict[int, int]:
         """Extract page numbers from specific block type with pattern priority"""
         page_numbers = {}
         
@@ -273,7 +273,7 @@ class PageNumberExtractor:
         # Default priority
         return 50
     
-    def _validate_sequence(self, page_numbers: Dict[int, int]) -> bool:
+    def _validate_sequence(self, page_numbers: dict[int, int]) -> bool:
         """Validate that page numbers form a reasonable sequence"""
         if len(page_numbers) < 2:
             return False
@@ -294,7 +294,7 @@ class PageNumberExtractor:
         
         return True
     
-    def complete_sequence(self, page_numbers: Dict[int, int], total_pages: int) -> Dict[int, int]:
+    def complete_sequence(self, page_numbers: dict[int, int], total_pages: int) -> dict[int, int]:
         """Complete missing page numbers in sequence"""
         if not page_numbers:
             return {}
@@ -323,7 +323,7 @@ class PageNumberExtractor:
         
         return complete_numbers
     
-    def extract_page_content(self, pdf_info: List[Dict], page_numbers: Dict[int, int]) -> Dict[int, Dict]:
+    def extract_page_content(self, pdf_info: list[dict], page_numbers: dict[int, int]) -> dict[int, dict]:
         """Extract content for each page with page numbers"""
         page_content = {}
         
@@ -366,10 +366,10 @@ class PageNumberExtractor:
         return page_content
 
 
-    def extract_from_csl_json(self, csl_json_path: Path, total_pdf_pages: int) -> Dict[int, int]:
+    def extract_from_csl_json(self, csl_json_path: Path, total_pdf_pages: int) -> dict[int, int]:
         """Extract page numbers from CSL JSON page field"""
         try:
-            with open(csl_json_path, 'r', encoding='utf-8') as f:
+            with open(csl_json_path, encoding='utf-8') as f:
                 csl_data = json.load(f)
             
             # Look for page field
@@ -408,7 +408,7 @@ class PageNumberExtractor:
             self.logger.error(f"Error extracting from CSL JSON: {e}")
             return {}
     
-    def _parse_page_range(self, page_field: str) -> Optional[Tuple[int, int]]:
+    def _parse_page_range(self, page_field: str) -> tuple[int, int] | None:
         """Parse page range from CSL JSON page field"""
         import re
         
@@ -434,7 +434,7 @@ class PageNumberExtractor:
         return None
 
 
-def extract_page_structure(middle_json_path: Path, csl_json_path: Optional[Path] = None) -> Tuple[Dict[int, int], Dict[int, Dict]]:
+def extract_page_structure(middle_json_path: Path, csl_json_path: Path | None = None) -> tuple[dict[int, int], dict[int, dict]]:
     """
     Main function to extract page structure, prioritizing CSL JSON page numbers
     
@@ -448,7 +448,7 @@ def extract_page_structure(middle_json_path: Path, csl_json_path: Optional[Path]
     extractor = PageNumberExtractor()
     
     try:
-        with open(middle_json_path, 'r', encoding='utf-8') as f:
+        with open(middle_json_path, encoding='utf-8') as f:
             middle_data = json.load(f)
         
         pdf_info = middle_data.get('pdf_info', [])
@@ -481,10 +481,10 @@ def extract_page_structure(middle_json_path: Path, csl_json_path: Optional[Path]
         logging.error(f"Error extracting page structure: {e}")
         return {}, {}
     
-    def extract_from_csl_json(self, csl_json_path: Path, total_pdf_pages: int) -> Dict[int, int]:
+    def extract_from_csl_json(self, csl_json_path: Path, total_pdf_pages: int) -> dict[int, int]:
         """Extract page numbers from CSL JSON page field"""
         try:
-            with open(csl_json_path, 'r', encoding='utf-8') as f:
+            with open(csl_json_path, encoding='utf-8') as f:
                 csl_data = json.load(f)
             
             # Look for page field
@@ -523,7 +523,7 @@ def extract_page_structure(middle_json_path: Path, csl_json_path: Optional[Path]
             logging.error(f"Error extracting from CSL JSON: {e}")
             return {}
     
-    def _parse_page_range(self, page_field: str) -> Optional[Tuple[int, int]]:
+    def _parse_page_range(self, page_field: str) -> tuple[int, int] | None:
         """Parse page range from CSL JSON page field"""
         import re
         

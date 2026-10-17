@@ -1,13 +1,13 @@
 """Registry-backed PDF metadata enrichment, before artifact finalization."""
 from __future__ import annotations
 
-from copy import deepcopy
-from difflib import SequenceMatcher
 import hashlib
 import json
 import re
 import time
 import unicodedata
+from copy import deepcopy
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -15,7 +15,10 @@ from urllib.parse import urljoin, urlsplit
 import requests
 
 from .citation_verification import (
-    _find_evidence, _same_value, _text_items, validate_block_evidence,
+    _find_evidence,
+    _same_value,
+    _text_items,
+    validate_block_evidence,
 )
 from .csl import HOST_FIELDS, valid_host_value
 from .deterministic import hash_payload
@@ -146,7 +149,7 @@ def _name_agreement(csl: dict, candidate: dict, field: str) -> bool:
                 if not given and literal and not re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", literal):
                     given = literal.split(",", 1)[1] if "," in literal else " ".join(literal.split()[:-1])
                 given_names.append(_normalized(given).split())
-            for left, right in zip(*given_names):
+            for left, right in zip(*given_names, strict=False):
                 if left != right and not (left[0] == right[0] and min(len(left), len(right)) == 1):
                     return False
     return matched
@@ -158,7 +161,7 @@ def match_candidate(csl: dict, candidate: dict, *, min_score: float = .90,
     left, right = _title(csl), _title(candidate)
     cjk = bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", left + right))
     score = float(left == right) if cjk else SequenceMatcher(None, left, right, autojunk=False).ratio()
-    result = {"accepted": False, "score": score, "anchors": [], "reason": "title_mismatch"}
+    result: dict[str, Any] = {"accepted": False, "score": score, "anchors": [], "reason": "title_mismatch"}
     if not left or not right or score < min_score:
         return result
     numeral_pattern = r"\d+|\b(?:volume|vol|part|tome|book)\s+([ivxlcdm]+)\b"
@@ -218,7 +221,8 @@ def _identity(result: dict) -> str:
 
 
 def select_candidate(csl: dict, results: list[dict], min_score: float = .9) -> tuple[dict | None, list[dict]]:
-    accepted, rejected = {}, []
+    accepted: dict[str, dict] = {}
+    rejected: list[dict] = []
     for result in results:
         candidate = result.get("candidate")
         if result.get("status") != "found" or not isinstance(candidate, dict):
@@ -239,7 +243,8 @@ def select_candidate(csl: dict, results: list[dict], min_score: float = .9) -> t
 
 
 def merge_registry(csl: dict, result: dict, tier: str, origin: str, match: dict) -> tuple[dict, list[dict]]:
-    merged, decisions = deepcopy(csl), []
+    merged = deepcopy(csl)
+    decisions: list[dict] = []
     provenance = result.get("provenance") or {}
     if (result.get("status") != "found" or not provenance.get("response_digest")
             or not provenance.get("request_url") or not provenance.get("provider") or tier not in {"T1", "T2", "T4"}):
@@ -273,7 +278,7 @@ def merge_registry(csl: dict, result: dict, tier: str, origin: str, match: dict)
 def resolve_citation_url(url: str, timeout: float, client: Any, domains: tuple[str, ...],
                          *, session: Any = requests) -> str | None:
     """Resolve only Google grounding redirects within the shared request budget."""
-    from .url_security import validate_public_url, UnsafeUrlError
+    from .url_security import UnsafeUrlError, validate_public_url
     deadline = time.monotonic() + timeout
     for _ in range(3):
         response = None

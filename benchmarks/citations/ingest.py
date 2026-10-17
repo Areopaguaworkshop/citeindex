@@ -89,7 +89,7 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise SystemExit("Another runner owns this predictions file; do not start a duplicate.")
+            raise SystemExit("Another runner owns this predictions file; do not start a duplicate.") from None
         prior = [json.loads(line) for line in output_path.read_text().split("\n") if line.strip()] if output_path.exists() else []
         latest = {row["id"]: row for row in prior}
         pending = [row for row in rows if row["id"] not in latest or

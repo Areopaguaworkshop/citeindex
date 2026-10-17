@@ -10,7 +10,8 @@ import json
 import logging
 import os
 import shutil
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any
 from urllib.parse import urlparse
 
 import fitz
@@ -42,7 +43,7 @@ def _get_layout_detector() -> Any:
     return LayoutDetection(model_name=_LAYOUT_MODEL_NAME)
 
 
-def _layout_result_to_dict(result: Any) -> Dict[str, Any]:
+def _layout_result_to_dict(result: Any) -> dict[str, Any]:
     payload = getattr(result, "json", result)
     if callable(payload):
         payload = payload()
@@ -56,12 +57,12 @@ def _layout_result_to_dict(result: Any) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _detect_layout_boxes(detector: Any, image_array: np.ndarray) -> List[Dict[str, Any]]:
+def _detect_layout_boxes(detector: Any, image_array: Any) -> list[dict[str, Any]]:
     raw_results = detector.predict(image_array, batch_size=1)
     if isinstance(raw_results, dict):
         raw_results = [raw_results]
 
-    boxes: List[Dict[str, Any]] = []
+    boxes: list[dict[str, Any]] = []
     for result in raw_results:
         payload = _layout_result_to_dict(result)
         for box in payload.get("boxes", []):
@@ -81,11 +82,11 @@ def _detect_layout_boxes(detector: Any, image_array: np.ndarray) -> List[Dict[st
     return boxes
 
 
-def _sort_layout_boxes(boxes: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _sort_layout_boxes(boxes: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(boxes, key=lambda box: (box["coordinate"][1], box["coordinate"][0]))
 
 
-def _normalize_bbox(bbox: List[float], width: int, height: int) -> Optional[List[float]]:
+def _normalize_bbox(bbox: list[float], width: int, height: int) -> list[float] | None:
     if len(bbox) < 4:
         return None
 
@@ -99,7 +100,7 @@ def _normalize_bbox(bbox: List[float], width: int, height: int) -> Optional[List
     return [x0, y0, x1, y1]
 
 
-def _image_bbox_to_pdf_rect(page: fitz.Page, bbox: List[float], zoom: float) -> Optional[fitz.Rect]:
+def _image_bbox_to_pdf_rect(page: fitz.Page, bbox: list[float], zoom: float) -> fitz.Rect | None:
     if len(bbox) < 4:
         return None
 
@@ -108,7 +109,7 @@ def _image_bbox_to_pdf_rect(page: fitz.Page, bbox: List[float], zoom: float) -> 
     return clipped if not clipped.is_empty else None
 
 
-def _label_matches(label: str, candidates: Tuple[str, ...]) -> bool:
+def _label_matches(label: str, candidates: tuple[str, ...]) -> bool:
     return any(candidate in label for candidate in candidates)
 
 
@@ -179,12 +180,12 @@ def _ocr_crop(page: fitz.Page, rect: fitz.Rect, prompt: str, config: IngestionCo
 def _save_image_crop(
     page: fitz.Page,
     rect: fitz.Rect,
-    bbox: List[float],
+    bbox: list[float],
     output_dir: str,
     source_id: str,
     page_idx: int,
     image_index: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     images_dir = os.path.join(output_dir, "images")
     os.makedirs(images_dir, exist_ok=True)
 
@@ -203,7 +204,7 @@ def _save_image_crop(
     }
 
 
-def _fallback_text_box(width: int, height: int) -> Dict[str, Any]:
+def _fallback_text_box(width: int, height: int) -> dict[str, Any]:
     return {
         "label": "text",
         "coordinate": [0.0, 0.0, float(width), float(height)],
@@ -219,7 +220,7 @@ def _extract_page_items(
     source_id: str,
     images_tmpdir: str,
     promote_title: bool,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], bool]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
     import numpy as np
 
     zoom = 2.0
@@ -229,8 +230,8 @@ def _extract_page_items(
     if not layout_boxes:
         layout_boxes = [_fallback_text_box(pix.width, pix.height)]
 
-    content_items: List[Dict[str, Any]] = []
-    images: List[Dict[str, Any]] = []
+    content_items: list[dict[str, Any]] = []
+    images: list[dict[str, Any]] = []
     image_index = 0
     title_promoted = False
 
@@ -250,7 +251,7 @@ def _extract_page_items(
             image_index += 1
             images.append(_save_image_crop(page, rect, bbox, images_tmpdir, source_id, page_idx, image_index))
             figure_text = _ocr_crop(page, rect, prompt, config)
-            item: Dict[str, Any] = {
+            item: dict[str, Any] = {
                 "type": "image",
                 "page_idx": page_idx,
                 "bbox": bbox,
@@ -286,7 +287,7 @@ def _extract_page_items(
 def run(
     pdf_path: str,
     source_type: str = "scanned_pdf",
-    config: Optional[IngestionConfig] = None,
+    config: IngestionConfig | None = None,
 ) -> PipelineResult:
     from .scanned_common import (
         attach_image_paths_to_content_list,
@@ -304,8 +305,8 @@ def run(
         doc = fitz.open(pdf_path)
         total_pages = doc.page_count
         try:
-            content_list: List[Dict[str, Any]] = []
-            images_list: List[Dict[str, Any]] = []
+            content_list: list[dict[str, Any]] = []
+            images_list: list[dict[str, Any]] = []
             title_promoted = False
 
             logger.info("[glm-ocr] Step 1/4: Processing %d pages with GLM-OCR...", total_pages)
@@ -337,7 +338,7 @@ def run(
         logger.info("[glm-ocr] Step 2/4: Extracting images and attaching to content...")
         if not images_list:
             shutil.rmtree(images_tmpdir, ignore_errors=True)
-            images_tmpdir = None
+            images_tmpdir = None  # type: ignore[assignment]  # None marks "already cleaned" for the trailing rmtree guard
 
         attach_image_paths_to_content_list(content_list, images_list)
         page_number_map = build_page_number_map_from_content_list(content_list)

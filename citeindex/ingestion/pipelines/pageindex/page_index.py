@@ -1,9 +1,10 @@
-import os
-import json
 import copy
+import json
 import math
+import os
 import random
 import re
+
 from .utils import *
 
 
@@ -88,7 +89,7 @@ async def check_title_appearance_in_start_concurrent(structure, page_list, model
             valid_items.append(item)
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    for item, result in zip(valid_items, results):
+    for item, result in zip(valid_items, results, strict=False):
         if isinstance(result, Exception):
             if logger:
                 logger.error(f"Error checking start for {item['title']}: {result}")
@@ -418,7 +419,7 @@ def page_list_to_group_text(page_contents, token_lengths, max_tokens=20000, over
     expected_parts_num = math.ceil(num_tokens / max_tokens)
     average_tokens_per_part = math.ceil(((num_tokens / expected_parts_num) + max_tokens) / 2)
     
-    for i, (page_content, page_tokens) in enumerate(zip(page_contents, token_lengths)):
+    for i, (page_content, page_tokens) in enumerate(zip(page_contents, token_lengths, strict=False)):
         if current_token_count + page_tokens > average_tokens_per_part:
 
             subsets.append(''.join(current_subset))
@@ -824,7 +825,7 @@ async def fix_incorrect_toc(toc_with_page_number, page_list, incorrect_results, 
         for item in incorrect_results
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    for item, result in zip(incorrect_results, results):
+    for item, result in zip(incorrect_results, results, strict=False):
         if isinstance(result, Exception):
             print(f"Processing item {item} generated an exception: {result}")
             continue
@@ -1116,7 +1117,7 @@ def validate_and_truncate_physical_indices(toc_with_page_number, page_list_lengt
     max_allowed_page = page_list_length + start_index - 1
     truncated_items = []
     
-    for i, item in enumerate(toc_with_page_number):
+    for _i, item in enumerate(toc_with_page_number):
         if item.get('physical_index') is not None:
             original_index = item['physical_index']
             if original_index > max_allowed_page:

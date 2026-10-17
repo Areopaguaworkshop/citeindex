@@ -1,10 +1,11 @@
-import os
-from citeproc import Citation, CitationItem, CitationStylesStyle, CitationStylesBibliography
-from citeproc.source.json import CiteProcJSON
-from typing import Dict, List
 import logging
+import os
 
-def get_style_path(style_name: str) -> str:
+from citeproc import Citation, CitationItem, CitationStylesBibliography, CitationStylesStyle
+from citeproc.source.json import CiteProcJSON
+
+
+def get_style_path(style_name: str) -> str | None:
     """
     Gets the full path to a CSL style file.
     Searches in the bundled 'styles' directory.
@@ -31,7 +32,7 @@ def get_style_path(style_name: str) -> str:
 
     return None # Return None if not found
 
-def format_bibliography(csl_json_data: List[Dict], style_name: str) -> (str, str):
+def format_bibliography(csl_json_data: list[dict], style_name: str) -> tuple[str, str]:
     """
     Formats a bibliography and in-text citations using citeproc-py.
     """

@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from citeindex.ingestion.models import IngestionConfig
 from citeindex.ingestion.pipelines import dspy_extract
 
-
 CIP_TEXT = (
     "图书在版编目（CIP）数据\n"
     "视觉SLAM十四讲：从理论到实践 / 高翔等著.—北京：电子工业出版社，2017.3\n"

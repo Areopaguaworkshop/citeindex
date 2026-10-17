@@ -1,7 +1,7 @@
 """Offline checks for bounded registry transport and authority identity."""
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
 
@@ -9,7 +9,6 @@ import pytest
 import requests
 
 from citeindex.ingestion.metadata_registry import RegistryClient, bounded_response_bytes
-
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures/online_enrichment/registry_responses.json").read_text())
 ISBN = "9780199535569"
@@ -189,7 +188,7 @@ def test_retry_once_transient_only_and_retry_after_budget():
 
 
 def test_http_date_and_provider_rate_limit_headers():
-    retry_date = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=30), usegmt=True)
+    retry_date = format_datetime(datetime.now(UTC) + timedelta(seconds=30), usegmt=True)
     instance, _, _ = client(Response(status=429, headers={"Retry-After": retry_date}))
     assert instance.lookup("crossref", "10.1000/one")["status"] == "budget_exhausted"
     paced, _, clock = client(Response(crossref(), headers={"X-Rate-Limit-Limit": "1", "X-Rate-Limit-Interval": "3s"}), Response(crossref("10.1000/two")))

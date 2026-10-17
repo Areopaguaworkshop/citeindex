@@ -1,7 +1,5 @@
 import math
 import re
-from typing import Dict, List
-
 
 _MARGIN_PAGE_NUMBER_RE = re.compile(
     r"^\s*(?:[-–—·•]*\s*)?(?:\d{1,4}|[ivxlcdm]{1,8})(?:\s*[-–—·•]*)?\s*$",
@@ -9,7 +7,7 @@ _MARGIN_PAGE_NUMBER_RE = re.compile(
 )
 
 
-def clean_page_texts(page_texts: List[str], window: int = 4) -> List[str]:
+def clean_page_texts(page_texts: list[str], window: int = 4) -> list[str]:
     """Strip repeated running headers/footers and standalone page numbers.
 
     Only strips short lines that repeat in the first/last few lines across
@@ -23,9 +21,9 @@ def clean_page_texts(page_texts: List[str], window: int = 4) -> List[str]:
     ]
 
 
-def _find_repeated_margin_lines(page_texts: List[str], window: int) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
-    first_seen: Dict[str, int] = {}
+def _find_repeated_margin_lines(page_texts: list[str], window: int) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    first_seen: dict[str, int] = {}
 
     for page_idx, text in enumerate(page_texts):
         seen_on_page = set()
@@ -46,7 +44,7 @@ def _find_repeated_margin_lines(page_texts: List[str], window: int) -> Dict[str,
     }
 
 
-def _margin_lines(text: str, window: int) -> List[str]:
+def _margin_lines(text: str, window: int) -> list[str]:
     nonempty_lines = [line.strip() for line in text.splitlines() if line.strip()]
     if len(nonempty_lines) <= window * 2:
         return nonempty_lines
@@ -74,7 +72,7 @@ def _is_candidate_margin_key(key: str, original_line: str) -> bool:
 
 def _strip_page_margins(
     text: str,
-    repeated_lines: Dict[str, int],
+    repeated_lines: dict[str, int],
     page_idx: int,
     window: int,
 ) -> str:
@@ -109,7 +107,7 @@ def _strip_page_margins(
 
 def _should_strip_margin_line(
     line: str,
-    repeated_lines: Dict[str, int],
+    repeated_lines: dict[str, int],
     page_idx: int,
 ) -> bool:
     if _MARGIN_PAGE_NUMBER_RE.match(line):

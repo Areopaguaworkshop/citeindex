@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
-import os
 import math
-import calendar
+import os
 import re
-from typing import Any, Dict, Iterable
+from collections.abc import Iterable
+from typing import Any, TypeGuard
 
-from .metadata_registry import extract_doi, lookup_crossref_doi, lookup_openlibrary_isbn, normalize_doi, normalize_isbn
-
+from .csl import HOST_FIELDS, NAME_FIELDS, valid_host_value
+from .metadata_registry import lookup_crossref_doi, lookup_openlibrary_isbn, normalize_doi, normalize_isbn
 
 _RECONCILABLE_FIELDS = (
     "author", "title", "subtitle", "issued", "publisher", "publisher-place",
     "container-title", "DOI", "URL", "page",
 )
 _LOCATOR_KEYS = ("node_id", "char_start", "char_end", "bbox")
-
-from .csl import HOST_FIELDS, NAME_FIELDS, valid_host_value
 
 # Whitespace-free canonical form: printed titles are frequently split across
 # OCR/extraction line breaks ("论三位一\n体", "A ND MACARIU\nS"); a quote that
@@ -70,7 +69,7 @@ def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[
         if field not in {*NAME_FIELDS, "title", "subtitle", "publisher", "publisher-place"}:
             return False
         def plain(text: str) -> str:
-            text = text.casefold().translate(str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"}))
+            text = text.casefold().translate(str.maketrans("‘’“”–—", "''\"\"--"))
             return " ".join(re.findall(r"\w+", text))
         normalized = plain(quote)
         if all(plain(part) in normalized for part in _value_strings(value)):
@@ -109,16 +108,19 @@ def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[
     if isinstance(spans, list):
         if not 1 <= len(spans) <= 8:
             return None
-        resolved = [resolve(span) for span in spans]
-        if any(span is None for span in resolved):
-            return None
+        resolved: list[dict] = []
+        for span in spans:
+            item = resolve(span)
+            if item is None:
+                return None
+            resolved.append(item)
         quote = " ".join(span["quote"] for span in resolved)
         if not supports(quote):
             return None
         return {"spans": resolved, "quote": quote, "locator": resolved[0]["locator"]}
-    resolved = resolve(spans)
-    if resolved and supports(resolved["quote"]):
-        return resolved
+    single = resolve(spans)
+    if single and supports(single["quote"]):
+        return single
     return None
 
 
@@ -127,7 +129,8 @@ def valid_source_locator(locator: Any) -> bool:
     if not isinstance(locator, dict):
         return False
     if "segment_id" in locator:
-        start, end = locator.get("start_seconds"), locator.get("end_seconds")
+        start: Any = locator.get("start_seconds")
+        end: Any = locator.get("end_seconds")
         return (isinstance(locator["segment_id"], str) and bool(locator["segment_id"])
                 and type(start) in (int, float) and type(end) in (int, float)
                 and math.isfinite(start) and math.isfinite(end) and 0 <= start < end)
@@ -139,7 +142,7 @@ def valid_source_locator(locator: Any) -> bool:
     return type(locator.get("physical_page_index")) is int and locator["physical_page_index"] >= 0
 
 
-def _locator(data: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
+def _locator(data: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     """Keep stable source coordinates when an extractor provides them."""
     result = dict(fallback)
     for key in _LOCATOR_KEYS:
@@ -150,14 +153,14 @@ def _locator(data: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _text_items(document_json: Dict[str, Any] | None, resource_type: str) -> Iterable[Dict[str, Any]]:
+def _text_items(document_json: dict[str, Any] | None, resource_type: str) -> Iterable[dict[str, Any]]:
     document = document_json or {}
     seen: set[tuple[str, str]] = set()
 
-    def emit(text: Any, locator: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
+    def emit(text: Any, locator: dict[str, Any]) -> Iterable[dict[str, Any]]:
         if not isinstance(text, str) or not text.strip():
             return []
-        item = {"quote": text.strip(), "locator": locator}
+        item: dict[str, Any] = {"quote": text.strip(), "locator": locator}
         key = (item["quote"], json.dumps(locator, sort_keys=True, default=str))
         if key in seen:
             return []
@@ -169,7 +172,7 @@ def _text_items(document_json: Dict[str, Any] | None, resource_type: str) -> Ite
             continue
         for paragraph_index, paragraph in enumerate(page.get("paragraphs", []), start=1):
             data = paragraph if isinstance(paragraph, dict) else {"text": str(paragraph)}
-            locator: Dict[str, Any] = {"paragraph_id": data.get("paragraph_id", f"p{physical_page_index + 1}_{paragraph_index}")}
+            locator: dict[str, Any] = {"paragraph_id": data.get("paragraph_id", f"p{physical_page_index + 1}_{paragraph_index}")}
             if resource_type == "url_article":
                 locator["section_index"] = physical_page_index + 1
                 if document.get("metadata", {}).get("url"):
@@ -183,7 +186,7 @@ def _text_items(document_json: Dict[str, Any] | None, resource_type: str) -> Ite
                 locator.setdefault("char_end", len(data.get("text", "")))
             yield from emit(data.get("text"), _locator(data, locator))
 
-    def walk(value: Any, inherited: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
+    def walk(value: Any, inherited: dict[str, Any]) -> Iterable[dict[str, Any]]:
         if isinstance(value, list):
             for child in value:
                 yield from walk(child, inherited)
@@ -208,7 +211,7 @@ def _text_items(document_json: Dict[str, Any] | None, resource_type: str) -> Ite
     yield from walk(document.get("nodes", []), {})
 
 
-def _evidence(document_json: Dict[str, Any] | None, resource_type: str, extra: Dict[str, Any]) -> list[Dict[str, Any]]:
+def _evidence(document_json: dict[str, Any] | None, resource_type: str, extra: dict[str, Any]) -> list[dict[str, Any]]:
     items = list(_text_items(document_json, resource_type))
     for block in extra.get("source_blocks", []):
         if isinstance(block.get("text"), str):
@@ -244,7 +247,7 @@ def _valid_locator(locator: Any) -> bool:
     return valid_source_locator(locator)
 
 
-def _evidence_rank(item: Dict[str, Any]) -> int:
+def _evidence_rank(item: dict[str, Any]) -> int:
     text = item.get("quote", "").casefold()
     if any(marker in text for marker in ("cite this", "citation", "引用格式", "若要引用")):
         return 100
@@ -287,13 +290,13 @@ def _roman_to_int(numeral: str) -> int:
     """'mdccccxlix' → 1949 (numeral already case-folded)."""
     values = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
     total = sum(values[c] for c in numeral)
-    for a, b in zip(numeral, numeral[1:]):
+    for a, b in zip(numeral, numeral[1:], strict=False):
         if values[a] < values[b]:
             total -= 2 * values[a]
     return total
 
 
-def _find_evidence(value: Any, evidence: Iterable[Dict[str, Any]]) -> Dict[str, Any] | None:
+def _find_evidence(value: Any, evidence: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
     values = [item.casefold().strip() for item in _value_strings(value) if item.strip()]
     if not values:
         return None
@@ -320,7 +323,7 @@ def _find_evidence(value: Any, evidence: Iterable[Dict[str, Any]]) -> Dict[str, 
     return None
 
 
-def _supported_evidence(field: str, value: Any, evidence: Iterable[Dict[str, Any]], blocks: list[dict]) -> Dict[str, Any] | None:
+def _supported_evidence(field: str, value: Any, evidence: Iterable[dict[str, Any]], blocks: list[dict]) -> dict[str, Any] | None:
     """Find evidence and apply metadata-role rules when it comes from a block."""
     source = _find_evidence(value, evidence)
     if not source:
@@ -340,7 +343,7 @@ def _same_value(field: str, left: Any, right: Any) -> bool:
     return left == right
 
 
-def _source_digest(document_json: Dict[str, Any] | None, resource_type: str, extra: Dict[str, Any], evidence: list[Dict[str, Any]]) -> str:
+def _source_digest(document_json: dict[str, Any] | None, resource_type: str, extra: dict[str, Any], evidence: list[dict[str, Any]]) -> str:
     path = extra.get("source_snapshot_path") or extra.get("source_path") or (document_json or {}).get("metadata", {}).get("source_path")
     if isinstance(path, str) and os.path.isfile(path):
         with open(path, "rb") as source:
@@ -348,9 +351,10 @@ def _source_digest(document_json: Dict[str, Any] | None, resource_type: str, ext
     return hashlib.sha256("\n".join(item["quote"] for item in evidence).encode()).hexdigest()
 
 
-def _model_review(field: str, draft_value: Any, registry_value: Any, evidence: list[Dict[str, Any]], model_name: str) -> Dict[str, Any] | None:
+def _model_review(field: str, draft_value: Any, registry_value: Any, evidence: list[dict[str, Any]], model_name: str) -> dict[str, Any] | None:
     """Ask the configured model about one disputed field, never the whole record."""
     import dspy
+
     from ..llm import get_llm_model
 
     lm = get_llm_model(model_name, temperature=0.0)
@@ -397,7 +401,7 @@ def _model_review(field: str, draft_value: Any, registry_value: Any, evidence: l
     return decision if isinstance(decision["rationale"], str) else None
 
 
-def _valid_model_decision(decision: Dict[str, Any] | None, field: str, draft_value: Any, registry_value: Any, evidence: list[Dict[str, Any]]) -> bool:
+def _valid_model_decision(decision: dict[str, Any] | None, field: str, draft_value: Any, registry_value: Any, evidence: list[dict[str, Any]]) -> TypeGuard[dict[str, Any]]:
     required = {"verdict", "field", "selected_value", "quote", "locator", "confidence", "rationale"}
     if not decision or not required.issubset(decision) or decision["verdict"] != "accept" or decision["field"] != field:
         return False
@@ -414,9 +418,9 @@ def _valid_model_decision(decision: Dict[str, Any] | None, field: str, draft_val
 
 
 def verify_citation_metadata(
-    csl_json: Dict[str, Any], document_json: Dict[str, Any] | None, resource_type: str,
-    extra: Dict[str, Any], config: Any, *, registry_client: Any = None,
-) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    csl_json: dict[str, Any], document_json: dict[str, Any] | None, resource_type: str,
+    extra: dict[str, Any], config: Any, *, registry_client: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Verify registry metadata; one unresolved conflict prevents all CSL changes."""
     original, proposed = dict(csl_json), dict(csl_json)
     evidence = _evidence(document_json, resource_type, extra)
@@ -432,8 +436,8 @@ def verify_citation_metadata(
         if isbn:
             registry = (registry_client.lookup("openlibrary", isbn) if registry_client is not None else
                         lookup_openlibrary_isbn(isbn, openlibrary_enabled=getattr(config, "openlibrary_enabled", True), offline_verification=config.offline_verification))
-    corrections: list[Dict[str, Any]] = []
-    needs_review: list[Dict[str, Any]] = []
+    corrections: list[dict[str, Any]] = []
+    needs_review: list[dict[str, Any]] = []
     candidate = registry.get("candidate") or {}
     for field in _RECONCILABLE_FIELDS:
         value = candidate.get(field)

@@ -13,15 +13,15 @@ CLI:
     citeindex https://example.com/article
 """
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 from citeindex.ingestion import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.models import IngestionConfig, IngestionFailure, PipelineResult
 from citeindex.ingestion.pdf_classifier import (
-    PDFClassification,
-    PageClassification,
     DocumentKind,
+    PageClassification,
     PageKind,
+    PDFClassification,
     classify_pdf,
     pdf_kind,
 )

@@ -6,21 +6,13 @@ Usage:
 """
 
 import argparse
-from email.utils import parseaddr
 import json
-import logging
 import sys
+from email.utils import parseaddr
 
 from citeindex.ingestion import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.models import IngestionConfig
-
-
-def _configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.WARNING
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+from citeindex.logging_config import configure_logging
 
 
 def _mineru_timeout_seconds(value: str) -> int:
@@ -301,8 +293,15 @@ def main() -> None:
         help="Disable verbose/debug logging",
     )
 
+    parser.add_argument(
+        "--log-format",
+        choices=["console", "json"],
+        default="console",
+        help="Log output format (default: console)",
+    )
+
     args = parser.parse_args()
-    _configure_logging(args.verbose)
+    configure_logging(args.verbose, args.log_format)
 
     # Determine force_pdf_kind from mutually exclusive flags
     force_pdf_kind = None

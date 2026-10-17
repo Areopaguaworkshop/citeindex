@@ -17,13 +17,12 @@ import logging
 import os
 import re
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import fitz
 
-from ..models import IngestionConfig, PipelineResult
 from ..deterministic import build_hierarchical_merkle_tree
-from .pdf_text_cleanup import clean_page_texts
+from ..models import IngestionConfig, PipelineResult
 from .common import (
     build_merkle_for_nodes,
     build_nodes_with_granularity,
@@ -34,6 +33,7 @@ from .common import (
     split_paragraphs,
 )
 from .layout import analyze_document_layout, analyze_document_layout_pymupdf4llm, build_page_number_map
+from .pdf_text_cleanup import clean_page_texts
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 # Step 1: PyMuPDF text extraction
 # ---------------------------------------------------------------------------
 
-def _extract_pages(pdf_path: str) -> List[Dict[str, Any]]:
+def _extract_pages(pdf_path: str) -> list[dict[str, Any]]:
     """Open PDF and return cleaned page texts for downstream processing."""
     doc = fitz.open(pdf_path)
-    pages: List[Dict[str, Any]] = []
+    pages: list[dict[str, Any]] = []
     for idx in range(doc.page_count):
         page = doc[idx]
         pages.append({
@@ -56,14 +56,14 @@ def _extract_pages(pdf_path: str) -> List[Dict[str, Any]]:
     doc.close()
 
     cleaned_texts = clean_page_texts([page["text"] for page in pages])
-    for page, cleaned_text in zip(pages, cleaned_texts):
+    for page, cleaned_text in zip(pages, cleaned_texts, strict=False):
         page["text"] = cleaned_text
     return pages
 
 
-def _extract_page_paragraphs(raw_pages: List[Dict[str, Any]]) -> List[Tuple[int, List[str]]]:
+def _extract_page_paragraphs(raw_pages: list[dict[str, Any]]) -> list[tuple[int, list[str]]]:
     """Return list of (page_num, [paragraph_texts]) from cleaned page text."""
-    result: List[Tuple[int, List[str]]] = []
+    result: list[tuple[int, list[str]]] = []
     for page in raw_pages:
         text = page.get("text", "")
         paragraphs = split_paragraphs(text)
@@ -83,13 +83,13 @@ def extract_pdf_images(
     source_id: str,
     min_width: int = 100,
     min_height: int = 100,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Extract images from a PDF and save them to output_dir/images/."""
     images_dir = os.path.join(output_dir, "images")
     os.makedirs(images_dir, exist_ok=True)
 
     doc = fitz.open(pdf_path)
-    extracted: List[Dict[str, Any]] = []
+    extracted: list[dict[str, Any]] = []
 
     for page_idx in range(doc.page_count):
         page = doc[page_idx]
@@ -135,7 +135,7 @@ def extract_pdf_images(
     return extracted
 
 
-def _get_image_bbox(page: fitz.Page, xref: int) -> Tuple[float, ...]:
+def _get_image_bbox(page: fitz.Page, xref: int) -> tuple[float, ...]:
     """Find image bbox on a page by matching xref in text blocks."""
     for block in page.get_text("dict")["blocks"]:
         if block.get("type") == 1 and block.get("image") == xref:
@@ -144,8 +144,8 @@ def _get_image_bbox(page: fitz.Page, xref: int) -> Tuple[float, ...]:
 
 
 def _embed_images_into_pages(
-    document_structure: Dict[str, Any],
-    images: List[Dict[str, Any]],
+    document_structure: dict[str, Any],
+    images: list[dict[str, Any]],
 ) -> None:
     """Add image_caption paragraphs to document_structure pages."""
     pages = document_structure.get("pages", [])
@@ -161,8 +161,8 @@ def _embed_images_into_pages(
 
 
 def _attach_layout_footnotes(
-    document_structure: Dict[str, Any],
-    page_layouts: List[Dict[str, Any]],
+    document_structure: dict[str, Any],
+    page_layouts: list[dict[str, Any]],
 ) -> None:
     """Copy layout-detected footnotes onto the matching document pages.
 
@@ -213,8 +213,8 @@ def _attach_layout_footnotes(
 
 
 def _remove_header_footer_paragraphs(
-    document_structure: Dict[str, Any],
-    page_layouts: List[Dict[str, Any]],
+    document_structure: dict[str, Any],
+    page_layouts: list[dict[str, Any]],
 ) -> None:
     """Remove running header/footer text from page body paragraphs.
 
@@ -261,8 +261,8 @@ def _remove_header_footer_paragraphs(
 
 
 def _apply_page_number_map(
-    document_structure: Dict[str, Any],
-    page_number_map: Dict[int, int],
+    document_structure: dict[str, Any],
+    page_number_map: dict[int, int],
 ) -> None:
     """Update document structure page_number values using the real printed page numbers.
 
@@ -277,7 +277,7 @@ def _apply_page_number_map(
             page["page_number"] = printed
 
 
-def _page_range_bounds(page_range: Optional[str]) -> Tuple[Optional[int], Optional[int]]:
+def _page_range_bounds(page_range: str | None) -> tuple[int | None, int | None]:
     """Parse a PageIndex page label like ``3`` or ``3-5`` into numeric bounds."""
     if not page_range:
         return None, None
@@ -292,10 +292,10 @@ def _page_range_bounds(page_range: Optional[str]) -> Tuple[Optional[int], Option
 
 
 def _pageindex_sections_to_document_tree(
-    nodes: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    nodes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Convert CiteIndex PageIndex nodes into document_json section_tree nodes."""
-    sections: List[Dict[str, Any]] = []
+    sections: list[dict[str, Any]] = []
     for node in nodes:
         heading = node.get("heading") or node.get("title")
         if not heading:
@@ -303,7 +303,7 @@ def _pageindex_sections_to_document_tree(
 
         children = _pageindex_sections_to_document_tree(node.get("children", []))
         start_page, end_page = _section_bounds(node)
-        section: Dict[str, Any] = {
+        section: dict[str, Any] = {
             "heading": heading,
             "page_range": _bounds_to_page_range(start_page, end_page),
             "children": children,
@@ -315,9 +315,9 @@ def _pageindex_sections_to_document_tree(
 
 
 def _bounds_to_page_range(
-    start_page: Optional[int],
-    end_page: Optional[int],
-) -> Optional[str]:
+    start_page: int | None,
+    end_page: int | None,
+) -> str | None:
     if start_page is None or end_page is None:
         return None
     if start_page == end_page:
@@ -325,7 +325,7 @@ def _bounds_to_page_range(
     return f"{start_page}-{end_page}"
 
 
-def _section_bounds(node: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+def _section_bounds(node: dict[str, Any]) -> tuple[int | None, int | None]:
     """Derive a node's page span from its own range plus descendant locators."""
     start_page, end_page = _page_range_bounds(node.get("page_range") or node.get("page_label"))
 
@@ -340,12 +340,12 @@ def _section_bounds(node: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]
 
 
 def _collect_pageindex_headings(
-    nodes: List[Dict[str, Any]],
+    nodes: list[dict[str, Any]],
     level: int = 2,
-    spans: Optional[List[Dict[str, Any]]] = None,
-) -> Tuple[Dict[int, List[Dict[str, Any]]], List[Dict[str, Any]]]:
+    spans: list[dict[str, Any]] | None = None,
+) -> tuple[dict[int, list[dict[str, Any]]], list[dict[str, Any]]]:
     """Build page-start heading inserts and page spans from a section tree."""
-    by_page: Dict[int, List[Dict[str, Any]]] = {}
+    by_page: dict[int, list[dict[str, Any]]] = {}
     collected_spans = spans if spans is not None else []
 
     for node in nodes:
@@ -378,8 +378,8 @@ def _collect_pageindex_headings(
 
 
 def _annotate_document_with_pageindex(
-    document_structure: Dict[str, Any],
-    ci_tree: Dict[str, Any],
+    document_structure: dict[str, Any],
+    ci_tree: dict[str, Any],
 ) -> None:
     """Inject PageIndex hierarchy into document structure for downstream export."""
     section_tree = _pageindex_sections_to_document_tree(ci_tree.get("level_1", []))
@@ -426,7 +426,7 @@ def _annotate_document_with_pageindex(
 # Step 3: GROBID extraction
 # ---------------------------------------------------------------------------
 
-def _run_grobid(pdf_path: str) -> Dict[str, Any]:
+def _run_grobid(pdf_path: str) -> dict[str, Any]:
     """Run the explicitly selected GROBID host-metadata engine only."""
     try:
         from .grobid import (
@@ -455,7 +455,7 @@ def _run_grobid(pdf_path: str) -> Dict[str, Any]:
 def run(
     pdf_path: str,
     source_type: str = "digital_pdf",
-    config: Optional[IngestionConfig] = None,
+    config: IngestionConfig | None = None,
 ) -> PipelineResult:
     cfg = config or IngestionConfig()
     source_id = make_source_id(pdf_path)
@@ -471,7 +471,7 @@ def run(
     doc_type = cfg.doc_type_override or determine_doc_type(pdf_path, num_pages)
     logger.info("Document type: %s (pages=%d)", doc_type, num_pages)
 
-    page_layouts: Optional[List[Dict[str, Any]]] = None
+    page_layouts: list[dict[str, Any]] | None = None
     # Keep raw PyMuPDF blocks for citation evidence.  The layout path replaces
     # page text with classified body paragraphs, which deliberately omit them.
     source_pages = _extract_pages(pdf_path)
@@ -500,7 +500,7 @@ def run(
             # needs clean \n\n breaks; layout gives classified blocks but
             # clean_page_texts handles repeated-header stripping).
             cleaned_texts = clean_page_texts([p.get("text", "") for p in raw_pages])
-            for page, cleaned_text in zip(raw_pages, cleaned_texts):
+            for page, cleaned_text in zip(raw_pages, cleaned_texts, strict=False):
                 page["text"] = cleaned_text
             page_paragraphs = _extract_page_paragraphs(raw_pages)
             ordered_text = "\n\n".join(layout.get("ordered_text", "") for layout in page_layouts)
@@ -515,8 +515,8 @@ def run(
         ordered_text = "\n\n".join(p["text"] for p in raw_pages)
 
     # ── Step 2: Image extraction ──────────────────────────────────────
-    pdf_images: List[Dict[str, Any]] = []
-    _images_tmpdir: Optional[str] = None
+    pdf_images: list[dict[str, Any]] = []
+    _images_tmpdir: str | None = None
     if cfg.use_layout_analysis:
         try:
             _images_tmpdir = tempfile.mkdtemp(prefix="citeindex_imgs_")
@@ -537,7 +537,7 @@ def run(
     #   - Remove any footnote text that leaked into body paragraphs
     #   - Remove any header/footer text that leaked (safety net)
     #   - Apply the page number map
-    page_number_map: Dict[int, int] = {i: i + 1 for i in range(num_pages)}
+    page_number_map: dict[int, int] = {i: i + 1 for i in range(num_pages)}
     if page_layouts is not None:
         _attach_layout_footnotes(document_structure, page_layouts)
         _remove_header_footer_paragraphs(document_structure, page_layouts)
@@ -577,7 +577,7 @@ def run(
     pageindex_tree_json = None
     if cfg.use_pageindex:
         try:
-            from .pageindex_tree import run_pageindex_tree, pageindex_to_citeindex_tree
+            from .pageindex_tree import pageindex_to_citeindex_tree, run_pageindex_tree
             pi_result = run_pageindex_tree(pdf_path, model=cfg.pageindex_model)
             if pi_result and pi_result.get("structure"):
                 pageindex_tree_json = pi_result
@@ -645,7 +645,7 @@ def run(
         merkle_tree["hierarchical_root"] = hierarchical.get("root")
         merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
 
-    document_json: Dict[str, Any] = {
+    document_json: dict[str, Any] = {
         "source_id": source_id,
         "source_type": source_type,
         "metadata": {
@@ -658,12 +658,12 @@ def run(
     }
 
     # ── Step 7: Extra (PageIndex tree + images) ─────────────────────
-    extra: Dict[str, Any] = {}
+    extra: dict[str, Any] = {}
     from .dspy_extract import build_source_blocks
     extra["source_blocks"] = source_blocks
     if pageindex_tree_json is not None:
-        from .pageindex_tree import pageindex_to_citeindex_tree
         from .dspy_extract import select_candidate_regions
+        from .pageindex_tree import pageindex_to_citeindex_tree
         extra["candidate_regions"] = select_candidate_regions(pageindex_tree_json)
         ci_tree = pageindex_to_citeindex_tree(
             pi_result=pageindex_tree_json,
@@ -703,12 +703,12 @@ def run(
 # ---------------------------------------------------------------------------
 
 def _build_flat_document_structure(
-    page_paragraphs: List[Tuple[int, List[str]]],
-) -> Dict[str, Any]:
+    page_paragraphs: list[tuple[int, list[str]]],
+) -> dict[str, Any]:
     """Build a minimal page-based document structure (no heading detection)."""
-    pages: List[Dict[str, Any]] = []
+    pages: list[dict[str, Any]] = []
     for page_num, paragraphs in page_paragraphs:
-        page_dict: Dict[str, Any] = {
+        page_dict: dict[str, Any] = {
             "page_number": page_num,
             "physical_page_index": len(pages),
             "paragraphs": [

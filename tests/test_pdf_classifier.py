@@ -9,7 +9,6 @@ from citeindex.ingestion.pdf_classifier import (
     pdf_kind,
 )
 
-
 BODY = "The existing text layer contains readable book content and should be reused. " * 4
 
 
@@ -97,6 +96,7 @@ def test_orchestrator_honors_text_reuse_and_explicit_rejection(tmp_path):
 
 def test_layout_recovers_text_when_model_returns_empty_boxes(tmp_path, monkeypatch):
     from types import SimpleNamespace
+
     from citeindex.ingestion.pipelines import layout
     document_layout = pytest.importorskip("pymupdf4llm.helpers.document_layout")
 
@@ -119,6 +119,7 @@ def test_layout_recovers_text_when_model_returns_empty_boxes(tmp_path, monkeypat
 
 def test_layout_recovers_missing_pages(tmp_path, monkeypatch):
     from types import SimpleNamespace
+
     from citeindex.ingestion.pipelines import layout
     document_layout = pytest.importorskip("pymupdf4llm.helpers.document_layout")
 

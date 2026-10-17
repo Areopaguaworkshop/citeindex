@@ -1,15 +1,15 @@
-from types import SimpleNamespace
 import os
+from types import SimpleNamespace
 
 import pytest
 
 from citeindex import file_converter
 from citeindex.ingestion.citation_verification import _find_evidence, verify_citation_metadata
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
+from citeindex.ingestion.models import IngestionConfig
 from citeindex.ingestion.pipelines.common import attach_evidence_locators
 from citeindex.ingestion.pipelines.glm_ocr import _call_ollama_generate
 from citeindex.ingestion.pipelines.media import run as run_media
-from citeindex.ingestion.models import IngestionConfig
 from citeindex.ingestion.storage import store_corpus_artifacts
 from citeindex.ingestion.url_security import UnsafeUrlError, fetch_text, validate_public_url
 

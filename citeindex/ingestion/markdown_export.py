@@ -13,7 +13,7 @@ Each ingestion produces a `.md` file in the ``library/`` folder (sibling of
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .storage import csl_folder_name, ensure_dir
 
@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 # CSL formatting helpers
 # ---------------------------------------------------------------------------
 
-def _format_authors(csl: Dict[str, Any]) -> str:
+def _format_authors(csl: dict[str, Any]) -> str:
     authors = csl.get("author") or []
-    parts: List[str] = []
+    parts: list[str] = []
     for a in authors:
         if a.get("literal"):
             parts.append(a["literal"])
@@ -36,14 +36,14 @@ def _format_authors(csl: Dict[str, Any]) -> str:
     return "; ".join(parts) if parts else "Unknown"
 
 
-def _format_year(csl: Dict[str, Any]) -> str:
+def _format_year(csl: dict[str, Any]) -> str:
     try:
         return str(csl["issued"]["date-parts"][0][0])
     except (KeyError, IndexError, TypeError):
         return "n.d."
 
 
-def _format_inline_citation(csl: Dict[str, Any]) -> str:
+def _format_inline_citation(csl: dict[str, Any]) -> str:
     """Build a full inline citation string from CSL data."""
     author = _format_authors(csl)
     title = csl.get("title", "Untitled")
@@ -71,7 +71,7 @@ def _format_inline_citation(csl: Dict[str, Any]) -> str:
         parts.append(f"*{container}*.")
 
     # Publisher block
-    pub_parts: List[str] = []
+    pub_parts: list[str] = []
     if publisher_place:
         pub_parts.append(publisher_place)
     if publisher:
@@ -97,7 +97,7 @@ def _yaml_escape(value: str) -> str:
 # Front-matter
 # ---------------------------------------------------------------------------
 
-def _build_front_matter(csl: Dict[str, Any], verification_status: Optional[str] = None) -> str:
+def _build_front_matter(csl: dict[str, Any], verification_status: str | None = None) -> str:
     lines = ["---"]
     lines.append(f"title: {_yaml_escape(csl.get('title', 'Untitled'))}")
     lines.append(f"author: {_yaml_escape(_format_authors(csl))}")
@@ -122,8 +122,8 @@ def _build_front_matter(csl: Dict[str, Any], verification_status: Optional[str] 
 # ---------------------------------------------------------------------------
 
 def _index_section_levels(
-    sections: List[Dict[str, Any]],
-    levels: Dict[str, int],
+    sections: list[dict[str, Any]],
+    levels: dict[str, int],
     base_level: int = 2,
 ) -> None:
     """Walk a section_tree and record each heading → markdown level.
@@ -153,7 +153,7 @@ def _normalize_heading_line(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip()).casefold()
 
 
-def _strip_duplicate_heading_lines(text: str, headings: List[str]) -> str:
+def _strip_duplicate_heading_lines(text: str, headings: list[str]) -> str:
     """Remove standalone heading lines already emitted as markdown headings."""
     if not text or not headings:
         return text
@@ -162,7 +162,7 @@ def _strip_duplicate_heading_lines(text: str, headings: List[str]) -> str:
     if not heading_set:
         return text
 
-    kept_lines: List[str] = []
+    kept_lines: list[str] = []
     for line in text.splitlines():
         if _normalize_heading_line(line) in heading_set:
             continue
@@ -173,21 +173,21 @@ def _strip_duplicate_heading_lines(text: str, headings: List[str]) -> str:
 
 
 def _build_body_document(
-    csl: Dict[str, Any],
-    document_json: Dict[str, Any],
+    csl: dict[str, Any],
+    document_json: dict[str, Any],
     resource_type: str,
-) -> str:
+) -> tuple[str, list[dict[str, Any]]]:
     """Build MD body for PDF and URL article documents.
 
     Handles both MinerU structure (``page.paragraphs[]`` with ``type`` field)
     and fitz legacy structure (``page.columns[].paragraphs[]`` with plain text).
     Images with ``image_path`` render as ``![caption](path)``.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     structure = document_json.get("structure", {})
     pages = structure.get("pages", [])
     section_tree = structure.get("section_tree", [])
-    footnotes_all: List[Dict[str, Any]] = []
+    footnotes_all: list[dict[str, Any]] = []
 
     author = _format_authors(csl)
     title = csl.get("title", "Untitled")
@@ -197,7 +197,7 @@ def _build_body_document(
     is_url = resource_type == "url_article"
 
     # ── Build section-tree index for heading-rich rendering ──────────
-    section_levels: Dict[str, int] = {}
+    section_levels: dict[str, int] = {}
     if section_tree:
         _index_section_levels(section_tree, section_levels, base_level=2)
 
@@ -215,7 +215,7 @@ def _build_body_document(
     cite_prefix += f", {year}"
 
     # ── Render pages ─────────────────────────────────────────────────
-    for page_idx, page in enumerate(pages):
+    for _page_idx, page in enumerate(pages):
         page_num = page.get("page_number", "?")
 
         if is_mineru:
@@ -275,7 +275,7 @@ def _build_body_document(
                 columns = [{"paragraphs": page.get("paragraphs", [])}]
 
             # Flatten columns into a single page
-            flat_paras: List[str] = []
+            flat_paras: list[str] = []
             for col in columns:
                 for para in col.get("paragraphs", []):
                     if isinstance(para, dict):
@@ -309,11 +309,11 @@ def _build_body_document(
 
 
 def _build_body_media(
-    csl: Dict[str, Any],
-    transcript_json: Dict[str, Any],
-) -> str:
+    csl: dict[str, Any],
+    transcript_json: dict[str, Any],
+) -> tuple[str, list[dict[str, Any]]]:
     """Build MD body for media (audio/video) with timestamp headers."""
-    lines: List[str] = []
+    lines: list[str] = []
     segments = transcript_json.get("segments", [])
     speaker_segments = transcript_json.get("speaker_segments", [])
 
@@ -326,7 +326,7 @@ def _build_body_media(
         return "\n".join(lines), []
 
     # Build a speaker lookup for timestamp ranges
-    def _find_speaker(start: float) -> Optional[str]:
+    def _find_speaker(start: float) -> str | None:
         for ss in speaker_segments:
             if ss["start"] <= start <= ss["end"]:
                 return ss.get("speaker")
@@ -335,7 +335,7 @@ def _build_body_media(
     # Group segments into chunks (~60 seconds each) for readability
     chunk_duration = 60.0
     chunk_start = segments[0].get("start", 0.0)
-    chunk_texts: List[str] = []
+    chunk_texts: list[str] = []
     chunk_end = chunk_start
 
     def flush_chunk():
@@ -379,7 +379,7 @@ def _build_body_media(
 # Footnotes block
 # ---------------------------------------------------------------------------
 
-def _build_footnotes_block(footnotes: List[Dict[str, Any]]) -> str:
+def _build_footnotes_block(footnotes: list[dict[str, Any]]) -> str:
     if not footnotes:
         return ""
     lines = ["---", ""]
@@ -401,15 +401,15 @@ def _build_footnotes_block(footnotes: List[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_library_markdown(
-    csl_json: Dict[str, Any],
-    document_json: Optional[Dict[str, Any]],
-    transcript_json: Optional[Dict[str, Any]],
+    csl_json: dict[str, Any],
+    document_json: dict[str, Any] | None,
+    transcript_json: dict[str, Any] | None,
     resource_type: str,
-    verification_status: Optional[str] = None,
-    rendered_citation: Optional[str] = None,
+    verification_status: str | None = None,
+    rendered_citation: str | None = None,
 ) -> str:
     """Generate a complete Markdown string for the library file."""
-    parts: List[str] = []
+    parts: list[str] = []
 
     # 1. Front-matter
     parts.append(_build_front_matter(csl_json, verification_status))
@@ -422,7 +422,7 @@ def generate_library_markdown(
     parts.append("")
 
     # 3. Body (per resource type)
-    footnotes: List[Dict[str, Any]] = []
+    footnotes: list[dict[str, Any]] = []
     if resource_type == "media" and transcript_json:
         parts.append("---")
         parts.append("")
@@ -446,12 +446,12 @@ def generate_library_markdown(
 
 def write_library_markdown(
     corpus_root: str,
-    csl_json: Dict[str, Any],
-    document_json: Optional[Dict[str, Any]],
-    transcript_json: Optional[Dict[str, Any]],
+    csl_json: dict[str, Any],
+    document_json: dict[str, Any] | None,
+    transcript_json: dict[str, Any] | None,
     resource_type: str,
-    verification_status: Optional[str] = None,
-    rendered_citation: Optional[str] = None,
+    verification_status: str | None = None,
+    rendered_citation: str | None = None,
 ) -> str:
     """Generate and write the library MD file. Returns the file path."""
     # library/ is a sibling of corpus/
@@ -483,7 +483,7 @@ def write_library_markdown(
     return md_path
 
 
-def _rewrite_image_paths(document_json: Dict[str, Any], prefix: str) -> None:
+def _rewrite_image_paths(document_json: dict[str, Any], prefix: str) -> None:
     """Rewrite image_path fields in document_json paragraphs to use relative paths.
 
     The image paths stored by the pipeline are like ``images/filename.jpeg``

@@ -1,12 +1,11 @@
-import fitz  # PyMuPDF
 import hashlib
+import os
 import subprocess
 import tempfile
-import os
-import fasttext
-import requests
-from typing import Optional
 
+import fasttext
+import fitz  # PyMuPDF
+import requests
 
 # --- FastText Model Management ---
 MODEL_DIR = os.path.expanduser("~/.cache/fasttext")
@@ -77,7 +76,7 @@ def map_lang_to_tesseract(lang_code: str) -> str:
     return mapping.get(lang_code, lang_code)
 
 # --- Language Detection ---
-def detect_language_from_scanned_pdf(pdf_path: str) -> Optional[str]:
+def detect_language_from_scanned_pdf(pdf_path: str) -> str | None:
     """Detect language from a scanned (non-searchable) PDF by OCRing one page."""
     download_fasttext_model()
     if not os.path.exists(MODEL_PATH):
@@ -171,7 +170,7 @@ def detect_language_from_scanned_pdf(pdf_path: str) -> Optional[str]:
 
 
 # --- OCR Language String Generation ---
-def get_ocr_language_string(detected_lang: Optional[str] = None) -> str:
+def get_ocr_language_string(detected_lang: str | None = None) -> str:
     """Get OCR language string with English and Simplified Chinese as priority base."""
     base_langs = "eng+chi_sim"
     if detected_lang and detected_lang not in base_langs.split("+"):

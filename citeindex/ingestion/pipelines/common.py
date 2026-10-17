@@ -2,8 +2,8 @@ import logging
 import os
 import re
 import re as _re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
 from ..deterministic import build_merkle_tree, canonicalize_text, hash_payload
 from ..models import IngestionConfig
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Individual patterns for extracting a page number from a block of text.
 # Used by both layout.py (digital PDF pipeline) and dspy_extract.py
 # (scanned/mineru pipeline) to avoid duplication.
-PAGE_NUMBER_PATTERNS: List[re.Pattern] = [
+PAGE_NUMBER_PATTERNS: list[re.Pattern] = [
     re.compile(r"[·•∙・]\s*(\d{1,4})\s*[·•∙・]"),      # · 74 ·
     re.compile(r"[-–—]\s*(\d{1,4})\s*[-–—]"),         # — 74 —
     re.compile(r"第\s*(\d{1,4})\s*[页頁]"),               # 第74页
@@ -45,13 +45,13 @@ PAGE_NUMBER_RE = re.compile(
 )
 
 
-def extract_page_number_candidates(text: str) -> List[int]:
+def extract_page_number_candidates(text: str) -> list[int]:
     """Extract candidate page numbers from a short text block.
 
     Returns a list of ints (possibly empty).  Uses ``PAGE_NUMBER_RE``
     which handles decorated, prefixed, bare, and embedded numbers.
     """
-    candidates: List[int] = []
+    candidates: list[int] = []
     for m in PAGE_NUMBER_RE.finditer(text):
         for g in m.groups():
             if g is not None:
@@ -66,7 +66,7 @@ def extract_page_number_candidates(text: str) -> List[int]:
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def slugify(value: str) -> str:
@@ -81,13 +81,13 @@ def make_source_id(input_ref: str) -> str:
     return slugify(base)
 
 
-def split_paragraphs(text: str) -> List[str]:
+def split_paragraphs(text: str) -> list[str]:
     chunks = [canonicalize_text(p) for p in re.split(r"\n\s*\n", text)]
     return [p for p in chunks if p]
 
 
-def build_nodes(source_id: str, page_paragraphs: List[Tuple[int, List[str]]]) -> List[Dict[str, Any]]:
-    nodes: List[Dict[str, Any]] = []
+def build_nodes(source_id: str, page_paragraphs: list[tuple[int, list[str]]]) -> list[dict[str, Any]]:
+    nodes: list[dict[str, Any]] = []
     for page_number, paragraphs in page_paragraphs:
         for idx, paragraph in enumerate(paragraphs, start=1):
             text = canonicalize_text(paragraph)
@@ -114,9 +114,9 @@ def build_nodes(source_id: str, page_paragraphs: List[Tuple[int, List[str]]]) ->
 
 def build_nodes_with_granularity(
     source_id: str,
-    page_paragraphs: List[Tuple[int, List[str]]],
+    page_paragraphs: list[tuple[int, list[str]]],
     is_primary: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Build nodes with granularity based on source classification.
 
     Primary sources: line-level nodes (each line is a node)
@@ -125,7 +125,7 @@ def build_nodes_with_granularity(
     if not is_primary:
         return build_nodes(source_id, page_paragraphs)
 
-    nodes: List[Dict[str, Any]] = []
+    nodes: list[dict[str, Any]] = []
     for page_number, paragraphs in page_paragraphs:
         for pidx, paragraph in enumerate(paragraphs, start=1):
             text = canonicalize_text(paragraph)
@@ -159,9 +159,9 @@ def build_nodes_with_granularity(
 
 
 def attach_evidence_locators(
-    document_structure: Dict[str, Any],
-    nodes: List[Dict[str, Any]],
-    page_layouts: Optional[List[Dict[str, Any]]] = None,
+    document_structure: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    page_layouts: list[dict[str, Any]] | None = None,
 ) -> None:
     """Attach persisted-node and stable source locators to paragraphs in place."""
     layouts_by_index = {
@@ -169,7 +169,7 @@ def attach_evidence_locators(
         for index, layout in enumerate(page_layouts or [])
         if isinstance(layout.get("page_number", index + 1), int)
     }
-    nodes_by_key: Dict[tuple[Any, str], List[Dict[str, Any]]] = {}
+    nodes_by_key: dict[tuple[Any, str], list[dict[str, Any]]] = {}
     for node in nodes:
         node_text = canonicalize_text(str(node.get("text", "")))
         if not node_text:
@@ -177,8 +177,8 @@ def attach_evidence_locators(
         page = node.get("page")
         if isinstance(page, int):
             nodes_by_key.setdefault((page, node_text), []).append(node)
-    node_cursors: Dict[tuple[Any, str], int] = {}
-    layout_cursors: Dict[tuple[Any, str], int] = {}
+    node_cursors: dict[tuple[Any, str], int] = {}
+    layout_cursors: dict[tuple[Any, str], int] = {}
     for physical_index, page in enumerate(document_structure.get("pages", [])):
         if not isinstance(page, dict):
             continue
@@ -197,7 +197,7 @@ def attach_evidence_locators(
             text = canonicalize_text(paragraph["text"])
             paragraph["char_start"] = 0
             paragraph["char_end"] = len(paragraph["text"])
-            matching_nodes: List[Dict[str, Any]] = []
+            matching_nodes: list[dict[str, Any]] = []
             for page_key in (page_number, page["physical_page_index"] + 1):
                 candidates = nodes_by_key.get((page_key, text), [])
                 cursor_key = (page_key, text)
@@ -226,7 +226,7 @@ def attach_evidence_locators(
                     paragraph["bbox"] = matching_layout["bbox"]
 
 
-def build_document_structure(page_paragraphs: List[Tuple[int, List[str]]]) -> Dict[str, Any]:
+def build_document_structure(page_paragraphs: list[tuple[int, list[str]]]) -> dict[str, Any]:
     return {
         "pages": [
             {
@@ -245,7 +245,7 @@ def build_document_structure(page_paragraphs: List[Tuple[int, List[str]]]) -> Di
     }
 
 
-def build_layout_document_structure(page_layouts: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_layout_document_structure(page_layouts: list[dict[str, Any]]) -> dict[str, Any]:
     """Build document structure from layout analysis results (pages → columns → paragraphs)."""
     return {
         "pages": [
@@ -259,7 +259,7 @@ def build_layout_document_structure(page_layouts: List[Dict[str, Any]]) -> Dict[
     }
 
 
-def build_retrieval_index(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_retrieval_index(nodes: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "entries": [
             {
@@ -273,13 +273,13 @@ def build_retrieval_index(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def build_merkle_for_nodes(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_merkle_for_nodes(nodes: list[dict[str, Any]]) -> dict[str, Any]:
     leaf_hashes = [n["sha256"] for n in nodes]
     return build_merkle_tree(leaf_hashes)
 
 
-def make_basic_csl(source_id: str, title: str, csl_type: str, extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    csl: Dict[str, Any] = {
+def make_basic_csl(source_id: str, title: str, csl_type: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    csl: dict[str, Any] = {
         "id": source_id,
         "type": csl_type,
         "title": title,
@@ -306,8 +306,8 @@ def determine_doc_type(pdf_path: str, num_pages: int) -> str:
 def extract_citation_with_llm(
     text: str,
     doc_type: str,
-    config: Optional[IngestionConfig] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+) -> dict[str, Any]:
     """Run LLM-based citation extraction and return rich CSL JSON.
 
     Merges the legacy CitationLLM path into the ingestion pipeline so that
@@ -351,7 +351,7 @@ def extract_citation_with_llm(
     return csl
 
 
-def _extract_citation_grobid(pdf_path: str) -> Dict[str, Any]:
+def _extract_citation_grobid(pdf_path: str) -> dict[str, Any]:
     """Try grobid header extraction. Returns CSL dict or {}."""
     try:
         from .grobid import extract_document_metadata_grobid, is_grobid_available
@@ -381,15 +381,15 @@ def doc_type_to_csl_type(doc_type: str) -> str:
 
 
 def enrich_csl_with_citation_cascade(
-    base_csl: Dict[str, Any],
+    base_csl: dict[str, Any],
     ordered_text: str,
-    pdf_path: Optional[str],
+    pdf_path: str | None,
     num_pages: int,
-    config: Optional[IngestionConfig] = None,
-    region_hints: Optional[List[str]] = None,
-    source_blocks: Optional[List[Dict[str, Any]]] = None,
-    candidate_regions: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    config: IngestionConfig | None = None,
+    region_hints: list[str] | None = None,
+    source_blocks: list[dict[str, Any]] | None = None,
+    candidate_regions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Enrich a basic CSL dict with the explicitly selected citation engine."""
     cfg = config or IngestionConfig()
 
@@ -403,7 +403,7 @@ def enrich_csl_with_citation_cascade(
 
     logger.info("Document type determined: %s (pages=%d)", doc_type, num_pages)
 
-    extracted_csl: Dict[str, Any] = {}
+    extracted_csl: dict[str, Any] = {}
     extraction_method = "metadata-only"
 
     if cfg.citation_engine == "grobid" and pdf_path:
@@ -449,7 +449,7 @@ enrich_csl_with_llm = enrich_csl_with_citation_cascade
 # Author fallback: filename parsing → interactive prompt
 # ---------------------------------------------------------------------------
 
-def parse_author_from_filename(filename: str) -> Optional[Dict[str, Any]]:
+def parse_author_from_filename(filename: str) -> dict[str, Any] | None:
     """Try to extract author from a structured PDF filename.
 
     Supports patterns like:
@@ -485,9 +485,9 @@ def parse_author_from_filename(filename: str) -> Optional[Dict[str, Any]]:
 
 
 def validate_authors(
-    authors: Optional[List[Dict[str, Any]]],
+    authors: list[dict[str, Any]] | None,
     input_ref: str = "",
-) -> Optional[List[Dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """Validate and clean LLM-extracted author list.
 
     Heuristics to detect garbage author extraction:
@@ -517,7 +517,7 @@ def validate_authors(
         "used", "from", "into", "with", "this", "that", "which", "what",
     }
 
-    cleaned: List[Dict[str, Any]] = []
+    cleaned: list[dict[str, Any]] = []
     for author in authors:
         family = (author.get("family") or "").strip()
         given = (author.get("given") or "").strip()
@@ -560,10 +560,10 @@ def validate_authors(
     return cleaned
 
 
-def prompt_author_interactively() -> Optional[Dict[str, Any]]:
+def prompt_author_interactively() -> list[dict[str, Any]] | None:
     """Prompt the user on the terminal for author info when extraction fails.
 
-    Returns a CSL author dict or None if the user skips.
+    Returns a list of CSL author dicts or None if the user skips.
     """
 
     import sys
@@ -579,7 +579,7 @@ def prompt_author_interactively() -> Optional[Dict[str, Any]]:
     if not raw:
         return None
 
-    authors: List[Dict[str, Any]] = []
+    authors: list[dict[str, Any]] = []
     for part in raw.split(";"):
         part = part.strip()
         if not part:

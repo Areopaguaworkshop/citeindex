@@ -1,8 +1,7 @@
 import json
 
 from citeindex.ingestion.markdown_export import generate_library_markdown
-from citeindex.ingestion.pipelines.digital_pdf import _annotate_document_with_pageindex
-from citeindex.ingestion.pipelines.digital_pdf import _attach_layout_footnotes
+from citeindex.ingestion.pipelines.digital_pdf import _annotate_document_with_pageindex, _attach_layout_footnotes
 from citeindex.ingestion.pipelines.pdf_text_cleanup import clean_page_texts
 from citeindex.ingestion.storage import store_corpus_artifacts
 

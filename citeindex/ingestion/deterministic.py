@@ -1,6 +1,6 @@
 import hashlib
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 
 def canonicalize_text(text: str) -> str:
@@ -31,7 +31,7 @@ def hash_payload(payload: Any) -> str:
     return sha256_hex(normalized)
 
 
-def build_merkle_tree(leaf_hashes: List[str]) -> Dict[str, Any]:
+def build_merkle_tree(leaf_hashes: list[str]) -> dict[str, Any]:
     """
     Build a deterministic Merkle tree.
     Odd nodes are duplicated at each level for deterministic pairing.
@@ -39,10 +39,10 @@ def build_merkle_tree(leaf_hashes: List[str]) -> Dict[str, Any]:
     if not leaf_hashes:
         leaf_hashes = [sha256_hex("")]
 
-    levels: List[List[str]] = [leaf_hashes[:]]
+    levels: list[list[str]] = [leaf_hashes[:]]
     while len(levels[-1]) > 1:
         current = levels[-1]
-        nxt: List[str] = []
+        nxt: list[str] = []
         for i in range(0, len(current), 2):
             left = current[i]
             right = current[i + 1] if i + 1 < len(current) else current[i]
@@ -58,8 +58,8 @@ def build_merkle_tree(leaf_hashes: List[str]) -> Dict[str, Any]:
 
 
 def build_hierarchical_merkle_tree(
-    document_structure: Dict[str, Any],
-) -> Dict[str, Any]:
+    document_structure: dict[str, Any],
+) -> dict[str, Any]:
     """Build a hierarchical Merkle tree from document structure.
 
     Hierarchy: line → paragraph → column → page → document
@@ -69,13 +69,13 @@ def build_hierarchical_merkle_tree(
       page = hash(columns + footnotes)
       document = hash(pages)
     """
-    proof_tree: Dict[str, Any] = {"pages": []}
-    page_hashes: List[str] = []
+    proof_tree: dict[str, Any] = {"pages": []}
+    page_hashes: list[str] = []
 
     for page in document_structure.get("pages", []):
         page_number = page.get("page_number", 0)
-        page_proof: Dict[str, Any] = {"page_number": page_number, "columns": [], "footnotes": []}
-        column_hashes: List[str] = []
+        page_proof: dict[str, Any] = {"page_number": page_number, "columns": [], "footnotes": []}
+        column_hashes: list[str] = []
 
         columns = page.get("columns", [])
         if not columns:
@@ -85,16 +85,16 @@ def build_hierarchical_merkle_tree(
                 columns = [{"paragraphs": paragraphs}]
 
         for column in columns:
-            col_proof: Dict[str, Any] = {"paragraphs": []}
-            paragraph_hashes: List[str] = []
+            col_proof: dict[str, Any] = {"paragraphs": []}
+            paragraph_hashes: list[str] = []
 
             for para in column.get("paragraphs", []):
                 text = para.get("text", "")
                 lines = para.get("lines", [])
 
                 if lines:
-                    line_hashes: List[str] = []
-                    line_proofs: List[Dict[str, str]] = []
+                    line_hashes: list[str] = []
+                    line_proofs: list[dict[str, str]] = []
                     for line in lines:
                         canon = canonicalize_text(line)
                         lh = sha256_hex(canon)
@@ -120,7 +120,7 @@ def build_hierarchical_merkle_tree(
             column_hashes.append(col_hash)
             page_proof["columns"].append(col_proof)
 
-        footnote_hashes: List[str] = []
+        footnote_hashes: list[str] = []
         for fn in page.get("footnotes", []):
             fn_text = fn.get("text", "") if isinstance(fn, dict) else str(fn)
             canon = canonicalize_text(fn_text)
@@ -144,12 +144,12 @@ def build_hierarchical_merkle_tree(
     }
 
 
-def build_merkle_proof(tree: Dict[str, Any], leaf_index: int) -> List[Dict[str, str]]:
+def build_merkle_proof(tree: dict[str, Any], leaf_index: int) -> list[dict[str, str]]:
     levels = tree.get("levels", [])
     if not levels or leaf_index < 0 or leaf_index >= len(levels[0]):
         return []
 
-    proof: List[Dict[str, str]] = []
+    proof: list[dict[str, str]] = []
     idx = leaf_index
     for level in levels[:-1]:
         sibling_idx = idx ^ 1

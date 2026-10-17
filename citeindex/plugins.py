@@ -264,6 +264,7 @@ def main(argv: list[str] | None = None) -> None:
     run.add_argument("--options", type=Path, help="Plugin options JSON file")
     run.add_argument("--timeout", type=float, default=3600)
     parsed = parser.parse_args(args)
+    output: list[dict] | dict
     try:
         if parsed.command == "list":
             output = discover_plugins()
@@ -274,7 +275,7 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False))
         raise SystemExit(1) from exc
     print(json.dumps(output, ensure_ascii=False, indent=2))
-    raise SystemExit(0 if parsed.command == "list" or output["status"] == "ok" else 1)
+    raise SystemExit(0 if parsed.command == "list" or (isinstance(output, dict) and output["status"] == "ok") else 1)
 
 
 if __name__ == "__main__":

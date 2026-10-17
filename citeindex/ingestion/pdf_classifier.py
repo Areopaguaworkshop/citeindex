@@ -8,8 +8,7 @@ Clearly corrupt text still requires OCR. Mixed documents fall back to OCR.
 import logging
 import re
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import List, Optional, Tuple
+from enum import StrEnum
 
 import pymupdf as fitz
 
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 # ── Enums & Data Classes ────────────────────────────────────────────
 
 
-class PageKind(str, Enum):
+class PageKind(StrEnum):
     """Classification result for a single page."""
     DIGITAL = "digital"
     SCANNED = "scanned"
@@ -26,7 +25,7 @@ class PageKind(str, Enum):
     EMPTY = "empty"           # page has neither text nor images
 
 
-class DocumentKind(str, Enum):
+class DocumentKind(StrEnum):
     """Document-level classification."""
     DIGITAL_PDF = "digital_pdf"
     SCANNED_PDF = "scanned_pdf"
@@ -54,7 +53,7 @@ class PageClassification:
 class PDFClassification:
     """Result of classifying an entire PDF document."""
     document_kind: DocumentKind
-    pages: List[PageClassification] = field(default_factory=list)
+    pages: list[PageClassification] = field(default_factory=list)
     digital_page_count: int = 0
     scanned_page_count: int = 0
     mixed_page_count: int = 0
@@ -131,7 +130,7 @@ def _newline_ratio(text: str) -> float:
     return newlines / total
 
 
-def _get_bitmap_coverage(page) -> Tuple[float, int]:
+def _get_bitmap_coverage(page) -> tuple[float, int]:
     """Calculate fraction of page area covered by image objects.
 
     Use displayed image occurrences (including inline images) without decoding
@@ -158,7 +157,7 @@ def _get_bitmap_coverage(page) -> Tuple[float, int]:
         return 0.0, 0
 
 
-def _detect_ocr_layer(page) -> Tuple[bool, bool, bool]:
+def _detect_ocr_layer(page) -> tuple[bool, bool, bool]:
     """Report text-layer provenance; invisibility alone does not mean bad text."""
     try:
         spans = page.get_texttrace()
@@ -256,7 +255,7 @@ def classify_pdf(
     pdf_path: str,
     max_pages: int = 0,
     strip_existing_ocr: bool = False,
-    force_kind: Optional[DocumentKind] = None,
+    force_kind: DocumentKind | None = None,
 ) -> PDFClassification:
     """Classify a PDF as digital, scanned, or mixed.
 
@@ -287,7 +286,7 @@ def classify_pdf(
     total_pages = doc.page_count
     pages_to_check = total_pages if max_pages <= 0 else min(max_pages, total_pages)
 
-    page_classifications: List[PageClassification] = []
+    page_classifications: list[PageClassification] = []
 
     try:
         for i in range(pages_to_check):
@@ -348,7 +347,7 @@ def classify_pdf(
 # ── Convenience Function ────────────────────────────────────────────
 
 
-def pdf_kind(pdf_path: str, force_kind: Optional[str] = None) -> str:
+def pdf_kind(pdf_path: str, force_kind: str | None = None) -> str:
     """Simple interface returning 'digital_pdf', 'scanned_pdf', or 'mixed_pdf'.
 
     Drop-in replacement for the old _pdf_kind() method in master.py.

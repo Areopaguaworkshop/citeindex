@@ -12,6 +12,7 @@ def validate_rows(rows: list[dict]) -> list[str]:
     if any(row.get("pilot_selection") is not None for row in rows):
         rows = [row for row in rows if row.get("pilot_selection") != "excluded"]
     from run import evaluated_fields
+
     from citeindex.ingestion.csl import valid_host_value
     errors: list[str] = []
     if not rows:

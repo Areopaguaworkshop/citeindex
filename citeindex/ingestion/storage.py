@@ -3,7 +3,7 @@ import os
 import re
 import shutil
 import tempfile
-from typing import Any, Dict
+from typing import Any
 
 from .deterministic import canonical_json_dumps, hash_payload
 
@@ -26,7 +26,7 @@ def write_json(path: str, data: Any) -> None:
             os.remove(temporary_path)
 
 
-def append_jsonl(path: str, data: Dict[str, Any]) -> None:
+def append_jsonl(path: str, data: dict[str, Any]) -> None:
     ensure_dir(os.path.dirname(path))
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False, sort_keys=True))
@@ -52,7 +52,7 @@ def _slugify(text: str, max_len: int = 0) -> str:
     return result
 
 
-def csl_folder_name(csl_json: Dict[str, Any]) -> str:
+def csl_folder_name(csl_json: dict[str, Any]) -> str:
     author_part = ""
     authors = csl_json.get("author") or []
     if authors:
@@ -100,7 +100,7 @@ def csl_folder_name(csl_json: Dict[str, Any]) -> str:
     return f"{name}_{identity[:12]}"
 
 
-def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: Dict[str, Any]) -> str:
+def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: dict[str, Any]) -> str:
     if os.path.basename(folder_name) != folder_name or folder_name in {"", ".", ".."}:
         raise ValueError("folder_name must be a single safe directory name")
     doc_dir = os.path.join(corpus_root, folder_name)

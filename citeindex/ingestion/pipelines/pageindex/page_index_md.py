@@ -1,7 +1,8 @@
 import asyncio
 import json
-import re
 import os
+import re
+
 try:
     from .utils import *
 except:
@@ -21,7 +22,7 @@ async def generate_summaries_for_structure_md(structure, summary_token_threshold
     tasks = [get_node_summary(node, summary_token_threshold=summary_token_threshold, model=model) for node in nodes]
     summaries = await asyncio.gather(*tasks)
     
-    for node, summary in zip(nodes, summaries):
+    for node, summary in zip(nodes, summaries, strict=False):
         if not node.get('nodes'):
             node['summary'] = summary
         else:
@@ -241,7 +242,7 @@ def clean_tree_for_output(tree_nodes):
 
 
 async def md_to_tree(md_path, if_thinning=False, min_token_threshold=None, if_add_node_summary='no', summary_token_threshold=None, model=None, if_add_doc_description='no', if_add_node_text='no', if_add_node_id='yes'):
-    with open(md_path, 'r', encoding='utf-8') as f:
+    with open(md_path, encoding='utf-8') as f:
         markdown_content = f.read()
     line_count = markdown_content.count('\n') + 1
 
@@ -301,8 +302,8 @@ async def md_to_tree(md_path, if_thinning=False, min_token_threshold=None, if_ad
 
 
 if __name__ == "__main__":
-    import os
     import json
+    import os
     
     # MD_NAME = 'Detect-Order-Construct'
     MD_NAME = 'cognitive-load'

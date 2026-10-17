@@ -1,6 +1,6 @@
-import requests
 import logging
-from typing import Dict, Optional
+
+import requests
 
 from .model import CitationLLM
 
@@ -9,11 +9,11 @@ def search_for_missing_info(
     title: str,
     author: str,
     llm: CitationLLM,
-    doc_type: Optional[str] = None,
-    year: Optional[int] = None,
-    publisher: Optional[str] = None,
-    page: Optional[str] = None,
-) -> Optional[Dict]:
+    doc_type: str | None = None,
+    year: int | None = None,
+    publisher: str | None = None,
+    page: str | None = None,
+) -> dict | None:
     """
     Search for missing citation information using the local perpexica API and parse the result.
 

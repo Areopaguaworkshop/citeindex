@@ -7,24 +7,24 @@ whether it can change the source-derived CSL record.
 
 from __future__ import annotations
 
-import hashlib
 import copy
+import hashlib
 import json
 import os
 import re
 import time
 import unicodedata
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Mapping
-from urllib.parse import quote, urlencode, urlsplit, urlunsplit, parse_qsl
+from typing import Any
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import requests
 from urllib3.exceptions import HTTPError, ReadTimeoutError
 
 from .pipelines.frontmatter import validate_isbn13
-
 
 _DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 _DOI_PREFIX_RE = re.compile(r"^(?:doi\s*:\s*|https?://(?:dx\.)?doi\.org/)", re.IGNORECASE)
@@ -622,7 +622,7 @@ class RegistryClient:
                 result = _result("found" if 200 <= status < 300 else "not_found" if status == 404 else "error",
                                  identifier, provider=provider, request_url=request_url, http_status=status,
                                  response_digest=hashlib.sha256(raw).hexdigest())
-                result["provenance"]["retrieved_at"] = datetime.now(timezone.utc).isoformat()
+                result["provenance"]["retrieved_at"] = datetime.now(UTC).isoformat()
                 self.attempts.append(result)
                 if status == 429 or 500 <= status < 600:
                     if not attempt:

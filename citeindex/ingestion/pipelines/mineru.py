@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import fitz  # PyMuPDF — for image extraction
 
@@ -58,7 +58,7 @@ _LEVEL3_RE = re.compile(r"^\s*\d+\.\s")
 # CLI invocation (kept unchanged)
 # ---------------------------------------------------------------------------
 
-def _resolve_mineru_cli() -> Optional[str]:
+def _resolve_mineru_cli() -> str | None:
     """Return the MinerU CLI installed with this interpreter, if any."""
     venv_bin = Path(sys.executable).absolute().parent
     for cli_name in ("magic-pdf", "mineru"):
@@ -75,13 +75,13 @@ def is_mineru_available() -> bool:
 
 def run_mineru(
     pdf_path: str,
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
     parse_method: str = "auto",
     backend: str = "pipeline",
     timeout: int = 3600,
-    start_page: Optional[int] = None,
-    end_page: Optional[int] = None,
-) -> Dict[str, Any]:
+    start_page: int | None = None,
+    end_page: int | None = None,
+) -> dict[str, Any]:
     """Run MinerU on a PDF and return parsed outputs.
 
     Parameters
@@ -183,8 +183,8 @@ def run_mineru(
 
             if now - last_log_time >= HEARTBEAT_INTERVAL:
                 last_line = (
-                    (stderr_lines[-1] or stdout_lines[-1] or ""
-                     if (stderr_lines or stdout_lines) else "")
+                    stderr_lines[-1] or stdout_lines[-1] or ""
+                     if (stderr_lines or stdout_lines) else ""
                 ).strip()
                 logger.info(
                     "MinerU still running... %ds elapsed%s",
@@ -218,7 +218,7 @@ def run_mineru(
 def _collect_mineru_outputs(
     output_dir: str,
     pdf_path: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Walk the MinerU output tree and load the key artifacts."""
 
     pdf_stem = Path(pdf_path).stem
@@ -265,7 +265,7 @@ def _infer_heading_level(text: str) -> int:
     return 1
 
 
-def _content_item_heading_level(item: Dict[str, Any], text: str) -> int:
+def _content_item_heading_level(item: dict[str, Any], text: str) -> int:
     explicit_level = item.get("heading_level")
     if isinstance(explicit_level, int) and explicit_level > 0:
         return max(1, min(explicit_level, 6))
@@ -316,9 +316,9 @@ def _extract_footnote_marker(text: str) -> str:
 
 def content_list_to_document_structure(
     content_list: Any,
-    page_number_map: Dict[int, int],
-    images: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    page_number_map: dict[int, int],
+    images: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build a section-hierarchical document structure from content_list.json.
 
     Parameters
@@ -340,12 +340,12 @@ def content_list_to_document_structure(
     # ── Pass 1: organise items by page and track sections ──────────
 
     # page_idx → page data accumulator
-    pages_acc: Dict[int, Dict[str, Any]] = {}
+    pages_acc: dict[int, dict[str, Any]] = {}
     # section tracking
-    current_section: Optional[str] = None
+    current_section: str | None = None
     # section tree builder: list of (level, node_dict) for stack-based nesting
-    section_stack: List[Tuple[int, Dict[str, Any]]] = []
-    section_roots: List[Dict[str, Any]] = []
+    section_stack: list[tuple[int, dict[str, Any]]] = []
+    section_roots: list[dict[str, Any]] = []
 
     for item in content_list:
         item_type = item.get("type", "")
@@ -389,7 +389,7 @@ def content_list_to_document_structure(
             })
 
             # Build section tree
-            node: Dict[str, Any] = {
+            node: dict[str, Any] = {
                 "title": text,
                 "level": level,
                 "page_number": actual_page,
@@ -507,7 +507,7 @@ def content_list_to_document_structure(
 
     # ── Pass 2: assemble final pages list (sorted by page_idx) ─────
 
-    pages_list: List[Dict[str, Any]] = []
+    pages_list: list[dict[str, Any]] = []
     for page_idx in sorted(pages_acc):
         page = pages_acc[page_idx]
         # Remove internal tracking set
@@ -526,8 +526,8 @@ def content_list_to_document_structure(
 
 def content_list_to_paragraphs(
     content_list: Any,
-    page_number_map: Dict[int, int],
-) -> List[Tuple[int, List[str]]]:
+    page_number_map: dict[int, int],
+) -> list[tuple[int, list[str]]]:
     """Convert content_list to ``(actual_page_number, [paragraph_texts])``.
 
     Only includes ``type: "text"`` items (excludes discarded, images, and
@@ -537,7 +537,7 @@ def content_list_to_paragraphs(
         return []
 
     # page_idx → list of paragraph texts
-    page_texts: Dict[int, List[str]] = {}
+    page_texts: dict[int, list[str]] = {}
 
     for item in content_list:
         if item.get("type") != "text":
@@ -555,7 +555,7 @@ def content_list_to_paragraphs(
             page_texts[page_idx] = []
         page_texts[page_idx].append(text)
 
-    result: List[Tuple[int, List[str]]] = []
+    result: list[tuple[int, list[str]]] = []
     for page_idx in sorted(page_texts):
         actual_page = page_number_map.get(page_idx, page_idx + 1)
         result.append((actual_page, page_texts[page_idx]))
@@ -573,8 +573,8 @@ def extract_pdf_images(
     source_id: str,
     min_width: int = 100,
     min_height: int = 100,
-    page_indices: Optional[List[int]] = None,
-) -> List[Dict[str, Any]]:
+    page_indices: list[int] | None = None,
+) -> list[dict[str, Any]]:
     """Extract images from a PDF and save them to output_dir/images/.
 
     Parameters
@@ -596,7 +596,7 @@ def extract_pdf_images(
     os.makedirs(images_dir, exist_ok=True)
 
     doc = fitz.open(pdf_path)
-    extracted: List[Dict[str, Any]] = []
+    extracted: list[dict[str, Any]] = []
 
     for page_idx in page_indices if page_indices is not None else range(doc.page_count):
         page = doc[page_idx]
@@ -661,7 +661,7 @@ def _load_json(path: Path) -> Any:
     """Load JSON file, return empty dict on failure."""
     try:
         if path.is_file():
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
     except Exception:
         logger.warning("Failed to load JSON: %s", path)
@@ -688,9 +688,9 @@ def _maybe_shift_content_list_page_indices(
         return
 
     page_indices = [
-        item.get("page_idx")
+        page_idx
         for item in content_list
-        if isinstance(item, dict) and isinstance(item.get("page_idx"), int)
+        if isinstance(item, dict) and isinstance((page_idx := item.get("page_idx")), int)
     ]
     if not page_indices:
         return
@@ -716,8 +716,8 @@ def run_mineru_chunked(
     timeout: int = 3600,
     chunk_pages: int | str = "auto",
     benchmark_sample_pages: bool = False,
-    benchmark_page_range: Optional[str] = None,
-) -> Dict[str, Any]:
+    benchmark_page_range: str | None = None,
+) -> dict[str, Any]:
     """Run MinerU on a large PDF in page chunks and merge key outputs."""
     with fitz.open(pdf_path) as doc:
         total_pages = doc.page_count
@@ -729,7 +729,7 @@ def run_mineru_chunked(
     if benchmark_page_range:
         from ...utils import parse_page_range
         selected_pages = parse_page_range(benchmark_page_range, total_pages)
-        grouped = []
+        grouped: list[tuple[int, int]] = []
         for page in selected_pages:
             index = page - 1
             if grouped and grouped[-1][1] + 1 == index:
@@ -839,7 +839,7 @@ def _resolve_mineru_chunk_pages(total_pages: int, chunk_pages: int | str) -> int
 def run(
     pdf_path: str,
     source_type: str = "scanned_pdf",
-    config: Optional[IngestionConfig] = None,
+    config: IngestionConfig | None = None,
 ) -> PipelineResult:
     from .scanned_common import (
         attach_image_paths_to_content_list,
@@ -851,7 +851,7 @@ def run(
     cfg = config or IngestionConfig()
     source_id = make_source_id(pdf_path)
     mineru_tmpdir = tempfile.mkdtemp(prefix="citeindex_mineru_raw_")
-    images_tmpdir: Optional[str] = None
+    images_tmpdir: str | None = None
 
     try:
         logger.info("[mineru] Step 1/5: Running MinerU OCR subprocess...")
@@ -879,7 +879,7 @@ def run(
             raise RuntimeError("MinerU did not return a usable content_list")
 
         logger.info("[mineru] Step 2/5: Extracting images from PDF...")
-        images_list: List[Dict[str, Any]] = []
+        images_list: list[dict[str, Any]] = []
         images_tmpdir = make_images_tmpdir(prefix="citeindex_mineru_imgs_")
         try:
             sampled_pages = None

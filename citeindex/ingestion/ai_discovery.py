@@ -16,14 +16,14 @@ import math
 import os
 import re
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
 from .metadata_registry import bounded_response_bytes, normalize_doi, normalize_isbn
-
 
 DEFAULT_MODELS = {"claude": "claude-sonnet-4-6", "gemini": "gemini-2.5-flash", "openai": "gpt-4.1-mini"}
 SUPPORTED_MODELS = {
@@ -120,7 +120,9 @@ def _claude(payload: Mapping[str, Any]) -> tuple[list[dict], list[str], list[str
     blocks = payload["content"]
     calls = {b["id"]: b.get("input", {}).get("query", "") for b in blocks
              if b.get("type") == "server_tool_use" and b.get("name") == "web_search"}
-    sources, queries, spans = [], [], []
+    sources: list[str] = []
+    queries: list[str] = []
+    spans: list[dict] = []
     for block in blocks:
         if block.get("type") != "web_search_tool_result":
             continue
@@ -262,7 +264,7 @@ def discover_identifier(csl: Mapping[str, Any], config: Any, *, timeout: float =
     provider = getattr(config, "online_enrich_ai_provider", None) or ""
     model = getattr(config, "online_enrich_ai_model", None) or DEFAULT_MODELS.get(provider)
     provenance = {"provider": provider, "model": model, "tool_version": _TOOLS.get(provider),
-                  "request_url": None, "response_digest": None, "retrieved_at": datetime.now(timezone.utc).isoformat()}
+                  "request_url": None, "response_digest": None, "retrieved_at": datetime.now(UTC).isoformat()}
     result = {"status": "skipped", "identifiers": [], "provenance": provenance}
     if not getattr(config, "online_enrich_ai_fallback", False):
         return {**result, "error": "ai_discovery_disabled"}
@@ -292,7 +294,8 @@ def discover_identifier(csl: Mapping[str, Any], config: Any, *, timeout: float =
         payload = json.loads(raw)
         spans, queries, sources, searches, text = {"claude": _claude, "gemini": _gemini, "openai": _openai}[provider](payload)
         provenance.update({"search_queries": [_clean_text(q) for q in queries[:10]], "search_count": searches})
-        identifiers, resolved = [], {}
+        identifiers: list[dict] = []
+        resolved: dict[str, str | None] = {}
         for span in spans:
             matches = _identifiers(span["text"])
             if "output_span" in span:

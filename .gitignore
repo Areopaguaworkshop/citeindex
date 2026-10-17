@@ -23,6 +23,8 @@ benchmarks/citations/manifest.jsonl
 
 # Test output
 test_output/
+.coverage
+.mypy_cache/
 
 # Rust (removed, prevent accidents)
 target/

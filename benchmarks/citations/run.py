@@ -1,5 +1,6 @@
 """Score host metadata only, against independently reviewed labels."""
 from __future__ import annotations
+
 import hashlib
 import json
 import re
@@ -7,8 +8,8 @@ import sys
 import unicodedata
 from pathlib import Path
 
-from citeindex.ingestion.csl import HOST_FIELDS, NAME_FIELDS, evaluation_fields
 from citeindex.ingestion.citation_verification import validate_block_evidence
+from citeindex.ingestion.csl import HOST_FIELDS, NAME_FIELDS, evaluation_fields
 
 FIELDS = HOST_FIELDS
 

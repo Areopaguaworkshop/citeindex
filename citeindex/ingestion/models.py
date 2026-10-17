@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field, asdict
 import math
-from typing import Any, Dict, List, Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -12,7 +12,7 @@ class IngestionFailure:
     error_message: str
     next_action: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -24,7 +24,7 @@ class IngestionLogEntry:
     merkle_root: str
     ingestion_timestamp: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -44,20 +44,20 @@ class IngestionConfig:
     lang: str = "auto"
     page_range: str = "1-10, -3"
     citation_style: str = "chicago-author-date"
-    doc_type_override: Optional[str] = None
+    doc_type_override: str | None = None
     use_layout_analysis: bool = True
     is_primary: bool = False
     use_pageindex: bool = True  # default changed to True
     pageindex_model: str = "ollama/deepseek-v4.1-flash:cloud"
     verify_citations: bool = False
-    citation_verifier_model: Optional[str] = None
+    citation_verifier_model: str | None = None
     crossref_enabled: bool = True
     openlibrary_enabled: bool = True
     offline_verification: bool = False
-    registry_contact_email: Optional[str] = None
-    force_pdf_kind: Optional[str] = None  # 'force_ocr', 'force_digital', or None for auto-detect
+    registry_contact_email: str | None = None
+    force_pdf_kind: str | None = None  # 'force_ocr', 'force_digital', or None for auto-detect
     strip_existing_ocr: bool = False  # optionally reject existing OCR layers during classification
-    repair_proposal: Optional[str] = None  # JSON proposal file; applied through normal finalization
+    repair_proposal: str | None = None  # JSON proposal file; applied through normal finalization
     # Default-on release is gated on the independent enrichment benchmark.
     online_enrich: bool = False
     online_enrich_providers: tuple[str, ...] = ("crossref", "openalex", "openlibrary", "datacite")
@@ -65,15 +65,15 @@ class IngestionConfig:
     online_enrich_timeout: float = 20.0
     online_enrich_cache_ttl: float = 604800.0
     online_enrich_ai_fallback: bool = False
-    online_enrich_ai_provider: Optional[str] = None
-    online_enrich_ai_model: Optional[str] = None
+    online_enrich_ai_provider: str | None = None
+    online_enrich_ai_model: str | None = None
     online_enrich_ai_domains: tuple[str, ...] = ("doi.org", "crossref.org", "openlibrary.org", "datacite.org")
-    enrich_proposal: Optional[str] = None
+    enrich_proposal: str | None = None
     media_asr_backend: str = "whisperx"  # whisperx or opt-in wenbi
     wenbi_asr_provider: str = "funasr"  # explicit; never Wenbi auto/implicit cloud
     wenbi_whisper_model: str = "large-v3-turbo"
     wenbi_speaker_labels: bool = False
-    wenbi_python: Optional[str] = None  # optional isolated Wenbi environment interpreter
+    wenbi_python: str | None = None  # optional isolated Wenbi environment interpreter
 
     def __post_init__(self) -> None:
         providers = self.online_enrich_providers
@@ -100,22 +100,22 @@ class PipelineResult:
     status: str
     source_id: str
     resource_type: str
-    csl_json: Dict[str, Any]
-    document_json: Optional[Dict[str, Any]] = None
-    transcript_json: Optional[Dict[str, Any]] = None
-    merkle_tree: Optional[Dict[str, Any]] = None
-    media_metadata: Optional[Dict[str, Any]] = None
-    retrieval_index: Optional[Dict[str, Any]] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
+    csl_json: dict[str, Any]
+    document_json: dict[str, Any] | None = None
+    transcript_json: dict[str, Any] | None = None
+    merkle_tree: dict[str, Any] | None = None
+    media_metadata: dict[str, Any] | None = None
+    retrieval_index: dict[str, Any] | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload.update(payload.pop("extra", {}))
         return payload
 
 
-def validate_ingestion_input(payload: Dict[str, Any]) -> List[str]:
-    errors: List[str] = []
+def validate_ingestion_input(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
     if "schema_version" not in payload:
         errors.append("missing schema_version")
     if "source_manifest" not in payload:

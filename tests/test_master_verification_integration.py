@@ -1,9 +1,9 @@
 import json
 
+import citeindex.ingestion.master as master
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.models import IngestionConfig, PipelineResult
 from citeindex.ingestion.storage import csl_folder_name
-import citeindex.ingestion.master as master
 
 
 def test_verification_is_persisted_before_csl_identity_and_markdown(tmp_path, monkeypatch):

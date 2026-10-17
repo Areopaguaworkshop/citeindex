@@ -8,10 +8,10 @@ from html.parser import HTMLParser
 import dspy
 
 from ...llm import get_llm_model
+from ..citation_verification import valid_source_locator, validate_block_evidence
 from ..csl import HOST_FIELDS, MEDIA_TYPES, valid_host_value
-from ..citation_verification import validate_block_evidence, valid_source_locator
-from ..models import IngestionConfig
 from ..deterministic import canonical_json_dumps
+from ..models import IngestionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def metadata_blocks(metadata: dict, artifact: str = "media_metadata.json") -> li
 
 def web_source_blocks(html: str) -> list[dict]:
     """Retain decoded HTML text and metadata, never model summaries."""
-    blocks = []
+    blocks: list[dict] = []
     digest = hashlib.sha256(html.encode()).hexdigest()
     class Parser(HTMLParser):
         def __init__(self):

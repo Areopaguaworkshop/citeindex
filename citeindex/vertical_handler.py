@@ -1,13 +1,14 @@
 import logging
-import fitz  # PyMuPDF
-from paddleocr import PPStructureV3
-import numpy as np
-from typing import Optional, List
 import traceback
+from typing import Any
+
+import fitz  # PyMuPDF
+import numpy as np
+from paddleocr import PPStructureV3
 
 # Global variable to hold the initialized OCR engine
 structure_engine = None
-current_ocr_config = {}
+current_ocr_config: dict[str, Any] = {}
 
 def get_structure_engine(lang: str = 'ch'):
     """
@@ -77,7 +78,7 @@ def is_pdf_vertical(pdf_path: str, vertical_lang: str) -> bool:
         if doc:
             doc.close()
 
-def process_vertical_pdf(pdf_path: str, vertical_lang: str, page_limit: Optional[int] = None) -> Optional[str]:
+def process_vertical_pdf(pdf_path: str, vertical_lang: str, page_limit: int | None = None) -> str | None:
     """
     Handles the end-to-end OCR and text extraction for a vertical PDF.
     """
@@ -145,7 +146,7 @@ def extract_text_results(result):
                 if 'rec_texts' in ocr_res and 'rec_boxes' in ocr_res:
                     texts = ocr_res['rec_texts']
                     boxes = ocr_res['rec_boxes']
-                    for i, (text, box) in enumerate(zip(texts, boxes)):
+                    for _i, (text, box) in enumerate(zip(texts, boxes, strict=False)):
                         if text.strip():  # Only include non-empty text
                             text_results.append({
                                 'text': text,
@@ -220,7 +221,7 @@ def is_vertical_from_layout(pix: fitz.Pixmap, lang: str) -> bool:
         traceback.print_exc()
         return False
 
-def extract_text_from_images_paddleocr(images: List[fitz.Pixmap], lang: str) -> str:
+def extract_text_from_images_paddleocr(images: list[fitz.Pixmap], lang: str) -> str:
     """
     Extracts and sorts text from a list of page images using PP-Structure.
     """

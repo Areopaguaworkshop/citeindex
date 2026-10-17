@@ -1,6 +1,7 @@
 import re
+
 import dspy
-from typing import Dict
+
 from .model import CitationLLM
 from .utils import parse_multiple_authors
 
@@ -85,7 +86,7 @@ class VerticalCitationLLM(CitationLLM):
 
         return text.strip()
 
-    def extract_vertical_citation(self, text: str, doc_type: str = "book") -> Dict:
+    def extract_vertical_citation(self, text: str, doc_type: str = "book") -> dict:
         """Extract citation using vertical text patterns"""
         try:
             # Clean the text before sending to LLM
@@ -248,7 +249,7 @@ class VerticalCitationLLM(CitationLLM):
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -443,7 +444,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -638,7 +639,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -833,7 +834,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -1028,7 +1029,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -1223,7 +1224,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -1418,7 +1419,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -1613,7 +1614,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -1819,7 +1820,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -2014,7 +2015,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -2209,7 +2210,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -2404,7 +2405,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -2599,7 +2600,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -2794,7 +2795,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -2989,7 +2990,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")
@@ -3184,7 +3185,7 @@ Now extract from this text:
         result += current
         return str(result)
 
-    def validate_title_vs_series(self, extracted_result) -> Dict:
+    def validate_title_vs_series(self, extracted_result) -> dict:
         """Validate and correct title vs series extraction"""
         title = extracted_result.get("title", "")
         series = extracted_result.get("series", "")

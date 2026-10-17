@@ -1,10 +1,12 @@
-import dspy
 import logging
-from typing import Dict, Optional, List
+import re
+from collections.abc import Sequence
+
+import dspy
 import fitz  # PyMuPDF
+
 from .llm import get_llm_model
 
-import re
 
 class ImprovedPageNumberExtractor:
     """Enhanced page number extraction with pattern recognition and position consistency"""
@@ -12,7 +14,7 @@ class ImprovedPageNumberExtractor:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
-    def extract_number_from_text(self, text: str) -> Optional[int]:
+    def extract_number_from_text(self, text: str) -> int | None:
         """Extract page numbers using comprehensive patterns with priority order"""
         if not text:
             return None
@@ -55,7 +57,7 @@ class ImprovedPageNumberExtractor:
         
         return None
     
-    def _extract_vertical_number(self, text: str) -> Optional[int]:
+    def _extract_vertical_number(self, text: str) -> int | None:
         """Extract vertically formatted page numbers like '1\n4\n1' = 141"""
         lines = text.strip().split('\n')
         
@@ -98,7 +100,7 @@ class ImprovedPageNumberExtractor:
         return None
     
 
-    def extract_total_pages_from_text(self, text: str) -> Optional[int]:
+    def extract_total_pages_from_text(self, text: str) -> int | None:
         """Extract total page count from patterns like '第 X 頁，共 Y 頁'"""
         if not text:
             return None
@@ -197,7 +199,7 @@ class ImprovedPageNumberExtractor:
         
         return position_texts
     
-    def find_continuous_page_sequence(self, pdf_path: str, max_pages: int = 5) -> Dict[int, int]:
+    def find_continuous_page_sequence(self, pdf_path: str, max_pages: int = 5) -> dict[int, int]:
         """Find continuous page number sequences with consistent positioning"""
         doc = fitz.open(pdf_path)
         total_pages = min(doc.page_count, max_pages)
@@ -234,7 +236,7 @@ class ImprovedPageNumberExtractor:
         return best_sequence
     
 
-    def find_continuous_page_sequence_with_range(self, pdf_path: str, page_range: str, total_pdf_pages: int) -> Dict[int, int]:
+    def find_continuous_page_sequence_with_range(self, pdf_path: str, page_range: str, total_pdf_pages: int) -> dict[int, int]:
         """
         Find continuous page number sequences respecting the page_range structure.
         
@@ -312,7 +314,7 @@ class ImprovedPageNumberExtractor:
         
         return final_sequence
     
-    def _extract_sequence_from_pages(self, doc, page_indices: List[int]) -> Dict[int, int]:
+    def _extract_sequence_from_pages(self, doc, page_indices: list[int]) -> dict[int, int]:
         """Extract continuous page number sequence from specific PDF pages with footer priority"""
         if not page_indices:
             return {}
@@ -331,7 +333,7 @@ class ImprovedPageNumberExtractor:
         self.logger.warning("No valid sequence found in footer or header")
         return {}
     
-    def _collect_candidates_by_position(self, doc, page_indices: List[int], position_type: str) -> Dict[int, List[Dict]]:
+    def _collect_candidates_by_position(self, doc, page_indices: list[int], position_type: str) -> dict[int, list[dict]]:
         """Collect page number candidates for a specific position type"""
         page_candidates = {}
         
@@ -361,7 +363,7 @@ class ImprovedPageNumberExtractor:
         
         return page_candidates
     
-    def _find_best_sequence_for_part(self, page_candidates: Dict[int, List[Dict]], position_type: str) -> Dict[int, int]:
+    def _find_best_sequence_for_part(self, page_candidates: dict[int, list[dict]], position_type: str) -> dict[int, int]:
         """Find the best continuous sequence for a part (first or last) with enhanced debugging"""
         if len(page_candidates) < 1:
             return {}
@@ -384,7 +386,7 @@ class ImprovedPageNumberExtractor:
             return {}
         
         best_sequence = None
-        best_score = -1
+        best_score = -1.0
         best_combination = None
         
         self.logger.debug(f"Testing {len(list(itertools.product(*non_empty_lists)))} combinations for {position_type}")
@@ -421,7 +423,7 @@ class ImprovedPageNumberExtractor:
         
         return best_sequence if best_sequence else {}
     
-    def _score_part_continuity(self, sequence: Dict[int, int]) -> float:
+    def _score_part_continuity(self, sequence: dict[int, int]) -> float:
         """Score continuity within a part (allows single pages)"""
         if len(sequence) < 1:
             return 0
@@ -456,12 +458,12 @@ class ImprovedPageNumberExtractor:
     
     def _smart_combine_sequences(
         self, 
-        first_sequence: Dict[int, int], 
-        last_sequence: Dict[int, int], 
-        first_pages: List[int], 
-        last_pages: List[int], 
+        first_sequence: dict[int, int], 
+        last_sequence: dict[int, int], 
+        first_pages: list[int], 
+        last_pages: list[int], 
         total_pdf_pages: int
-    ) -> Dict[int, int]:
+    ) -> dict[int, int]:
         """Smart combination of first and last part sequences with deduction for missing pages"""
         
         # Case 1: Both sequences found
@@ -486,12 +488,12 @@ class ImprovedPageNumberExtractor:
     
     def _combine_both_sequences(
         self, 
-        first_sequence: Dict[int, int], 
-        last_sequence: Dict[int, int], 
-        first_pages: List[int], 
-        last_pages: List[int], 
+        first_sequence: dict[int, int], 
+        last_sequence: dict[int, int], 
+        first_pages: list[int], 
+        last_pages: list[int], 
         total_pdf_pages: int
-    ) -> Dict[int, int]:
+    ) -> dict[int, int]:
         """Combine both sequences with smart gap validation"""
         
         # Get the ranges from each sequence
@@ -538,7 +540,7 @@ class ImprovedPageNumberExtractor:
             self.logger.warning(f"Gap not suitable for combination ({actual_gap}), using first sequence")
             return first_sequence
 
-    def _find_best_sequence(self, page_candidates: Dict[int, List[Dict]]) -> Dict[int, int]:
+    def _find_best_sequence(self, page_candidates: dict[int, list[dict]]) -> dict[int, int]:
         """Find the best continuous sequence with consistent positioning"""
         if len(page_candidates) < 2:
             return {}
@@ -561,7 +563,7 @@ class ImprovedPageNumberExtractor:
             return {}
         
         best_sequence = None
-        best_score = -1
+        best_score = -1.0
         
         for combination in itertools.product(*non_empty_lists):
             # Check position consistency
@@ -584,7 +586,7 @@ class ImprovedPageNumberExtractor:
         
         return best_sequence if best_sequence else {}
     
-    def _deduce_missing_pages(self, sequence: Dict[int, int], last_pages: List[int], total_pdf_pages: int) -> Dict[int, int]:
+    def _deduce_missing_pages(self, sequence: dict[int, int], last_pages: list[int], total_pdf_pages: int) -> dict[int, int]:
         """Deduce missing page numbers for pages without explicit numbers"""
         if not sequence:
             return sequence
@@ -629,17 +631,17 @@ class ImprovedPageNumberExtractor:
         
         return enhanced_sequence
     
-    def _check_position_consistency(self, combination: List[Dict]) -> bool:
+    def _check_position_consistency(self, combination: Sequence[dict]) -> bool:
         """Legacy position consistency check for backward compatibility"""
         position_consistent, _ = self._check_enhanced_position_consistency(combination)
         return position_consistent
     
-    def _score_position_consistency(self, combination: List[Dict]) -> float:
+    def _score_position_consistency(self, combination: Sequence[dict]) -> float:
         """Legacy position scoring for backward compatibility"""
         _, pattern_type = self._check_enhanced_position_consistency(combination)
         return self._score_enhanced_position_consistency(combination, pattern_type)
     
-    def _check_enhanced_position_consistency(self, combination: List[Dict]) -> tuple[bool, str]:
+    def _check_enhanced_position_consistency(self, combination: Sequence[dict]) -> tuple[bool, str]:
         """Check if page numbers appear in consistent patterns (alternating or center)"""
         if len(combination) < 2:
             return True, "single"
@@ -649,24 +651,24 @@ class ImprovedPageNumberExtractor:
         
         # Check for center pattern first (higher priority for decorative symbols)
         if all(pos == "center" for pos in positions):
-            self.logger.debug(f"Center pattern found: {list(zip(page_nums, positions))}")
+            self.logger.debug(f"Center pattern found: {list(zip(page_nums, positions, strict=False))}")
             return True, "center"
         
         # Check for alternating pattern based on actual page numbers (odd/even)
         if self._is_valid_alternating_pattern(combination):
-            self.logger.debug(f"Alternating pattern found: {list(zip(page_nums, positions))}")
+            self.logger.debug(f"Alternating pattern found: {list(zip(page_nums, positions, strict=False))}")
             return True, "alternating"
         
         # Check for consistent single position (all left or all right)
         unique_positions = set(positions)
         if len(unique_positions) == 1 and list(unique_positions)[0] in ["left", "right"]:
-            self.logger.debug(f"Consistent {positions[0]} pattern found: {list(zip(page_nums, positions))}")
+            self.logger.debug(f"Consistent {positions[0]} pattern found: {list(zip(page_nums, positions, strict=False))}")
             return True, f"consistent_{positions[0]}"
         
-        self.logger.debug(f"No consistent pattern found: {list(zip(page_nums, positions))}")
+        self.logger.debug(f"No consistent pattern found: {list(zip(page_nums, positions, strict=False))}")
         return False, "none"
     
-    def _is_valid_alternating_pattern(self, combination: List[Dict]) -> bool:
+    def _is_valid_alternating_pattern(self, combination: Sequence[dict]) -> bool:
         """Check if the pattern follows alternating left-right based on page numbers"""
         for candidate in combination:
             page_num = candidate["page_num"]
@@ -685,7 +687,7 @@ class ImprovedPageNumberExtractor:
         
         return True
     
-    def _score_continuity(self, sequence: Dict[int, int]) -> float:
+    def _score_continuity(self, sequence: dict[int, int]) -> float:
         """Score sequence based on numerical continuity (Rule 1)"""
         if len(sequence) < 2:
             return 0
@@ -712,7 +714,7 @@ class ImprovedPageNumberExtractor:
         
         return continuity_score / (len(sorted_items) - 1) if len(sorted_items) > 1 else 0
     
-    def _score_enhanced_position_consistency(self, combination: List[Dict], pattern_type: str) -> float:
+    def _score_enhanced_position_consistency(self, combination: Sequence[dict], pattern_type: str) -> float:
         """Score position consistency based on detected pattern type"""
         if len(combination) < 1:
             return 0
@@ -776,7 +778,7 @@ class CitationLLM:
         """Truncate text to a maximum number of characters."""
         return text[:max_chars]
 
-    def refine_citation_from_web_structured(self, page_content: str) -> Dict:
+    def refine_citation_from_web_structured(self, page_content: str) -> dict:
         """
         A structured, multi-step process to extract citation info from web content.
         """
@@ -807,7 +809,7 @@ class CitationLLM:
             logging.error(f"Error in structured web citation refinement: {e}")
             return {}
 
-    def refine_citation_from_web(self, initial_title: str, initial_author: str, page_content: str, url: str) -> Dict:
+    def refine_citation_from_web(self, initial_title: str, initial_author: str, page_content: str, url: str) -> dict:
         """Refines citation information from a webpage using a dedicated LLM call."""
         try:
             # First, try the new structured approach
@@ -822,7 +824,7 @@ class CitationLLM:
             result = predictor(
                 initial_title=initial_title,
                 initial_author=initial_author,
-                page_content=self._truncate_text(page_content, max_tokens=1500),
+                page_content=self._truncate_text(page_content, max_chars=1500),
                 url=url
             )
 
@@ -837,7 +839,7 @@ class CitationLLM:
             logging.error(f"Error refining web citation with LLM: {e}")
             return {}
 
-    def extract_book_citation(self, pdf_text: str) -> Dict:
+    def extract_book_citation(self, pdf_text: str) -> dict:
         """Extract citation from book PDF text."""
         try:
             signature = dspy.Signature(
@@ -866,7 +868,7 @@ class CitationLLM:
             return {}
 
 
-    def extract_thesis_citation(self, pdf_text: str) -> Dict:
+    def extract_thesis_citation(self, pdf_text: str) -> dict:
         """Extract citation from thesis PDF text."""
         try:
             signature = dspy.Signature(
@@ -894,7 +896,7 @@ class CitationLLM:
             logging.error(f"Error with thesis LLM extraction: {e}")
             return {}
 
-    def extract_journal_citation(self, pdf_text: str) -> Dict:
+    def extract_journal_citation(self, pdf_text: str) -> dict:
         """Extract citation from journal PDF text."""
         try:
             signature = dspy.Signature(
@@ -927,7 +929,7 @@ class CitationLLM:
             logging.error(f"Error with journal LLM extraction: {e}")
             return {}
 
-    def extract_bookchapter_citation(self, pdf_text: str) -> Dict:
+    def extract_bookchapter_citation(self, pdf_text: str) -> dict:
         """Extract citation from book chapter PDF text."""
         try:
             signature = dspy.Signature(
@@ -969,7 +971,7 @@ class CitationLLM:
         self,
         pdf_path: str,
         page_range: str = "1-5, -3"
-    ) -> Dict:
+    ) -> dict:
         """
         Enhanced page number extraction using pattern recognition and position consistency.
         
@@ -1083,7 +1085,7 @@ class CitationLLM:
             logging.error(f"Error with page number extraction: {e}")
             return {}
 
-    def extract_citation_from_text(self, text: str, doc_type: str) -> Dict:
+    def extract_citation_from_text(self, text: str, doc_type: str) -> dict:
         """Extract citation based on document type after truncating long text."""
         truncated_text = self._truncate_text(text)
 
@@ -1100,7 +1102,7 @@ class CitationLLM:
             logging.warning(f"Unknown document type: {doc_type}, using book extraction")
             return self.extract_book_citation(truncated_text)
 
-    def extract_citation_from_text_url(self, markdown_text: str) -> Dict:
+    def extract_citation_from_text_url(self, markdown_text: str) -> dict:
         """Extracts citation fields from the markdown content of a text-based URL."""
         try:
             signature = dspy.Signature(
@@ -1129,7 +1131,7 @@ class CitationLLM:
             logging.error(f"Error with text URL LLM extraction: {e}")
             return {}
 
-    def parse_search_results(self, search_response: str) -> Dict:
+    def parse_search_results(self, search_response: str) -> dict:
         """Parse the response from a search API to extract citation fields."""
         try:
             signature = dspy.Signature(

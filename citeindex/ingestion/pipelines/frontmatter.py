@@ -196,7 +196,7 @@ def scan_pages(pages: list[dict]) -> list[dict]:
         repeated_pages |= line_keys[key]
 
     results: list[dict] = []
-    for page, lines in zip(pages, page_lines):
+    for page, lines in zip(pages, page_lines, strict=False):
         pageno = int(page.get("page", 0))
         score = 0.0
         markers: list[str] = []
@@ -214,7 +214,11 @@ def scan_pages(pages: list[dict]) -> list[dict]:
 
         # ISBN candidates: a single list per page, dedup, order preserved.
         seen: set[str] = set()
-        isbn_candidates = [x for x in isbns if not (x in seen or seen.add(x))]
+        isbn_candidates: list[str] = []
+        for x in isbns:
+            if x not in seen:
+                seen.add(x)
+                isbn_candidates.append(x)
         results.append(
             {
                 "page": pageno,
