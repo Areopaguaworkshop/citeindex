@@ -653,7 +653,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.15.2). MIT. https://github.com/ajia/citeindex
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.15.2). MIT. https://github.com/Areopaguaworkshop/citeindex
 
 **BibTeX:**
 
@@ -664,7 +664,7 @@ If you use CiteIndex in your work, please cite it:
   version = {0.15.2},
   year    = {2025},
   license = {MIT},
-  url     = {https://github.com/ajia/citeindex},
+  url     = {https://github.com/Areopaguaworkshop/citeindex},
 }
 ```
 
