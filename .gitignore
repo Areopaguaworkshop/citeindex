@@ -51,3 +51,7 @@ entities.json
 
 # Authority benchmark API cache (benchmarks/authority/reports/ is committed as frozen evidence)
 benchmarks/authority/cache/
+
+# Local agent caches / machine settings
+.omx/
+.claude/settings.local.json
