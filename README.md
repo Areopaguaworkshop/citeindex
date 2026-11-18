@@ -1,9 +1,12 @@
 # CiteIndex
+### Ingest PDFs, web pages, audio, video, Office documents, and DjVu
+### Verify CSL JSON and trace quotations to a page, section, or timestamp
+### Use the same pipelines from the Python CLI or an agent through MCP
 
-CiteIndex, ingest sources with proper citation. PDF, URL, media, Office, DJVU.
-
-Evidence-backed citation metadata, Merkle-verified integrity, CJK-first OCR.
-Optional verification traces accepted metadata corrections to source evidence.
+CiteIndex turns original sources into citation records and quotation evidence
+that research tools can reuse. It supports CJK OCR for scanned pages and records
+Merkle hashes for integrity checks. An agent in Codex, Claude Code, OpenCode,
+Pi, or OMP can call the MCP server to ingest or check a source.
 
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/citeindex?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=RED&left_text=downloads)](https://pepy.tech/projects/citeindex)
 
@@ -17,7 +20,30 @@ citeindex paper.pdf
 Outputs land next to where you run it: `corpus/<doc-id>/` (CSL JSON, Merkle
 manifest, ingestion log), `library/<doc-id>.md`, and `logs/`. See
 [Install](#install) for OCR/media/browser extras and [CLI](#cli) for every
-flag. Architecture: [docs/design.md](docs/design.md).
+flag.
+
+## How it works
+
+```mermaid
+flowchart LR
+    CLI["CLI"] --> Core["Shared ingestion pipelines"]
+    MCP["MCP"] --> Core
+    Core --> Record["CSL JSON and quotation locators"]
+    Record --> Audit["Source and citation review"]
+    Audit -->|Several quotation matches| Choose["User chooses the occurrence"]
+    Choose -->|Selected locator| Audit
+    Audit -->|Supported correction| Core
+```
+
+1. Ingest the source. CiteIndex picks the extraction pipeline and saves the
+   record with the source coordinates it can recover.
+2. Check a CSL field or quotation against the record. An agent can inspect
+   the original and use its browser to resolve missing or disputed evidence.
+3. If a quotation occurs in several places, choose from the matches and
+   verify the selected locator. If the evidence supports a correction,
+   submit a repair proposal to regenerate the record.
+
+For pipeline and storage details, see the [architecture notes](docs/design.md).
 
 Reproduce the citation benchmark on a checkout (reviewed local gold manifest
 required — model output is never gold):
