@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.16.0 — 2026-11-18
+
+- Added MCP ingestion for PDFs, Office, DjVu, media, and URLs through the
+  shared CLI pipelines, with status handles for longer jobs.
+- Added source-bound citation replay and a host audit prompt for checking
+  missing or disputed evidence against the original source.
+- Added versioned PDF, HTML, and media quotation locators. When a quote has
+  several matches, the MCP returns context and coordinates for user selection.
+- Staged corpus and Markdown artifacts before publication and added rollback
+  for publication failures.
+
 ## v0.15.2 — 2026-11-18
 
 ### Fixed

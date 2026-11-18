@@ -50,11 +50,13 @@ def _extract_pages(pdf_path: str, pages: list[int] | None = None) -> list[dict[s
     """
     doc = fitz.open(pdf_path)
     indices = [page - 1 for page in pages] if pages is not None else range(doc.page_count)
+    has_page_labels = bool(doc.get_page_labels())
     pages_out: list[dict[str, Any]] = []
     for idx in indices:
         page = doc[idx]
         pages_out.append({
             "page_number": idx + 1,
+            "pdf_page_label": page.get_label() if has_page_labels else None,
             "text": page.get_text(),
             "blocks": page.get_text("blocks"),
         })
@@ -590,6 +592,7 @@ def run(
     #   - Remove any header/footer text that leaked (safety net)
     #   - Apply the page number map
     page_number_map: dict[int, int] = {i: i + 1 for i in range(num_pages)}
+    detected_map: dict[int, int] = {}
     if page_layouts is not None:
         _attach_layout_footnotes(document_structure, page_layouts, page_numbers=selected_pages)
         _remove_header_footer_paragraphs(document_structure, page_layouts, page_numbers=selected_pages)
@@ -656,6 +659,27 @@ def run(
     from .dspy_extract import build_source_blocks, select_candidate_regions
     # Use original PyMuPDF blocks before layout cleanup removes imprint text.
     source_blocks = build_source_blocks([(p["page_number"], [b[4] for b in p["blocks"] if len(b) > 4 and isinstance(b[4], str)]) for p in source_pages])
+    for block in source_blocks:
+        original_page = source_pages[block["physical_page_index"]]
+        physical_index = original_page["page_number"] - 1
+        block["physical_page_index"] = physical_index
+        block["id"] = f"p{physical_index + 1}_{block['id'].split('_', 1)[1]}"
+        block.pop("printed_page_label", None)
+        if original_page.get("pdf_page_label"):
+            block["printed_page_label"] = original_page["pdf_page_label"]
+            block["page_label_source"] = "pdf-page-label"
+        elif physical_index in detected_map:
+            block["printed_page_label"] = str(detected_map[physical_index])
+            block["page_label_source"] = "layout-sequence"
+    for page, original_page in zip(document_structure["pages"], source_pages, strict=False):
+        physical_index = original_page["page_number"] - 1
+        page["physical_page_index"] = physical_index
+        if original_page.get("pdf_page_label"):
+            page["printed_page_label"] = original_page["pdf_page_label"]
+            page["page_label_source"] = "pdf-page-label"
+        elif physical_index in detected_map:
+            page["printed_page_label"] = str(detected_map[physical_index])
+            page["page_label_source"] = "layout-sequence"
     candidate_regions = select_candidate_regions(pageindex_tree_json)
     region_hints = []
     if pageindex_tree_json:
@@ -739,7 +763,7 @@ def run(
     # verification-only sidecar.  Add them after PageIndex has finished
     # reshaping paragraphs.
     from .common import attach_evidence_locators
-    attach_evidence_locators(document_structure, nodes, page_layouts)
+    attach_evidence_locators(document_structure, nodes, page_layouts, nodes_use_physical_pages=True)
 
     if pdf_images and _images_tmpdir:
         extra["_images_tmpdir"] = _images_tmpdir

@@ -19,6 +19,7 @@ class ServerConfig:
     allow_write: bool
     max_url_seconds: int
     audit: bool
+    input_roots: tuple[Path, ...] = ()
 
 
 _CONFIG: ServerConfig | None = None
@@ -32,7 +33,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 def build_config(corpus_root: str | Path | None = None, allow_write: bool | None = None,
-                 max_url_seconds: int | None = None) -> ServerConfig:
+                 max_url_seconds: int | None = None, *, input_roots: list[str] | None = None) -> ServerConfig:
     root = Path(
         corpus_root
         or os.environ.get("CITEINDEX_CORPUS_ROOT")
@@ -50,13 +51,17 @@ def build_config(corpus_root: str | Path | None = None, allow_write: bool | None
             ),
         ),
         audit=not os.environ.get("CITEINDEX_MCP_AUDIT", "").strip() == "0",
+        input_roots=tuple(Path(part).expanduser().resolve() for part in (
+            input_roots if input_roots is not None
+            else os.environ.get("CITEINDEX_MCP_INPUT_ROOTS", "").split(os.pathsep)
+        ) if part),
     )
 
 
 def configure(corpus_root: str | Path | None = None, allow_write: bool | None = None,
-              max_url_seconds: int | None = None) -> ServerConfig:
+              max_url_seconds: int | None = None, *, input_roots: list[str] | None = None) -> ServerConfig:
     global _CONFIG
-    _CONFIG = build_config(corpus_root, allow_write, max_url_seconds)
+    _CONFIG = build_config(corpus_root, allow_write, max_url_seconds, input_roots=input_roots)
     return _CONFIG
 
 
@@ -70,6 +75,16 @@ def require_write(tool: str) -> None:
             f"{tool} writes corpus artifacts; start the server with --allow-write "
             "or set CITEINDEX_MCP_ALLOW_WRITE=1"
         )
+
+
+def resolve_input_file(path: str, *, settings: ServerConfig | None = None) -> Path:
+    """Accept only regular files under a configured input root."""
+    candidate = Path(path).expanduser().resolve()
+    if not any(candidate != root and candidate.is_relative_to(root) for root in (settings or config()).input_roots):
+        raise PermissionError("The file must be within a configured MCP input root")
+    if not candidate.is_file():
+        raise FileNotFoundError("The input must be an existing regular file")
+    return candidate
 
 
 def resolve_corpus_child(name: str) -> Path:

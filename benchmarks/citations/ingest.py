@@ -166,6 +166,17 @@ def main(manifest_path: str, predictions_path: str, retry_failed: bool = False,
                                "scan_page_sample": scan_page_sample},
                     "logs": str(work), "tokens": None, "cost_usd": None,
                 }
+                if status == "ok" and row.get("quotation_checks"):
+                    from citeindex.ingestion.citation_verification import replay_citation_evidence
+
+                    prediction["quotation_checks"] = {
+                        case["id"]: replay_citation_evidence(
+                            prediction["csl"], pipeline.get("document_json"), pipeline["resource_type"],
+                            prediction["source_blocks"], fields=[],
+                            quotation=case["quote"], locator=case["locator"],
+                        )["quotation"]
+                        for case in row["quotation_checks"]
+                    }
                 original = Path(source_path)
                 if not original.is_file() and result.get("document_path"):
                     original = Path(result["document_path"]) / "source.html"

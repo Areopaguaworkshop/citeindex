@@ -13,7 +13,7 @@ CLI:
     citeindex https://example.com/article
 """
 
-__version__ = "0.15.2"
+__version__ = "0.16.0"
 
 from citeindex.ingestion import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.models import IngestionConfig, IngestionFailure, PipelineResult

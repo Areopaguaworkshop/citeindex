@@ -1,4 +1,4 @@
-"""Score host metadata only, against independently reviewed labels."""
+"""Score citation metadata and optional reviewed quotation checks."""
 from __future__ import annotations
 
 import hashlib
@@ -308,6 +308,38 @@ def score(gold: dict, predictions: dict, attempts: list[dict]) -> dict:
                        _norm(prediction["csl"].get(field), field) == _norm(gold[key]["csl"].get(field), field))
             evidence["matches_reviewed_attribution" if matches else "needs_attribution_review"] += 1
     report["evidence"] = evidence
+    quotation_counts: dict[str, dict[str, int]] = {}
+    for key, row in gold.items():
+        results = predictions.get(key, {}).get("quotation_checks", {})
+        for case in row.get("quotation_checks", []):
+            counts = quotation_counts.setdefault(row["modality"], {
+                "checked": 0, "expected_matches": 0, "accepted": 0,
+                "exact_matches": 0, "correct_rejections": 0, "unavailable": 0,
+            })
+            counts["checked"] += 1
+            expected = case["expect_match"]
+            counts["expected_matches"] += int(expected)
+            result = results.get(case["id"])
+            if result is None:
+                counts["unavailable"] += 1
+                continue
+            accepted = result["status"] == "extraction-match"
+            counts["accepted"] += int(accepted)
+            if accepted and expected and result["quote"] == case["quote"]:
+                counts["exact_matches"] += int(all(
+                    result["locator"].get(field) == value
+                    for field, value in case.get("expected_locator", case["locator"]).items()
+                ))
+            counts["correct_rejections"] += int(not accepted and not expected)
+    if quotation_counts:
+        report["quotation_checks_by_modality"] = {
+            modality: {
+                **counts,
+                "precision": counts["exact_matches"] / counts["accepted"] if counts["accepted"] else None,
+                "coverage": counts["exact_matches"] / counts["expected_matches"] if counts["expected_matches"] else None,
+            }
+            for modality, counts in quotation_counts.items()
+        }
     report["latency_seconds"] = {"p50": _percentile([r.get("seconds") for r in attempts], .5),
                                  "p95": _percentile([r.get("seconds") for r in attempts], .95)}
     report["cost"] = {field: sum(r[field] for r in attempts) if attempts and all(isinstance(r.get(field), (int, float)) for r in attempts) else None

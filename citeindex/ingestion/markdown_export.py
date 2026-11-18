@@ -474,11 +474,14 @@ def write_library_markdown(
     verification_status: str | None = None,
     rendered_citation: str | None = None,
     authority_links: dict[str, Any] | None = None,
+    *,
+    staged_path: str | None = None,
 ) -> str:
     """Generate and write the library MD file. Returns the file path."""
     # library/ is a sibling of corpus/
     library_root = os.path.join(os.path.dirname(corpus_root), "library")
-    ensure_dir(library_root)
+    if staged_path is None:
+        ensure_dir(library_root)
 
     folder_name = csl_folder_name(csl_json)
     md_filename = f"{folder_name}.md"
@@ -499,7 +502,7 @@ def write_library_markdown(
         authority_links=authority_links,
     )
 
-    with open(md_path, "w", encoding="utf-8") as f:
+    with open(staged_path or md_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     logger.info("Library markdown written: %s", md_path)

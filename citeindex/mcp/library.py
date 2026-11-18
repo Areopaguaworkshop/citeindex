@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from citeindex.ingestion.csl import export_csl
+from citeindex.ingestion.master import file_sha256
 from citeindex.ingestion.models import IngestionConfig
 
-from .security import audit_event, config, resolve_corpus_child
+from .security import audit_event, config, resolve_corpus_child, resolve_input_file
 
 
 def _read_json(path: Path) -> Any:
@@ -25,7 +26,8 @@ def _record_dirs() -> list[Path]:
         return []
     dirs = [
         entry for entry in root.iterdir()
-        if entry.is_dir() and not entry.name.startswith(".") and (entry / "csl.json").is_file()
+        if entry.is_dir() and not entry.is_symlink() and not entry.name.startswith(".")
+        and (entry / "csl.json").is_file()
     ]
     return sorted(dirs, key=lambda path: (path / "csl.json").stat().st_mtime, reverse=True)
 
@@ -78,7 +80,7 @@ def _match(folder: Path, csl: dict[str, Any], source_id: str) -> bool:
     return False
 
 
-def find_record(source_id: str) -> tuple[Path, dict[str, Any]]:
+def find_record(source_id: str, *, exact: bool = False) -> tuple[Path, dict[str, Any]]:
     if not source_id or source_id in {".", ".."}:
         raise ValueError("source_id must be a record id or corpus folder name")
     if "/" not in source_id and "\\" not in source_id:
@@ -88,9 +90,9 @@ def find_record(source_id: str) -> tuple[Path, dict[str, Any]]:
             return direct, csl
     for folder in _record_dirs():
         csl = _read_json(folder / "csl.json") or {}
-        if _match(folder, csl, source_id):
+        if csl.get("id") == source_id or (not exact and _match(folder, csl, source_id)):
             return folder, csl
-    raise KeyError(f"no corpus record matches source_id={source_id!r}; use library_search first")
+    raise KeyError(f"no corpus record matches source_id={source_id!r}")
 
 
 def library_list(limit: int = 20, offset: int = 0, kind: str | None = None) -> dict[str, Any]:
@@ -150,7 +152,8 @@ def library_get(source_id: str) -> dict[str, Any]:
     paths = {
         name: str(folder / name)
         for name in ("csl.json", "csl-export.json", "document.json", "merkle.json",
-                     "citation_verification.json", "source.html", "ingestion_output.json")
+                     "citation_verification.json", "source.html", "source.media", "ingestion_output.json",
+                     "source_blocks.json", "quotation_locators.json", "pageindex_tree.json", "transcript.json")
         if (folder / name).is_file()
     }
     markdown = config().library_root / f"{folder.name}.md"
@@ -188,31 +191,85 @@ def record_verification(source_id: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def citation_verify(source_id: str, offline: bool = True) -> dict[str, Any]:
-    """Run the evidence audit against an existing record (offline by default)."""
-    folder, csl = find_record(source_id)
+def citation_verify(
+    source_id: str, offline: bool = True, *, fields: list[str] | None = None,
+    quotation: str | None = None, locator: dict[str, Any] | None = None,
+    original_file: str | None = None,
+) -> dict[str, Any]:
+    """Replay extraction evidence for a pinned record and prepare the host audit."""
+    folder, csl = find_record(source_id, exact=True)
     output = _read_json(folder / "ingestion_output.json") or {}
     sub = output.get("sub_pipeline_outputs") or {}
     document_json = sub.get("document_json") or _read_json(folder / "document.json")
     resource_type = sub.get("resource_type") or (output.get("ingestion_log_entry") or {}).get("resource_type") or "url_article"
-    extra = dict(sub.get("extra") or {})
-    if not extra.get("source_blocks"):
-        blocks = _read_json(folder / "source_blocks.json")
-        if blocks is not None:
-            extra["source_blocks"] = blocks
+    legacy = sub.get("extra") or {}
+    blocks = _read_json(folder / "source_blocks.json") or sub.get("source_blocks") or legacy.get("source_blocks") or []
+    blocks = [block for block in blocks if isinstance(block, dict) and block.get("id")]
+    identity = sub.get("source_identity") or {}
+    digest = identity.get("sha256") or sub.get("source_snapshot_digest") or csl.get("source_sha256")
+    artifact = identity.get("artifact")
+    if artifact is None and resource_type == "url_article":
+        artifact = "source.html"
+    source = resolve_input_file(original_file) if original_file else None
+    if source is None and artifact in {"source.html", "source.media"}:
+        candidate = folder / artifact
+        if candidate.is_file() and not candidate.is_symlink():
+            source = candidate
+    binding = "unavailable"
+    if source:
+        binding = "unrecorded" if not digest else "matches" if file_sha256(str(source)) == digest else "mismatch"
 
-    from citeindex.ingestion.citation_verification import verify_citation_metadata
+    from citeindex.ingestion.citation_verification import (
+        quotation_entry,
+        replay_citation_evidence,
+        verify_citation_metadata,
+    )
 
-    cfg = IngestionConfig(offline_verification=offline, crossref_enabled=not offline)
-    verified, report = verify_citation_metadata(csl, document_json, resource_type, extra, cfg)
-    audit_event("citation_verify", {"source_id": source_id, "offline": offline,
-                                    "status": (report or {}).get("status")})
+    report = replay_citation_evidence(csl, document_json, resource_type, blocks, fields, quotation, locator)
+    quote = report.get("quotation")
+    candidates = quote.get("candidates", [quote]) if quote else []
+    snapshot_conflict = any(
+        (coordinates := candidate.get("locator", {})).get("snapshot_artifact") == "source.html"
+        and bool(digest) and coordinates.get("source_digest") != digest
+        for candidate in candidates
+    )
+    has_checks = bool(report["field_states"]) or quote is not None
+    evidence_matches = has_checks and all(
+        state == "source-supported" for state in report["field_states"].values()
+    ) and (quote is None or quote["status"] == "extraction-match")
+    if quote and (binding == "mismatch" or snapshot_conflict):
+        report["quotation"] = {"status": "needs-review", "reason": "source_digest_mismatch"}
+    elif quote:
+        for candidate in candidates:
+            if "locator" in candidate:
+                candidate.update(quotation_entry(
+                    csl.get("id") or folder.name, digest, quote["quote"], candidate["locator"],
+                ))
+    status = "extraction-match" if evidence_matches and binding != "mismatch" and not snapshot_conflict else "needs-review"
+    report.update(status=status, scope="stored-extraction", source_sha256=digest,
+                  original_source={"binding": binding, "content_review": "host-required"})
+    report["registry"] = {"status": "not_requested"}
+    if not offline and binding != "mismatch":
+        # Replay only corpus text. Stored metadata paths are not trusted file inputs.
+        safe_document = {**document_json, "metadata": {**document_json.get("metadata", {}), "source_path": None}} if document_json else None
+        cfg = IngestionConfig()
+        _, registry_report = verify_citation_metadata(
+            csl, safe_document, resource_type, {"source_blocks": blocks}, cfg,
+        )
+        report["registry"] = registry_report["registry"]
+        report["proposed_corrections"] = registry_report["proposed_corrections"]
+    audit_event("citation_verify", {"source_id": source_id, "offline": offline, "status": status})
     return {
         "source_id": csl.get("id") or folder.name,
         "folder": folder.name,
-        "status": (report or {}).get("status"),
+        "status": status,
         "report": report,
-        "csl": verified,
+        "csl": csl,
+        "host_audit": {
+            "skill": "citeindex://skills/citation-verification",
+            "prompt": "reverify-citation",
+            "lookup": {key: csl[key] for key in ("DOI", "ISBN", "URL", "title", "edition") if csl.get(key)},
+        },
     }
 
 

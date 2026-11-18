@@ -45,6 +45,24 @@ def validate_rows(rows: list[dict]) -> list[str]:
             continue
         if not valid_host_value("type", csl.get("type")):
             errors.append(f"row {index}: supported bibliographic type required")
+        quotation_checks = row.get("quotation_checks", [])
+        quotation_ids: set[str] = set()
+        if not isinstance(quotation_checks, list):
+            errors.append(f"row {index}: quotation_checks must be a list")
+            quotation_checks = []
+        for case in quotation_checks:
+            if (not isinstance(case, dict) or not isinstance(case.get("id"), str)
+                    or not case["id"] or case["id"] in quotation_ids
+                    or not isinstance(case.get("quote"), str) or not case["quote"].strip()
+                    or not isinstance(case.get("locator"), dict)
+                    or not set(case["locator"]) & {
+                        "block_id", "node_id", "physical_page_index", "section_index", "segment_id", "paragraph_id",
+                    }
+                    or not isinstance(case.get("expected_locator", {}), dict)
+                    or type(case.get("expect_match")) is not bool):
+                errors.append(f"row {index}: invalid or duplicate quotation check")
+                continue
+            quotation_ids.add(case["id"])
         for field in evaluated_fields(row):
             state = states.get(field)
             if state not in {"present", "absent", "illegible", "outside_scope"}:

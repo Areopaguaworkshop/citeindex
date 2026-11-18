@@ -11,6 +11,15 @@ python benchmarks/citations/run.py manifest.jsonl predictions.jsonl
 The runner counts every gold record, including missing predictions. Keep PDFs
 out of this directory unless their redistribution rights permit it.
 
+Add optional `quotation_checks` to a reviewed row to score the exact quotation
+and locator workflow. Give each check a unique `id`, the literal `quote`, a
+request `locator`, and `expect_match`. Set `expected_locator` to the reviewed
+coordinates when the response should provide more detail than the request.
+Use negative cases for wrong pages, duplicate spans, and incorrect timestamps.
+The ingestion runner records the outcome. The scorer gives precision,
+coverage, and unavailability for each modality with reviewed cases. Use the
+same pinned sources and include OCR pages covered by the benchmark run.
+
 Before scoring, annotate each row with reviewed CSL/evidence and set
 `review_status` to `reviewed`; model output is never gold. Create reproducible
 splits with `python benchmarks/citations/split.py manifest.jsonl split.jsonl`.

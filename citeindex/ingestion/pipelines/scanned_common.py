@@ -155,9 +155,15 @@ def build_scanned_pipeline_result(
     import fitz
     with fitz.open(pdf_path) as pdf:
         num_pages = pdf.page_count
+        page_indices = {item.get("page_idx") for item in content_list}
+        pdf_labels = {
+            index: pdf[index].get_label() for index in page_indices
+            if isinstance(index, int) and 0 <= index < num_pages
+        } if pdf.get_page_labels() else {}
     logger.info("[%s] Building result: %d pages, determining doc type...", backend_name, num_pages)
     doc_type = config.doc_type_override or determine_doc_type(pdf_path, num_pages)
-    page_number_map = build_page_number_map_from_content_list(content_list)
+    detected_page_numbers = extract_page_numbers_from_content_list(content_list)
+    page_number_map = detected_page_numbers or build_page_number_map_from_content_list(content_list)
     normalized_markdown = markdown_text or content_list_to_markdown(content_list, page_number_map)
 
     from .dspy_extract import select_candidate_regions
@@ -166,6 +172,16 @@ def build_scanned_pipeline_result(
          "role": item.get("type", "text")}
         for i, item in enumerate(content_list) if isinstance(item.get("text"), str) and item["text"].strip()
     ]
+    labels = {
+        index: {"printed_page_label": str(label), "page_label_source": "ocr-sequence"}
+        for index, label in detected_page_numbers.items()
+    }
+    labels.update({
+        index: {"printed_page_label": label, "page_label_source": "pdf-page-label"}
+        for index, label in pdf_labels.items() if label
+    })
+    for block in source_blocks:
+        block.update(labels.get(block["physical_page_index"], {}))
     pi_result = None
     if config.use_pageindex and not config.pages and normalized_markdown.strip():
         try:
@@ -249,6 +265,9 @@ def build_scanned_pipeline_result(
         except Exception:
             logger.warning("PageIndex failed for scanned backend", exc_info=True)
 
+    for page in document_structure.get("pages", []):
+        physical_index = page.get("physical_page_index", page.get("page_idx"))
+        page.update(labels.get(physical_index, {}))
     attach_evidence_locators(document_structure, nodes)
 
     if images_tmpdir and images_list:

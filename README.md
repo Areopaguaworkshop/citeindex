@@ -132,13 +132,34 @@ citeindex-mcp --http 127.0.0.1:8765 --corpus-root corpus  # shared Streamable HT
 uvx --from 'citeindex[mcp]' citeindex-mcp --corpus-root corpus
 ```
 
-Read tools (`citeindex_info`, `library_list`, `library_search`, `library_get`,
-`citation_verify`, `citation_format`) are always available. `ingest_url`
-requires `--allow-write` (or `CITEINDEX_MCP_ALLOW_WRITE=1`), uses deterministic
-HTML metadata by default, and opts into DSPy/PageIndex with `llm=True` /
-`deep=True`. The server also exposes CSL, Merkle manifests, verification
-reports, and the project's `citation-verification` skill as resources, plus
-`cite-this-source` / `ingest-verified` prompts.
+`ingest_source` uses the same pipelines as the CLI for PDFs, Office, DjVu,
+media, and public URLs. Enable writes with `--allow-write` or
+`CITEINDEX_MCP_ALLOW_WRITE=1`. Enable local inputs with repeatable
+`--input-root /path/to/sources` options. Poll `ingestion_status` with the
+returned job ID. Job handles are retained in the server process. The older
+`ingest_url` tool keeps its deterministic HTML defaults and also returns a
+job ID if ingestion is still running.
+
+Use `citation_verify` with the exact record ID to check CSL fields or a supplied
+quotation, with an optional locator to narrow the check. It reports agreement with stored extraction and,
+when available, checks the original bytes against the recorded digest. The
+`reverify-citation` prompt guides the agent host through inspecting the
+original and using its web or browser tools to resolve missing evidence.
+Record the supporting quote, locator and URL, and confirm the edition.
+Registry corroboration has its own status. Apply requested corrections
+through a repair proposal and the standard ingestion path.
+
+Full and CSL-with-evidence outputs persist `quotation_locators.json` for
+extracted PDF, HTML, and media spans. A PDF locator carries the physical page
+and, when available, the printed label and its provenance. The MCP returns
+context and exact coordinates when several occurrences match. The host asks
+the user to choose and submits the selected locator for verification.
+
+Use Shutong for corpus discovery and research questions. Pass the CiteIndex
+record ID to `library_get` or `citation_verify` for evidence. The server also
+exposes CSL, manifests, verification reports, and the citation verification
+skill as resources. `library_list` and `library_search` remain available for
+existing clients.
 
 Client registration snippets for OpenCode, Codex, Pi, and OMP:
 [docs/2026-11-17-citeindex-mcp-plan.html](docs/2026-11-17-citeindex-mcp-plan.html).
@@ -320,7 +341,7 @@ result = ingest("paper.pdf", corpus_root="my_corpus", config=config)
 - `citeindex/ingestion/master.py` detects input types, routes pipelines, verifies metadata, and persists results.
 - `citeindex/ingestion/pipelines/` contains the digital PDF, scanned PDF, URL, media, GROBID, PageIndex, and metadata-extraction implementations.
 - `citeindex/ingestion/storage.py` and `markdown_export.py` write corpus artifacts and companion library Markdown.
-- `citeindex/mcp/` is the optional MCP server (`citeindex[mcp]`): library tools, write-gated URL ingestion, resources, prompts, and the bundled verification skill.
+- `citeindex/mcp/` serves citation verification, shared ingestion, and the bundled host audit skill.
 - `.agents/`, `.claude/`, `.codex/`, `.opencode/`, and `.pi/` expose the optional citation-evidence audit to supported agent harnesses.
 
 ## Ingestion Pipelines
@@ -518,7 +539,7 @@ Each ingestion produces a content-addressed corpus folder (for example, `corpus/
 | `csl-export.json` | CSL item array for processors; supported fields at top level, internal/unsupported data under `custom`, subtitle composed into title |
 | `source_blocks.json` | Web/media evidence blocks with source coordinates |
 | `web_metadata.json`, `retrieval_metadata.json` | Provider candidates and observed retrieval metadata, when applicable |
-| `quotation_locators.json` | Media quotation items with final citation ID and timestamp locator; not recording duration |
+| `quotation_locators.json` | Extracted PDF, HTML, and media quotation spans with the final citation ID and source coordinates |
 | `document.json` | Structured document tree — pages, paragraphs, and `section_tree` for URL articles and PageIndex-augmented PDFs |
 | `pageindex_tree.json` | Persisted CiteIndex/PageIndex hierarchy with page ranges and summaries when PageIndex runs |
 | `merkle.json` | SHA-256 Merkle tree for integrity verification |
@@ -653,7 +674,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.15.2). MIT. https://github.com/Areopaguaworkshop/citeindex
+> ajia. (2026). *CiteIndex: Ingest sources with proper citation* (Version 0.16.0). MIT. https://github.com/Areopaguaworkshop/citeindex
 
 **BibTeX:**
 
@@ -661,8 +682,8 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.15.2},
-  year    = {2025},
+  version = {0.16.0},
+  year    = {2026},
   license = {MIT},
   url     = {https://github.com/Areopaguaworkshop/citeindex},
 }
@@ -674,7 +695,7 @@ If you use CiteIndex in your work, please cite it:
   pytest) on Python 3.12/3.13 (`.github/workflows/tests.yml`). MCP tests are
   skipped when the optional `mcp` extra is absent. Branch-coverage gate at
   ~40%, ratcheting toward 85% as legacy modules gain tests.
-- PyPI: `citeindex` **0.15.2** published 2026-11-18; the optional `[mcp]` extra
+- PyPI: `citeindex` **0.16.0** published 2026-11-18; the optional `[mcp]` extra
   and bundled `citation-verification` skill are included in the release.
 - MCP server: optional `citeindex[mcp]` extra and `citeindex-mcp` entry point
   expose library search/read, `citation_verify`, `citation_format`, and

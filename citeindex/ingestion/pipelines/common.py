@@ -162,6 +162,8 @@ def attach_evidence_locators(
     document_structure: dict[str, Any],
     nodes: list[dict[str, Any]],
     page_layouts: list[dict[str, Any]] | None = None,
+    *,
+    nodes_use_physical_pages: bool = False,
 ) -> None:
     """Attach persisted-node and stable source locators to paragraphs in place."""
     layouts_by_index = {
@@ -198,7 +200,9 @@ def attach_evidence_locators(
             paragraph["char_start"] = 0
             paragraph["char_end"] = len(paragraph["text"])
             matching_nodes: list[dict[str, Any]] = []
-            for page_key in (page_number, page["physical_page_index"] + 1):
+            physical_page = page["physical_page_index"] + 1
+            page_keys = (physical_page,) if nodes_use_physical_pages else (page_number, physical_page)
+            for page_key in page_keys:
                 candidates = nodes_by_key.get((page_key, text), [])
                 cursor_key = (page_key, text)
                 cursor = node_cursors.get(cursor_key, 0)
@@ -207,7 +211,12 @@ def attach_evidence_locators(
                     node_cursors[cursor_key] = cursor + 1
                     break
             if matching_nodes:
-                paragraph["node_id"] = matching_nodes[0]["node_id"]
+                node = matching_nodes[0]
+                paragraph["node_id"] = node["node_id"]
+                node["physical_page_index"] = page["physical_page_index"]
+                for key in ("printed_page_label", "page_label_source"):
+                    if key in page:
+                        node[key] = page[key]
             if not paragraph.get("bbox"):
                 layout_key = (page["physical_page_index"], text)
                 layout_candidates = [

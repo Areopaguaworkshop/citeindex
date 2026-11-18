@@ -324,14 +324,17 @@ def _locator(data: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _text_items(document_json: dict[str, Any] | None, resource_type: str) -> Iterable[dict[str, Any]]:
+def _text_items(
+    document_json: dict[str, Any] | None, resource_type: str, *, raw_spans: bool = False,
+) -> Iterable[dict[str, Any]]:
     document = document_json or {}
     seen: set[tuple[str, str]] = set()
+    paragraph_nodes: set[str] = set()
 
     def emit(text: Any, locator: dict[str, Any]) -> Iterable[dict[str, Any]]:
         if not isinstance(text, str) or not text.strip():
             return []
-        item: dict[str, Any] = {"quote": text.strip(), "locator": locator}
+        item: dict[str, Any] = {"quote": text if raw_spans else text.strip(), "locator": locator}
         key = (item["quote"], json.dumps(locator, sort_keys=True, default=str))
         if key in seen:
             return []
@@ -350,9 +353,13 @@ def _text_items(document_json: dict[str, Any] | None, resource_type: str) -> Ite
                     locator["section_url"] = document["metadata"]["url"]
             else:
                 locator["physical_page_index"] = page.get("physical_page_index", page.get("page_idx", physical_page_index))
-                if page.get("page_number") is not None:
+                if page.get("printed_page_label") is not None:
+                    locator["printed_page_label"] = page["printed_page_label"]
+                    locator["page_label_source"] = page.get("page_label_source")
+                elif not raw_spans and page.get("page_number") is not None:
                     locator["printed_page_label"] = str(page["page_number"])
             if data.get("node_id"):
+                paragraph_nodes.add(data["node_id"])
                 locator.setdefault("char_start", 0)
                 locator.setdefault("char_end", len(data.get("text", "")))
             yield from emit(data.get("text"), _locator(data, locator))
@@ -374,7 +381,8 @@ def _text_items(document_json: dict[str, Any] | None, resource_type: str) -> Ite
         if "node_id" in locator and isinstance(value.get("text"), str):
             locator.setdefault("char_start", 0)
             locator.setdefault("char_end", len(value["text"]))
-        yield from emit(value.get("text"), locator)
+        if not raw_spans or locator.get("node_id") not in paragraph_nodes:
+            yield from emit(value.get("text"), locator)
         for key, child in value.items():
             if key not in {"text", "bbox", "char_start", "char_end", "node_id", "id"}:
                 yield from walk(child, locator)
@@ -382,12 +390,16 @@ def _text_items(document_json: dict[str, Any] | None, resource_type: str) -> Ite
     yield from walk(document.get("nodes", []), {})
 
 
-def _evidence(document_json: dict[str, Any] | None, resource_type: str, extra: dict[str, Any]) -> list[dict[str, Any]]:
-    items = list(_text_items(document_json, resource_type))
+def _evidence(
+    document_json: dict[str, Any] | None, resource_type: str, extra: dict[str, Any], *, raw_spans: bool = False,
+) -> list[dict[str, Any]]:
+    items = list(_text_items(document_json, resource_type, raw_spans=raw_spans))
     for block in extra.get("source_blocks", []):
         if isinstance(block.get("text"), str):
             locator = {k: v for k, v in block.items() if k not in {"text", "role", "id"}}
-            locator.update(block_id=block["id"], node_id=block["id"], char_start=0, char_end=len(block["text"]))
+            locator.update(block_id=block["id"], char_start=0, char_end=len(block["text"]))
+            if not raw_spans:
+                locator.setdefault("node_id", block["id"])
             if valid_source_locator(locator):
                 items.append({"quote": block["text"], "locator": locator})
     snapshot_path = extra.get("source_snapshot_path")
@@ -402,7 +414,7 @@ def _evidence(document_json: dict[str, Any] | None, resource_type: str, extra: d
             start = html.casefold().find(item["quote"].casefold())
             if start >= 0:
                 item["locator"].update(snapshot_char_start=start, snapshot_char_end=start + len(item["quote"]))
-    else:
+    elif not raw_spans:
         digest = _source_digest(document_json, resource_type, extra, items)
         for item in items:
             item["locator"].setdefault("snapshot_artifact", "document.json")
@@ -691,3 +703,140 @@ def verify_citation_metadata(
         "field_states": field_states,
     }
     return (proposed if not needs_review else original), report
+
+
+def _quotation_evidence(evidence: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+    anchors: list[dict[str, Any]] = []
+    pdf_aliases: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for item in evidence:
+        locator = dict(item["locator"])
+        if locator.get("metadata_key") or not valid_source_locator(locator):
+            continue
+        if "physical_page_index" in locator and not locator.get("page_label_source"):
+            locator.pop("printed_page_label", None)
+        anchor = {"quote": item["quote"], "locator": locator}
+        anchors.append(anchor)
+        if "physical_page_index" in locator:
+            pdf_aliases.setdefault((locator["physical_page_index"], item["quote"]), []).append(anchor)
+    duplicates = set()
+    for group in pdf_aliases.values():
+        if len(group) != 2:
+            continue
+        first, second = group
+        if ("block_id" in first["locator"]) == ("block_id" in second["locator"]):
+            continue
+        if "block_id" in first["locator"]:
+            first, second = second, first
+        first["locator"] = {**first["locator"], **second["locator"]}
+        duplicates.add(id(second))
+    yield from (anchor for anchor in anchors if id(anchor) not in duplicates)
+
+
+def quotation_entry(
+    source_id: str, source_sha256: str | None, quote: str, locator: dict[str, Any],
+) -> dict[str, Any]:
+    """Describe an extracted span without asserting original-source confirmation."""
+    from .deterministic import hash_payload
+    from .markdown_export import _format_timestamp
+
+    entry: dict[str, Any] = {
+        "schema_version": "1.0",
+        "source_id": source_id,
+        "source_sha256": source_sha256,
+        "span_id": hash_payload({"source_id": source_id, "source_sha256": source_sha256, "locator": locator}),
+        "quote": quote,
+        "locator": locator,
+        "citation_item": {"id": source_id},
+    }
+    if locator.get("printed_page_label"):
+        label, display = "page", locator["printed_page_label"]
+    elif locator.get("segment_id"):
+        entry["segment_id"] = locator["segment_id"]
+        start = _format_timestamp(locator["start_seconds"])
+        end = _format_timestamp(locator["end_seconds"])
+        label, display = "timestamp", f"{start}–{end}"
+    elif locator.get("section_index"):
+        label, display = "section", str(locator["section_index"])
+    else:
+        return entry
+    entry["citation_item"].update(label=label, locator=display)
+    return entry
+
+
+def build_quotation_locators(
+    source_id: str, source_sha256: str | None, document: dict[str, Any] | None,
+    resource_type: str, blocks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build the portable quotation sidecar using the same anchors as replay."""
+    evidence = _evidence(document, resource_type, {"source_blocks": blocks}, raw_spans=True)
+    entries = {}
+    for item in _quotation_evidence(evidence):
+        locator = {**item["locator"], "char_start": 0, "char_end": len(item["quote"])}
+        entry = quotation_entry(source_id, source_sha256, item["quote"], locator)
+        entries[entry["span_id"]] = entry
+    return list(entries.values())
+
+
+def replay_citation_evidence(
+    csl: dict[str, Any],
+    document: dict[str, Any] | None,
+    resource_type: str,
+    blocks: list[dict[str, Any]],
+    fields: list[str] | None = None,
+    quotation: str | None = None,
+    locator: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compare the stored citation and exact quotation with extracted evidence."""
+    fields = fields if fields is not None else [field for field in HOST_FIELDS if csl.get(field) is not None]
+    if any(field not in HOST_FIELDS for field in fields):
+        raise ValueError("fields must contain CSL fields for the ingested work")
+    evidence = _evidence(document, resource_type, {"source_blocks": blocks}, raw_spans=True)
+    field_states, field_evidence = {}, {}
+    for field in fields:
+        value = csl.get(field)
+        bound = (csl.get("_field_evidence") or {}).get(field)
+        match = validate_block_evidence(field, value, bound, blocks) if bound and value is not None else None
+        if match is None and value is not None:
+            match = next((item for item in evidence if _supported_evidence(field, value, [item], blocks)), None)
+        field_states[field] = "source-supported" if match else "missing" if value is None else "unverified"
+        if match:
+            field_evidence[field] = match
+    result: dict[str, Any] = {"field_states": field_states, "field_evidence": field_evidence}
+    if quotation is None and locator is None:
+        return result
+    locator = locator or {}
+    if not quotation or not quotation.strip():
+        raise ValueError("Supply a nonempty quotation")
+    if "char_start" in locator and (type(locator["char_start"]) is not int or locator["char_start"] < 0):
+        raise ValueError("char_start must be a nonnegative integer")
+    if "char_end" in locator and (type(locator["char_end"]) is not int or locator["char_end"] < 0):
+        raise ValueError("char_end must be a nonnegative integer")
+    matches: dict[str, Any] = {}
+    for item in _quotation_evidence(evidence):
+        coordinates = item["locator"]
+        if any(coordinates.get(key) != value for key, value in locator.items() if key not in {"char_start", "char_end"}):
+            continue
+        text = item["quote"]
+        start = locator.get("char_start", text.find(quotation))
+        while start >= 0:
+            end = start + len(quotation)
+            if locator.get("char_end", end) == end and text[start:end] == quotation:
+                resolved = {**coordinates, "char_start": start, "char_end": end}
+                matches[json.dumps(resolved, sort_keys=True)] = {
+                    "locator": resolved,
+                    "context": text[max(0, start - 45):min(len(text), end + 45)],
+                }
+            if "char_start" in locator:
+                break
+            start = text.find(quotation, start + 1)
+    options = list(matches.values())
+    if len(options) == 1:
+        result["quotation"] = {"status": "extraction-match", "quote": quotation, "locator": options[0]["locator"]}
+    elif options:
+        result["quotation"] = {
+            "status": "needs-review", "reason": "ambiguous_span", "quote": quotation,
+            "candidate_count": len(options), "candidates": options[:20],
+        }
+    else:
+        result["quotation"] = {"status": "needs-review", "reason": "span_not_found"}
+    return result

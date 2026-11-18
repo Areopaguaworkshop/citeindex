@@ -379,6 +379,8 @@ def _make_locator(
     return {
         "node_id": f"{doc_id}:locator:{pi_id}",
         "locator_type": "page_range",
+        "physical_page_start_index": node["start_index"] - 1 if node.get("start_index") is not None else None,
+        "physical_page_end_index": node["end_index"] - 1 if node.get("end_index") is not None else None,
         "page_number": start_page,
         "page_label": _page_range_str(
             node.get("start_index"), node.get("end_index"), page_number_map

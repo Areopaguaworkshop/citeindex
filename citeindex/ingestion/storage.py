@@ -187,3 +187,49 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: dict[s
             shutil.rmtree(staging_dir, ignore_errors=True)
 
     return doc_dir
+
+
+def publish_staged_record(
+    corpus_root: str, folder_name: str, staging_root: str, *, remove_markdown: bool,
+) -> None:
+    """Publish a complete record and roll back if Markdown publication fails."""
+    target = os.path.join(corpus_root, folder_name)
+    staged = os.path.join(staging_root, folder_name)
+    backup = os.path.join(staging_root, "previous-record")
+    lock = os.path.join(corpus_root, f".{folder_name}.publish")
+    library = os.path.join(os.path.dirname(corpus_root), "library")
+    markdown = os.path.join(library, folder_name + ".md")
+    draft = os.path.join(staging_root, "library.md")
+    temporary_markdown = None
+    os.mkdir(lock)
+    try:
+        if os.path.isfile(draft):
+            ensure_dir(library)
+            with tempfile.NamedTemporaryFile(dir=library, prefix=".citeindex-", delete=False) as handle:
+                temporary_markdown = handle.name
+                with open(draft, "rb") as source:
+                    shutil.copyfileobj(source, handle)
+        if os.path.lexists(target):
+            os.replace(target, backup)
+        try:
+            os.replace(staged, target)
+            try:
+                if temporary_markdown:
+                    os.replace(temporary_markdown, markdown)
+                    temporary_markdown = None
+                elif remove_markdown:
+                    try:
+                        os.unlink(markdown)
+                    except FileNotFoundError:
+                        pass
+            except OSError:
+                os.replace(target, staged)
+                raise
+        except OSError:
+            if os.path.lexists(backup):
+                os.replace(backup, target)
+            raise
+    finally:
+        if temporary_markdown:
+            os.unlink(temporary_markdown)
+        os.rmdir(lock)

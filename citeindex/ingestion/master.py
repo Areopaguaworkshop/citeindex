@@ -3,13 +3,14 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from .citation_verification import verify_citation_metadata
+from .citation_verification import build_quotation_locators, verify_citation_metadata
 from .csl import normalize_cataloguing_fields
 from .deterministic import hash_payload
 from .markdown_export import write_library_markdown
@@ -17,7 +18,14 @@ from .models import OUTPUT_MODES, IngestionConfig, IngestionFailure, IngestionLo
 from .online_enrichment import build_authority_links, enrich_metadata
 from .pipelines.common import parse_author_from_filename, prompt_author_interactively, validate_authors
 from .registry_fill import canonical_isbn, fill_from_registry, find_identifiers
-from .storage import append_jsonl, csl_folder_name, ensure_dir, store_corpus_artifacts, write_json
+from .storage import (
+    append_jsonl,
+    csl_folder_name,
+    ensure_dir,
+    publish_staged_record,
+    store_corpus_artifacts,
+    write_json,
+)
 from .title_guard import reject_filename_title
 from .url_security import UnsafeUrlError, validate_public_url
 
@@ -165,6 +173,7 @@ class CiteIndexIngestionOrchestrator:
                     next_action="Provide PDF, URL, or media file",
                 )
 
+            original_sha256 = file_sha256(input_ref) if os.path.isfile(input_ref) else None
             # Phase 1: Office/DJVU → convert to PDF before routing
             temp_pdf = None
             if resource_type == "office_document":
@@ -354,6 +363,16 @@ class CiteIndexIngestionOrchestrator:
 
             # Finalize every embedded citation copy before any artifact is persisted.
             sub_result.csl_json = standardized_csl
+            snapshot = sub_result.extra.get("source_snapshot_path")
+            if isinstance(snapshot, str) and os.path.isfile(snapshot):
+                sub_result.extra["source_identity"] = {
+                    "sha256": file_sha256(snapshot),
+                    "artifact": "source.html" if resource_type == "url_article" else "source.media",
+                }
+            elif original_sha256:
+                if file_sha256(input_ref) != original_sha256:
+                    raise ValueError("Original source changed during ingestion")
+                sub_result.extra["source_identity"] = {"sha256": original_sha256}
             for quotation in sub_result.extra.get("quotation_locators", []):
                 quotation["citation_item"]["id"] = standardized_csl["id"]
             if sub_result.document_json:
@@ -372,6 +391,14 @@ class CiteIndexIngestionOrchestrator:
                     redirect["artifact"] = f"source-redirect-{index}.html"
             artifacts = sub_result.to_dict()
             artifacts["csl_json"] = standardized_csl
+            if cfg.output_mode != "csl_only":
+                quotation_locators = build_quotation_locators(
+                    standardized_csl["id"], sub_result.extra.get("source_identity", {}).get("sha256"),
+                    sub_result.document_json, resource_type, sub_result.extra.get("source_blocks", []),
+                )
+                if quotation_locators:
+                    existing = artifacts.get("quotation_locators", []) if resource_type != "media" else []
+                    artifacts["quotation_locators"] = [*existing, *quotation_locators]
             if layout_features is not None:
                 artifacts["layout_features"] = layout_features
             if citation_verification:
@@ -385,15 +412,18 @@ class CiteIndexIngestionOrchestrator:
             artifacts = apply_output_mode(artifacts, cfg.output_mode)
 
             folder_name = csl_folder_name(standardized_csl)
-            document_path = store_corpus_artifacts(self.corpus_root, folder_name, artifacts)
+            document_path = os.path.join(self.corpus_root, folder_name)
+            staging_root = tempfile.mkdtemp(prefix=".citeindex-record-", dir=self.corpus_root)
+            cleanup_paths.append(staging_root)
+            staged_document = store_corpus_artifacts(staging_root, folder_name, artifacts)
             snapshot_path = sub_result.extra.get("source_snapshot_path")
             if resource_type == "url_article" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
-                shutil.copy2(snapshot_path, os.path.join(document_path, "source.html"))
+                shutil.copy2(snapshot_path, os.path.join(staged_document, "source.html"))
                 for filename, html in redirect_html:
-                    with open(os.path.join(document_path, filename), "w", encoding="utf-8") as sidecar:
+                    with open(os.path.join(staged_document, filename), "w", encoding="utf-8") as sidecar:
                         sidecar.write(html)
             elif resource_type == "media" and isinstance(snapshot_path, str) and os.path.isfile(snapshot_path):
-                shutil.copy2(snapshot_path, os.path.join(document_path, "source.media"))
+                shutil.copy2(snapshot_path, os.path.join(staged_document, "source.media"))
             log_entry = self.log_ingestion(input_ref, resource_type, standardized_csl, sub_result)
 
             # ── Copy extracted images to corpus dir ─────────────────
@@ -401,7 +431,7 @@ class CiteIndexIngestionOrchestrator:
             images_list = sub_result.extra.get("_images_list", [])
             if cfg.output_mode == "full" and images_tmpdir and images_list:
                 try:
-                    dest_images_dir = os.path.join(document_path, "images")
+                    dest_images_dir = os.path.join(staged_document, "images")
                     if os.path.isdir(images_tmpdir):
                         for img_info in images_list:
                             # Images are in images_tmpdir/images/, not images_tmpdir/
@@ -447,28 +477,29 @@ class CiteIndexIngestionOrchestrator:
                     rendered_citation = None
                     output["citation_render_warning"] = "CSL rendering unavailable; used deterministic fallback"
 
-            # Generate human-readable library markdown (full mode only)
             if cfg.output_mode == "full":
-                try:
-                    library_md_path = write_library_markdown(
-                        corpus_root=self.corpus_root,
-                        csl_json=standardized_csl,
-                        document_json=sub_result.document_json,
-                        transcript_json=sub_result.transcript_json,
-                        resource_type=resource_type,
-                        verification_status=citation_verification["status"] if citation_verification else None,
-                        rendered_citation=rendered_citation,
-                        authority_links=authority_links,
-                    )
-                    output["library_md_path"] = library_md_path
-                except Exception:
-                    logger.warning("Library markdown generation failed", exc_info=True)
-            else:
-                # library/ is a sibling of corpus/, so storage cannot clear it:
-                # a record re-ingested in a reduced mode drops its old render.
-                self._remove_library_markdown(folder_name)
-
-            write_json(os.path.join(document_path, "ingestion_output.json"), output)
+                output["library_md_path"] = write_library_markdown(
+                    corpus_root=self.corpus_root,
+                    csl_json=standardized_csl,
+                    document_json=sub_result.document_json,
+                    transcript_json=sub_result.transcript_json,
+                    resource_type=resource_type,
+                    verification_status=citation_verification["status"] if citation_verification else None,
+                    rendered_citation=rendered_citation,
+                    authority_links=authority_links,
+                    staged_path=os.path.join(staging_root, "library.md"),
+                )
+            write_json(os.path.join(staged_document, "ingestion_output.json"), output)
+            try:
+                publish_staged_record(
+                    self.corpus_root, folder_name, staging_root,
+                    remove_markdown=cfg.output_mode != "full",
+                )
+            except OSError:
+                # Retain the staged backup if publication could not restore it.
+                if os.path.lexists(os.path.join(staging_root, "previous-record")):
+                    cleanup_paths.remove(staging_root)
+                raise
             cleanup_temporary_outputs()
             return output
         except Exception as e:
@@ -480,18 +511,6 @@ class CiteIndexIngestionOrchestrator:
                 error_message=str(e),
                 next_action="Inspect stack trace and input file health",
             )
-
-    def _remove_library_markdown(self, folder_name: str) -> None:
-        """Drop the human-readable record a reduced mode does not write."""
-        md_path = os.path.join(os.path.dirname(self.corpus_root), "library", f"{folder_name}.md")
-        try:
-            os.remove(md_path)
-        except FileNotFoundError:
-            return
-        except OSError:
-            logger.warning("Failed to remove stale library markdown: %s", md_path, exc_info=True)
-            return
-        logger.info("Removed stale library markdown: %s", md_path)
 
     def _apply_repair_proposal(
         self,

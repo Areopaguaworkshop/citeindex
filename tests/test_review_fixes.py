@@ -1,7 +1,9 @@
 import json
 
 import fitz
+import pytest
 
+from citeindex.ingestion import storage
 from citeindex.ingestion.markdown_export import write_library_markdown
 from citeindex.ingestion.master import CiteIndexIngestionOrchestrator
 from citeindex.ingestion.models import IngestionConfig
@@ -49,6 +51,34 @@ def test_reingestion_removes_stale_optional_artifacts(tmp_path):
     assert not (tmp_path / "doc" / "pageindex_tree.json").exists()
     assert not (tmp_path / "doc" / "citation_verification.json").exists()
     assert doc_dir == str(tmp_path / "doc")
+
+
+def test_publication_restores_previous_record_when_markdown_replacement_fails(tmp_path, monkeypatch):
+    corpus = tmp_path / "corpus"
+    staging = corpus / ".staging"
+    staging.mkdir(parents=True)
+    old = {"document_json": {"version": "old"}}
+    new = {"document_json": {"version": "new"}}
+    store_corpus_artifacts(str(corpus), "doc", old)
+    store_corpus_artifacts(str(staging), "doc", new)
+    (staging / "library.md").write_text("New citation")
+    markdown = tmp_path / "library" / "doc.md"
+    markdown.parent.mkdir()
+    markdown.write_text("Old citation")
+    replace = storage.os.replace
+
+    def fail_markdown(source, destination):
+        if destination == str(markdown):
+            raise PermissionError("Test Markdown publication failure")
+        replace(source, destination)
+
+    monkeypatch.setattr(storage.os, "replace", fail_markdown)
+    with pytest.raises(PermissionError):
+        storage.publish_staged_record(str(corpus), "doc", str(staging), remove_markdown=False)
+
+    assert json.loads((corpus / "doc" / "document.json").read_text()) == old["document_json"]
+    assert markdown.read_text() == "Old citation"
+    assert not (corpus / ".doc.publish").exists()
 
 
 def test_custom_corpus_root_image_paths_are_relative(tmp_path):

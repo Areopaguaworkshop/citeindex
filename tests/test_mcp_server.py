@@ -108,6 +108,85 @@ def test_citation_verify_offline(corpus: Path):
     assert result["csl"]["title"] == "Demo Article"
 
 
+def test_source_bound_quotation_replay(corpus: Path):
+    import hashlib
+
+    source = b"<p>One exact quotation.</p>"
+    digest = hashlib.sha256(source).hexdigest()
+    record = _write_record(corpus, "quote", {"id": "quote", "title": "Example"}, [
+        {"id": "html:7", "section_index": 7, "text": "One exact quotation.",
+         "snapshot_artifact": "source.html", "source_digest": digest},
+    ])
+    output = json.loads((record / "ingestion_output.json").read_text())
+    output["sub_pipeline_outputs"]["source_snapshot_digest"] = digest
+    (record / "ingestion_output.json").write_text(json.dumps(output))
+    snapshot = record / "source.html"
+    snapshot.write_bytes(source)
+    options = {"fields": [], "quotation": "exact quotation", "locator": {"block_id": "html:7", "char_start": 4}}
+    result = server.citation_verify("quote", **options)
+    assert result["status"] == "extraction-match"
+    assert result["report"]["original_source"] == {"binding": "matches", "content_review": "host-required"}
+    assert result["report"]["quotation"]["locator"]["char_end"] == 19
+    assert result["report"]["quotation"]["citation_item"]["locator"] == "7"
+    assert result["host_audit"]["prompt"] == "reverify-citation"
+
+    snapshot.write_bytes(b"<p>Different edition.</p>")
+    result = server.citation_verify("quote", **options)
+    assert result["status"] == "needs-review"
+    assert result["report"]["quotation"]["reason"] == "source_digest_mismatch"
+
+
+def test_ingest_source_jobs_use_shared_ingestion(corpus: Path, monkeypatch: pytest.MonkeyPatch):
+    from threading import Event
+    from time import monotonic, sleep
+
+    source = corpus.parent / "inputs" / "media.mp4"
+    source.parent.mkdir()
+    source.touch()
+    configure(corpus_root=corpus, allow_write=True, input_roots=[str(source.parent)])
+    ready = Event()
+
+    def fake_ingest(input_ref, corpus_root, config):
+        assert input_ref == str(source)
+        assert config.media_asr_backend == "wenbi"
+        assert ready.wait(3)
+        return {"status": "ok", "standardized_csl_json": {"id": "media-record"}}
+
+    monkeypatch.setattr(server, "ingest", fake_ingest)
+    with pytest.raises(PermissionError):
+        server.ingest_source(str(corpus / "outside.pdf"))
+    try:
+        result = server.ingest_source(str(source), media_asr_backend="wenbi")
+        assert result["status"] in {"queued", "running"}
+        assert server.ingest_source(str(source), media_asr_backend="wenbi")["job_id"] == result["job_id"]
+    finally:
+        ready.set()
+    job_id = result["job_id"]
+    deadline = monotonic() + 3
+    while monotonic() < deadline:
+        result = server.ingestion_status(job_id)
+        if result["status"] == "ok":
+            break
+        sleep(0.01)
+    assert result["source_id"] == "media-record"
+
+
+def test_quotation_options_round_trip_to_selected_span(corpus: Path):
+    _write_record(corpus, "repeated", {"id": "repeated", "title": "Example"}, [
+        {"id": "html:7", "section_index": 7, "text": "first quote then second quote"},
+        {"id": "html:9", "section_index": 9, "text": "third quote"},
+    ])
+    result = server.citation_verify("repeated", fields=[], quotation="quote")
+    ambiguous = result["report"]["quotation"]
+    assert ambiguous["reason"] == "ambiguous_span"
+    assert ambiguous["candidate_count"] == 3
+    choice = ambiguous["candidates"][1]
+    assert choice["context"] == "first quote then second quote"
+    result = server.citation_verify("repeated", fields=[], quotation="quote", locator=choice["locator"])
+    assert result["status"] == "extraction-match"
+    assert result["report"]["quotation"]["span_id"] == choice["span_id"]
+
+
 def test_ingest_url_requires_write_permission(corpus: Path):
     configure(corpus_root=corpus, allow_write=False)
     with pytest.raises(PermissionError):

@@ -15,6 +15,25 @@ starts this skill or a verifier/enricher agent by itself.
 4. For every correction, emit the old and new values, exact source quotation, locator, and confidence. Apply no change without source evidence.
 5. Mark conflicts or absent evidence as `needs-review`.
 
+When the source is unavailable, ambiguous, or incomplete, use the host's web or
+browser tools to locate the same work and edition. Start with the DOI, ISBN, or
+original URL. Open the publisher, original publication, or registry record
+and inspect the relevant passage. Match the edition or version before using a
+page label, timestamp, or quotation. A search result snippet is a lead.
+
+Report each online finding with its URL, exact supporting quotation, locator,
+and the identity evidence that ties it to the record. A publisher or registry
+record can corroborate a CSL field. To confirm a quotation, inspect the
+original passage or recording and check its locator. If the original differs
+from the ingested snapshot, describe the difference and leave the repair for
+review. Use the re-ingestion checks below before publishing any correction.
+
+When `citation_verify` returns `ambiguous_span`, show the user each candidate's
+page or timestamp and nearby text. Ask which occurrence they intend. If the
+response lists only the first 20 matches, offer to narrow it by page, section,
+or timestamp. Re-run verification with the selected locator, including its
+character offsets, before citing. A unique supported match needs no selection.
+
 Keep this review source-only. Read `online_enrichment.json` when present to
 distinguish `registry-sourced` fills and `registry-corrected` values from printed
 source support. Registry agreement, successful ingestion, or a provider citation
