@@ -128,6 +128,7 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: dict[s
             "transcript.json",
             "merkle.json",
             "media_metadata.json",
+            "layout.json",
             "pageindex_tree.json",
             "citation_verification.json",
             "source.html",
@@ -170,6 +171,10 @@ def store_corpus_artifacts(corpus_root: str, folder_name: str, artifacts: dict[s
             write_json(os.path.join(target_dir, "merkle.json"), artifacts["merkle_tree"])
         if artifacts.get("media_metadata") is not None:
             write_json(os.path.join(target_dir, "media_metadata.json"), artifacts["media_metadata"])
+        # Layout cues are an optional sidecar: absent payload leaves no file
+        # (the stale copy, if any, was removed with the other sidecars above).
+        if artifacts.get("layout_features") is not None:
+            write_json(os.path.join(target_dir, "layout.json"), artifacts["layout_features"])
         if artifacts.get("pageindex_tree") is not None:
             write_json(os.path.join(target_dir, "pageindex_tree.json"), artifacts["pageindex_tree"])
         if artifacts.get("citation_verification") is not None:

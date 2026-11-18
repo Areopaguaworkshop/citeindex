@@ -7,7 +7,7 @@ CiteIndex's PageIndexTree JSON format.
 Data flow (PDF):
   PDF ─→ PageIndex page_index_main() ─→ PageIndex tree
   MinerU middle.json ─→ page_extractor.py ─→ page_number_map
-  GROBID ─→ csl.json ─→ level_0
+  {doc_id}.csl.json ─→ level_0
                          ↓
          pageindex_to_citeindex_tree()
                          ↓

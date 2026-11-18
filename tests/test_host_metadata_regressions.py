@@ -207,11 +207,3 @@ def test_pageindex_ranges_rank_original_colophon(monkeypatch):
         candidate_regions=[{"role": "imprint", "start_page": 101, "end_page": 101}])
     assert calls[0]["source_blocks"][0]["id"] == "colophon"
     assert len(calls) <= 2
-
-
-def test_explicit_grobid_failure_does_not_become_success(monkeypatch):
-    from citeindex.ingestion.pipelines import digital_pdf, grobid
-    monkeypatch.setattr(grobid, "is_grobid_available", lambda: True)
-    monkeypatch.setattr(grobid, "extract_document_metadata_grobid", lambda *a: {})
-    with pytest.raises(RuntimeError, match="no host metadata"):
-        digital_pdf._run_grobid("source.pdf")

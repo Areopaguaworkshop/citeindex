@@ -11,7 +11,7 @@ import sys
 from email.utils import parseaddr
 
 from citeindex.ingestion import CiteIndexIngestionOrchestrator
-from citeindex.ingestion.models import IngestionConfig
+from citeindex.ingestion.models import OUTPUT_MODES, IngestionConfig
 from citeindex.logging_config import configure_logging
 
 
@@ -77,12 +77,6 @@ def main() -> None:
         "--llm",
         default="ollama/deepseek-v4.1-flash:cloud",
         help="LLM model for DSPy extraction (default: ollama/deepseek-v4.1-flash:cloud)",
-    )
-    parser.add_argument(
-        "--citation-engine",
-        choices=["dspy", "grobid"],
-        default="dspy",
-        help="Digital-PDF citation engine; grobid requires a running GROBID service (default: dspy)",
     )
     parser.add_argument(
         "--ocr-engine",
@@ -165,6 +159,19 @@ def main() -> None:
         help="Disable PageIndex LLM-driven tree building for section hierarchy",
     )
     parser.add_argument(
+        "--output-mode",
+        choices=list(OUTPUT_MODES),
+        default="full",
+        help="Artifacts to persist: full (default), csl_evidence (CSL plus blocks/layout), "
+        "csl_only (CSL and run summary only)",
+    )
+    parser.add_argument(
+        "--pages",
+        default=None,
+        help="Process only these pages (e.g. '1-6') and anchor the record identity to the "
+        "source file instead of the page Merkle tree",
+    )
+    parser.add_argument(
         "--force-ocr",
         action="store_true",
         help="Force scanned PDF pipeline (OCR) regardless of PDF type detection",
@@ -207,6 +214,19 @@ def main() -> None:
     )
     parser.add_argument("--online-enrich", action=argparse.BooleanOptionalAction, default=False,
                         help="Enrich PDF metadata from registries (development opt-in; release benchmark pending)")
+    parser.add_argument("--zone-ranking", action=argparse.BooleanOptionalAction, default=True,
+                        help="Order prompt blocks by zone before extraction (disable to A/B the ranking)")
+    parser.add_argument("--evidence-window", choices=("locator", "range"), default="locator",
+                        help="locator: extract from the pages the locator chose; range: every block in --citation-pages")
+    parser.add_argument("--review-threshold", type=float, default=0.80,
+                        help="Queue a field for review when its confidence falls below this value")
+    parser.add_argument(
+        "--registry-fill",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Fill empty fields from OpenLibrary/Crossref when the front matter prints an ISBN or DOI "
+        "(off by default; never overwrites printed values)",
+    )
     parser.add_argument("--online-enrich-providers", default="crossref,openalex,openlibrary,datacite",
                         help="Comma-separated enabled metadata registries")
     parser.add_argument("--online-enrich-min-score", type=float, default=0.90)
@@ -313,7 +333,6 @@ def main() -> None:
     try:
         config = IngestionConfig(
             llm_model=args.llm,
-            citation_engine=args.citation_engine,
             ocr_engine=args.ocr_engine,
             ocr_model=args.ocr_model,
             ollama_host=args.ollama_host,
@@ -324,9 +343,11 @@ def main() -> None:
             vertical_lang=args.vertical_lang,
             lang=args.lang,
             page_range=args.page_range,
+            pages=args.pages,
             doc_type_override=args.type,
             use_layout_analysis=not args.no_layout,
             is_primary=args.is_primary,
+            output_mode=args.output_mode,
             use_pageindex=not args.no_pageindex,
             pageindex_model=args.pageindex_model,
             verify_citations=args.verify_citations,
@@ -337,6 +358,10 @@ def main() -> None:
             registry_contact_email=args.registry_contact_email,
             force_pdf_kind=force_pdf_kind,
             repair_proposal=args.repair_proposal,
+            registry_fill=args.registry_fill,
+            review_threshold=args.review_threshold,
+            evidence_window=args.evidence_window,
+            zone_ranking=args.zone_ranking,
             online_enrich=args.online_enrich,
             online_enrich_providers=tuple(p.strip() for p in args.online_enrich_providers.split(",")),
             online_enrich_min_score=args.online_enrich_min_score,

@@ -864,6 +864,9 @@ def run(
         )
         if benchmark_page_range == "first5-last3":
             benchmark_page_range = "1-5, -3"
+        # An explicit scoped run wins over the benchmark window: both ride the
+        # same MinerU page-range plumbing, but only one window is read.
+        scoped_page_range = cfg.pages or benchmark_page_range
         mineru_output = run_mineru_chunked(
             pdf_path,
             output_dir=mineru_tmpdir,
@@ -872,7 +875,7 @@ def run(
             timeout=cfg.mineru_timeout,
             chunk_pages=cfg.mineru_chunk_pages,
             benchmark_sample_pages=benchmark_sample_pages,
-            benchmark_page_range=benchmark_page_range,
+            benchmark_page_range=scoped_page_range,
         )
         content_list = mineru_output.get("content_list")
         if not isinstance(content_list, list) or not content_list:
@@ -886,7 +889,9 @@ def run(
             benchmark_pages = os.environ.get("CITEINDEX_BENCHMARK_SCAN_PAGES")
             from ...utils import parse_page_range
             with fitz.open(pdf_path) as doc:
-                if benchmark_pages == "first40-last10":
+                if cfg.pages:
+                    sampled_pages = [page - 1 for page in parse_page_range(cfg.pages, doc.page_count)]
+                elif benchmark_pages == "first40-last10":
                     if doc.page_count > 50:
                         sampled_pages = list(range(40)) + list(range(doc.page_count - 10, doc.page_count))
                 elif benchmark_pages:

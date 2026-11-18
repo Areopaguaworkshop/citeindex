@@ -4,7 +4,6 @@ __all__ = [
     "digital_pdf",
     "dspy_extract",
     "glm_ocr",
-    "grobid",
     "layout",
     "media",
     "mineru",

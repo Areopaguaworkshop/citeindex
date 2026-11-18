@@ -117,7 +117,7 @@ def _find_footnote_separator(page: fitz.Page) -> float | None:
     of the separator, or None if not found.
 
     Research shows this is the most reliable single signal for
-    identifying the footnote zone (GROBID, pdfalto).
+    identifying the footnote zone (e.g. pdfalto).
     """
     try:
         drawings = page.get_drawings()
@@ -214,9 +214,9 @@ def detect_footnotes(
     font_clusters = _compute_font_size_clusters(blocks)
 
     # Minimum word count — page numbers and short labels are not footnotes.
-    # Research (GROBID's repetitivePattern) shows that short, recurring
-    # text at fixed positions is typically running headers/footers,
-    # not content footnotes.
+    # Research (e.g. reference layout analyzers' repetitivePattern) shows
+    # that short, recurring text at fixed positions is typically running
+    # headers/footers, not content footnotes.
     MIN_FOOTNOTE_WORDS = 5
 
     def _is_footnote_text(text: str) -> bool:

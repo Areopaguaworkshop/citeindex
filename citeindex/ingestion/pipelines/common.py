@@ -351,26 +351,6 @@ def extract_citation_with_llm(
     return csl
 
 
-def _extract_citation_grobid(pdf_path: str) -> dict[str, Any]:
-    """Try grobid header extraction. Returns CSL dict or {}."""
-    try:
-        from .grobid import extract_document_metadata_grobid, is_grobid_available
-
-        if not is_grobid_available():
-            logger.info("GROBID not available, skipping")
-            return {}
-
-        csl = extract_document_metadata_grobid(pdf_path)
-        if csl.get("title"):
-            logger.info("GROBID metadata extraction succeeded")
-            return csl
-        logger.info("GROBID returned no title, treating as empty")
-        return {}
-    except Exception:
-        logger.warning("GROBID extraction failed", exc_info=True)
-        return {}
-
-
 def doc_type_to_csl_type(doc_type: str) -> str:
     # Two-type model (2026-09-26): report/manuscript fold into book —
     # standalone works cited without pages. Thesis keeps its own type.
@@ -390,7 +370,7 @@ def enrich_csl_with_citation_cascade(
     source_blocks: list[dict[str, Any]] | None = None,
     candidate_regions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Enrich a basic CSL dict with the explicitly selected citation engine."""
+    """Enrich a basic CSL dict with the DSPy citation cascade."""
     cfg = config or IngestionConfig()
 
     # Determine document type
@@ -403,28 +383,19 @@ def enrich_csl_with_citation_cascade(
 
     logger.info("Document type determined: %s (pages=%d)", doc_type, num_pages)
 
-    extracted_csl: dict[str, Any] = {}
-    extraction_method = "metadata-only"
+    from .dspy_extract import _run_dspy_extraction
 
-    if cfg.citation_engine == "grobid" and pdf_path:
-        extracted_csl = _extract_citation_grobid(pdf_path)
-        if extracted_csl:
-            extraction_method = "grobid"
-    elif cfg.citation_engine == "dspy":
-        from .dspy_extract import _run_dspy_extraction
-
-        extracted_csl = (
-            _run_dspy_extraction(ordered_text, doc_type, cfg, region_hints=region_hints,
-                                 source_blocks=source_blocks, candidate_regions=candidate_regions,
-                                 total_pages=num_pages)
-            if region_hints or source_blocks is not None
-            else _run_dspy_extraction(ordered_text, doc_type, cfg)
-        )
-        if extracted_csl:
-            extraction_method = "dspy"
+    extracted_csl = (
+        _run_dspy_extraction(ordered_text, doc_type, cfg, region_hints=region_hints,
+                             source_blocks=source_blocks, candidate_regions=candidate_regions,
+                             total_pages=num_pages)
+        if region_hints or source_blocks is not None
+        else _run_dspy_extraction(ordered_text, doc_type, cfg)
+    )
+    extraction_method = "dspy" if extracted_csl else "metadata-only"
 
     if not extracted_csl:
-        logger.info("Citation extraction produced no metadata (engine=%s)", cfg.citation_engine)
+        logger.info("Citation extraction produced no metadata (DSPy cascade)")
         return base_csl
 
     logger.info("Citation cascade: using %s extraction", extraction_method)

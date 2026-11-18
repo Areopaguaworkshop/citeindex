@@ -1,10 +1,10 @@
 [project]
 name = "citeindex"
-version = "0.15.0"
+version = "0.15.2"
 description = "Ingest sources with proper citation — PDF, URL, media, Office, DJVU"
 authors = [{ name = "ajia", email = "yyjfwoaini@gmail.com" }]
 dependencies = [
-    "pymupdf[mupdf-third]>=1.26.3",
+    "pymupdf>=1.26.3",
     "requests>=2.31.0",
     "lxml>=4.9.0",
     "trafilatura>=1.6.0",
@@ -24,6 +24,7 @@ license = "MIT"
 [project.scripts]
 citeindex = "citeindex.cli:main"
 citeindex-plugin = "citeindex.plugins:main"
+citeindex-mcp = "citeindex.mcp.cli:main"
 
 [project.optional-dependencies]
 ocr-mineru = ["mineru[pipeline]>=3.4.5,<4.0.0"]
@@ -36,6 +37,7 @@ crawl = ["crawl4ai>=0.7.0"]
 layout = ["pymupdf4llm>=1.27.2.3"]
 dev = ["pytest>=7.0.0", "pytest-cov>=2.12.1", "psutil>=6.1.1", "ruff>=0.17", "mypy>=2.4", "rapidfuzz>=3.0"]
 authority = ["rapidfuzz>=3.0", "sentence-transformers>=2.7"]
+mcp = ["mcp>=2.3,<3"]
 
 [build-system]
 requires = ["hatchling==1.26.3", "hatch-vcs"]
@@ -48,8 +50,11 @@ dev-dependencies = ["pytest>=7.0.0", "pytest-cov>=2.12.1", "psutil>=6.1.1"]
 [tool.hatch.build.targets.wheel]
 packages = ["citeindex"]
 
+[tool.hatch.build.targets.wheel.force-include]
+".agents/skills/citation-verification/SKILL.md" = "citeindex/mcp/skills/citation-verification.md"
+
 [tool.hatch.build.targets.sdist]
-only-include = ["citeindex", "README.md"]
+only-include = ["citeindex", "README.md", ".agents/skills/citation-verification/SKILL.md"]
 
 [tool.ruff]
 line-length = 120

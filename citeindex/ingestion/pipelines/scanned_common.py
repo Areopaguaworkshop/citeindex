@@ -106,7 +106,8 @@ def content_list_to_markdown(
             current_page = page_number
 
         item_type = item.get("type", "")
-        text = (item.get("text") or "").strip()
+        raw_text = item.get("text")
+        text = raw_text.strip() if isinstance(raw_text, str) else ""
         if not text and item_type != "image":
             continue
 
@@ -166,7 +167,7 @@ def build_scanned_pipeline_result(
         for i, item in enumerate(content_list) if isinstance(item.get("text"), str) and item["text"].strip()
     ]
     pi_result = None
-    if config.use_pageindex and normalized_markdown.strip():
+    if config.use_pageindex and not config.pages and normalized_markdown.strip():
         try:
             pi_result = run_pageindex_md_tree(normalized_markdown, model=config.pageindex_model)
         except Exception:
@@ -211,16 +212,25 @@ def build_scanned_pipeline_result(
     ) else "incomplete"
 
     logger.info("[%s] Building content nodes and Merkle tree...", backend_name)
-    nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=config.is_primary)
-    merkle_tree = build_merkle_for_nodes(nodes)
-    if document_structure.get("pages"):
-        hierarchical = build_hierarchical_merkle_tree(document_structure)
-        merkle_tree["hierarchical_root"] = hierarchical.get("root")
-        merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
+    if config.pages:
+        # A scoped record is anchored to the file digest plus the page window;
+        # nodes only exist to feed the Merkle root, so neither is built.
+        nodes: list[dict[str, Any]] = []
+        merkle_tree: dict[str, Any] | None = None
+    else:
+        nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=config.is_primary)
+        merkle_tree = build_merkle_for_nodes(nodes)
+        if document_structure.get("pages"):
+            hierarchical = build_hierarchical_merkle_tree(document_structure)
+            merkle_tree["hierarchical_root"] = hierarchical.get("root")
+            merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
 
     extra: dict[str, Any] = {}
     extra["source_blocks"] = source_blocks
-    if config.use_pageindex and normalized_markdown.strip():
+    # Layout cue capture (pages 1-6) needs the OCR geometry.  The key is
+    # private so master.py can strip it before anything is persisted.
+    extra["_layout_content_list"] = content_list
+    if config.use_pageindex and not config.pages and normalized_markdown.strip():
         try:
             logger.info("[%s] Running PageIndex tree generation...", backend_name)
             if pi_result and pi_result.get("structure"):
@@ -229,7 +239,7 @@ def build_scanned_pipeline_result(
                     doc_id=source_id,
                     csl_data=csl,
                     page_number_map=page_number_map,
-                    merkle_root=merkle_tree.get("root"),
+                    merkle_root=(merkle_tree or {}).get("root"),
                     page_layouts=None,  # scanned PDFs don't have layout analysis
                 )
                 extra["pageindex_tree"] = ci_tree

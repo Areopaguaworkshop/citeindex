@@ -114,6 +114,26 @@ def parse_page_range(page_range_str: str, total_pages: int) -> list[int]:
     return sorted(list(pages_to_process))
 
 
+# A page range is a human-facing selector (``1-6``, ``1-3,7``, ``-3``), not an
+# identifier.  This renders the pages it resolves to back into the same
+# compressed shape so a scope can stand in for a hash payload field.
+def canonical_page_range(pages: list[int] | set[int]) -> str:
+    """Render 1-based page numbers as a sorted, compressed range ("1-6")."""
+    ordered = sorted(set(pages))
+    if not ordered:
+        return ""
+    parts: list[str] = []
+    start = previous = ordered[0]
+    for page in ordered[1:]:
+        if page == previous + 1:
+            previous = page
+            continue
+        parts.append(str(start) if start == previous else f"{start}-{previous}")
+        start = previous = page
+    parts.append(str(start) if start == previous else f"{start}-{previous}")
+    return ",".join(parts)
+
+
 def ensure_searchable_pdf(pdf_path: str, lang: str = "eng+chi_sim") -> str:
     """Ensure PDF is searchable using OCR if needed."""
     try:

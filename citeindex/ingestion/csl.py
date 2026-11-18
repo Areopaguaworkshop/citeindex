@@ -1,4 +1,5 @@
 """Supported CSL-JSON fields, export, and source-type evaluation profiles."""
+import re
 from datetime import date
 from typing import Any
 
@@ -18,6 +19,90 @@ CSL_TYPES = {
     "speech", "interview", "broadcast", "motion_picture", "song", "dataset", "entry-encyclopedia",
 }
 MEDIA_TYPES = {"speech", "interview", "broadcast", "motion_picture", "song"}
+
+# --- cataloguing semantics ----------------------------------------------------
+# MARC 21 260/264 records an imprint as ``place : publisher, date``. CSL keeps
+# ``publisher`` and ``publisher-place`` apart, so an imprint string is split
+# only when the right-hand part is recognisably a publisher: otherwise a value
+# like ``Random House, Inc., New York`` would lose its publisher to the place.
+PUBLISHER_SEPARATOR = re.compile(r"\s*[:：]\s*|\s*,\s*")
+PUBLISHER_MARKERS = ("press", "publications", "verlag", "books", "inc", "ltd",
+                     "university", "publisher", "出版社", "书局")
+# An ASCII colon only separates title and subtitle when a space follows; the
+# full-width colon does not need one.
+TITLE_SEPARATOR = re.compile(r":\s+|\s*：\s*")
+TITLE_FULL_KEY = "_title_full"
+
+
+def publisher_like(value: str) -> bool:
+    """True when *value* ends in a word that only a publisher name would carry."""
+    folded = value.strip().rstrip(".").casefold()
+    return any(folded.endswith(marker) for marker in PUBLISHER_MARKERS)
+
+
+def split_publisher(value: str) -> tuple[str, str] | None:
+    """Split ``place : publisher`` / ``place, publisher`` into its two parts.
+
+    The colon form is the MARC 260/264 ``$a : $b`` separator and splits on its
+    own. The comma form is ambiguous (``Random House, Inc., New York`` is a
+    publisher followed by a place), so it splits only when the part after the
+    last separator is publisher-like. Returns ``(place, publisher)`` or ``None``.
+    """
+    matches = list(PUBLISHER_SEPARATOR.finditer(value))
+    if not matches:
+        return None
+    last = matches[-1]
+    place, publisher = value[:last.start()].strip(), value[last.end():].strip()
+    if not place or not publisher:
+        return None
+    colon = ":" in last.group() or "：" in last.group()
+    if not colon and not publisher_like(publisher):
+        return None
+    return place, publisher
+
+
+def split_title(title: str) -> tuple[str, str] | None:
+    """Split ``Title: subtitle`` when at least three characters follow."""
+    match = TITLE_SEPARATOR.search(title)
+    if not match:
+        return None
+    head, subtitle = title[:match.start()].strip(), title[match.end():].strip()
+    if not head or len(subtitle) < 3:
+        return None
+    return head, subtitle
+
+
+def normalize_cataloguing_fields(csl: dict) -> dict:
+    """Record MARC-shaped metadata in CSL's own fields; never lose the original.
+
+    * ``publisher`` is split into ``publisher-place`` + ``publisher`` when it
+      looks like a MARC imprint and no place is recorded yet;
+    * a title carrying its subtitle after a colon is split into ``title`` and
+      ``subtitle``, with the untouched string kept in ``_title_full``;
+    * ``issued`` keeps exactly the printed precision: no month or day is added
+      and none is truncated.
+
+    The function is pure and idempotent: an already-split value has no separator
+    left to split, and a filled ``subtitle`` is never overwritten.
+    """
+    result = dict(csl)
+    publisher = result.get("publisher")
+    place = result.get("publisher-place")
+    if isinstance(publisher, str) and not (isinstance(place, str) and place.strip()):
+        split = split_publisher(publisher)
+        if split:
+            result["publisher-place"], result["publisher"] = split
+    title, subtitle = result.get("title"), result.get("subtitle")
+    if isinstance(title, str) and not (isinstance(subtitle, str) and subtitle.strip()):
+        split = split_title(title)
+        if split:
+            result[TITLE_FULL_KEY] = title
+            result["title"], result["subtitle"] = split
+    issued = result.get("issued")
+    if isinstance(issued, dict) and isinstance(issued.get("date-parts"), list):
+        # Copy the parts verbatim: printed precision is evidence, not a default.
+        result["issued"] = {"date-parts": [list(parts) for parts in issued["date-parts"]]}
+    return result
 
 
 def valid_host_value(field: str, value: Any) -> bool:

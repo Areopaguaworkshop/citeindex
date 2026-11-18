@@ -4,7 +4,7 @@ Uses PyMuPDF4LLM (GNN layout classification) as the primary tool —
 falls back to raw PyMuPDF + heuristic layout if pymupdf4llm is not installed:
   1. PyMuPDF4LLM  — GNN-classified text blocks (footnote, header, footer, etc.)
   2. PageIndex    — LLM-driven section tree building (optional)
-  3. Citation     — GROBID (if available) or LLM on raw text
+  3. Citation     — DSPy cascade on ordered raw text
   4. Document     — page-paragraph structure augmented with PageIndex headings
   5. Merkle tree  — deterministic hash chain
 
@@ -42,23 +42,28 @@ logger = logging.getLogger(__name__)
 # Step 1: PyMuPDF text extraction
 # ---------------------------------------------------------------------------
 
-def _extract_pages(pdf_path: str) -> list[dict[str, Any]]:
-    """Open PDF and return cleaned page texts for downstream processing."""
+def _extract_pages(pdf_path: str, pages: list[int] | None = None) -> list[dict[str, Any]]:
+    """Open PDF and return cleaned page texts for downstream processing.
+
+    ``pages`` restricts the read to those 1-based physical page numbers; the
+    page numbers returned stay physical, so a scoped page 6 is still page 6.
+    """
     doc = fitz.open(pdf_path)
-    pages: list[dict[str, Any]] = []
-    for idx in range(doc.page_count):
+    indices = [page - 1 for page in pages] if pages is not None else range(doc.page_count)
+    pages_out: list[dict[str, Any]] = []
+    for idx in indices:
         page = doc[idx]
-        pages.append({
+        pages_out.append({
             "page_number": idx + 1,
             "text": page.get_text(),
             "blocks": page.get_text("blocks"),
         })
     doc.close()
 
-    cleaned_texts = clean_page_texts([page["text"] for page in pages])
-    for page, cleaned_text in zip(pages, cleaned_texts, strict=False):
+    cleaned_texts = clean_page_texts([page["text"] for page in pages_out])
+    for page, cleaned_text in zip(pages_out, cleaned_texts, strict=False):
         page["text"] = cleaned_text
-    return pages
+    return pages_out
 
 
 def _extract_page_paragraphs(raw_pages: list[dict[str, Any]]) -> list[tuple[int, list[str]]]:
@@ -146,23 +151,44 @@ def _get_image_bbox(page: fitz.Page, xref: int) -> tuple[float, ...]:
 def _embed_images_into_pages(
     document_structure: dict[str, Any],
     images: list[dict[str, Any]],
+    page_numbers: list[int] | None = None,
 ) -> None:
-    """Add image_caption paragraphs to document_structure pages."""
+    """Add image_caption paragraphs to document_structure pages.
+
+    ``page_numbers`` maps each page in the (possibly scoped) document structure
+    to its physical page number; without it the structure is assumed to hold
+    every page in order and ``page_idx`` is used directly.
+    """
     pages = document_structure.get("pages", [])
+    index_by_page = None
+    if page_numbers is not None:
+        index_by_page = {number: index for index, number in enumerate(page_numbers)}
     for img in images:
         page_idx = img.get("page_idx", 0)
-        if page_idx < len(pages):
-            pages[page_idx].setdefault("paragraphs", []).append({
-                "paragraph_id": f"p{page_idx + 1}_img_{len(pages[page_idx].get('paragraphs', []))}",
+        target = page_idx if index_by_page is None else index_by_page.get(page_idx + 1)
+        if target is not None and 0 <= target < len(pages):
+            pages[target].setdefault("paragraphs", []).append({
+                "paragraph_id": f"p{target + 1}_img_{len(pages[target].get('paragraphs', []))}",
                 "text": img.get("caption", "image"),
                 "type": "image_caption",
                 "image_path": img.get("relative_path"),
             })
 
 
+def _page_position(page_num: int, page_numbers: list[int] | None) -> int | None:
+    """Map a physical page number to its index in the (possibly scoped) pages list."""
+    if page_numbers is None:
+        return page_num - 1
+    try:
+        return page_numbers.index(page_num)
+    except ValueError:
+        return None
+
+
 def _attach_layout_footnotes(
     document_structure: dict[str, Any],
     page_layouts: list[dict[str, Any]],
+    page_numbers: list[int] | None = None,
 ) -> None:
     """Copy layout-detected footnotes onto the matching document pages.
 
@@ -176,8 +202,8 @@ def _attach_layout_footnotes(
         if not isinstance(page_num, int):
             continue
 
-        page_idx = page_num - 1
-        if page_idx < 0 or page_idx >= len(pages):
+        page_idx = _page_position(page_num, page_numbers)
+        if page_idx is None or page_idx < 0 or page_idx >= len(pages):
             continue
 
         footnotes = layout.get("footnotes") or []
@@ -215,6 +241,7 @@ def _attach_layout_footnotes(
 def _remove_header_footer_paragraphs(
     document_structure: dict[str, Any],
     page_layouts: list[dict[str, Any]],
+    page_numbers: list[int] | None = None,
 ) -> None:
     """Remove running header/footer text from page body paragraphs.
 
@@ -229,8 +256,8 @@ def _remove_header_footer_paragraphs(
         if not isinstance(page_num, int):
             continue
 
-        page_idx = page_num - 1
-        if page_idx < 0 or page_idx >= len(pages):
+        page_idx = _page_position(page_num, page_numbers)
+        if page_idx is None or page_idx < 0 or page_idx >= len(pages):
             continue
 
         headers_footers = layout.get("headers_footers") or []
@@ -275,6 +302,28 @@ def _apply_page_number_map(
         printed = page_number_map.get(page_idx)
         if printed is not None:
             page["page_number"] = printed
+
+
+def _structure_page_number_map(
+    document_structure: dict[str, Any],
+    page_number_map: dict[int, int],
+    page_numbers: list[int] | None,
+) -> dict[int, int]:
+    """Align a physical→printed page map with the document structure's order.
+
+    Unscoped, structure index equals 0-based physical index, so the map is used
+    as-is.  A scoped structure holds only the selected pages, so each index is
+    resolved through the physical page it represents.
+    """
+    if page_numbers is None:
+        return page_number_map
+    aligned: dict[int, int] = {}
+    for index, _page in enumerate(document_structure.get("pages", [])):
+        if index >= len(page_numbers):
+            continue
+        physical = page_numbers[index]
+        aligned[index] = page_number_map.get(physical - 1, physical)
+    return aligned
 
 
 def _page_range_bounds(page_range: str | None) -> tuple[int | None, int | None]:
@@ -423,32 +472,6 @@ def _annotate_document_with_pageindex(
 
 
 # ---------------------------------------------------------------------------
-# Step 3: GROBID extraction
-# ---------------------------------------------------------------------------
-
-def _run_grobid(pdf_path: str) -> dict[str, Any]:
-    """Run the explicitly selected GROBID host-metadata engine only."""
-    try:
-        from .grobid import (
-            is_grobid_available,
-        )
-        if not is_grobid_available():
-            raise RuntimeError(
-                "GROBID engine selected but service is unavailable at http://localhost:8070; "
-                "start GROBID or rerun with --citation-engine dspy"
-            )
-        from .grobid import extract_document_metadata_grobid
-        metadata = extract_document_metadata_grobid(pdf_path)
-        if not metadata:
-            raise RuntimeError("GROBID returned no host metadata; no engine fallback was attempted")
-        return metadata
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        raise RuntimeError("GROBID host extraction failed; no engine fallback was attempted") from exc
-
-
-# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -471,10 +494,22 @@ def run(
     doc_type = cfg.doc_type_override or determine_doc_type(pdf_path, num_pages)
     logger.info("Document type: %s (pages=%d)", doc_type, num_pages)
 
+    # A scoped run (``pages``) reads only that window.  Page numbers stay
+    # physical everywhere downstream.
+    selected_pages: list[int] | None = None
+    if cfg.pages:
+        from ...utils import parse_page_range
+
+        selected_pages = parse_page_range(cfg.pages, num_pages)
+        if not selected_pages:
+            raise ValueError(f"pages {cfg.pages!r} selects no page in a {num_pages}-page document")
+        logger.info("Scoped extraction: pages %s of %d", cfg.pages, num_pages)
+
     page_layouts: list[dict[str, Any]] | None = None
+    numbering_layouts: list[dict[str, Any]] | None = None
     # Keep raw PyMuPDF blocks for citation evidence.  The layout path replaces
     # page text with classified body paragraphs, which deliberately omit them.
-    source_pages = _extract_pages(pdf_path)
+    source_pages = _extract_pages(pdf_path, selected_pages)
 
     # ── Step 1: Text extraction + Layout analysis ─────────────────
     # When layout analysis is enabled and pymupdf4llm is installed,
@@ -483,6 +518,16 @@ def run(
     if cfg.use_layout_analysis:
         try:
             page_layouts = analyze_document_layout_pymupdf4llm(pdf_path)
+            # Page numbering is detected across the whole file before the
+            # scoped window narrows what is extracted.
+            numbering_layouts = page_layouts
+            if selected_pages is not None:
+                wanted = set(selected_pages)
+                page_layouts = [
+                    layout for layout in page_layouts if layout.get("page_number") in wanted
+                ]
+                if not page_layouts:
+                    raise ValueError("layout analysis returned no page in the scoped range")
             # Build page_paragraphs from the layout results (body text only,
             # headers/footers already excluded by the GNN classification).
             raw_pages = []
@@ -520,7 +565,14 @@ def run(
     if cfg.use_layout_analysis:
         try:
             _images_tmpdir = tempfile.mkdtemp(prefix="citeindex_imgs_")
-            pdf_images = extract_pdf_images(pdf_path, _images_tmpdir, source_id)
+            pdf_images = extract_pdf_images(
+                pdf_path,
+                _images_tmpdir,
+                source_id,
+                page_indices=(
+                    None if selected_pages is None else [page - 1 for page in selected_pages]
+                ),
+            )
         except Exception:
             logger.warning("Image extraction failed", exc_info=True)
 
@@ -529,7 +581,7 @@ def run(
 
     # Embed images into pages if available
     if pdf_images:
-        _embed_images_into_pages(document_structure, pdf_images)
+        _embed_images_into_pages(document_structure, pdf_images, page_numbers=selected_pages)
 
     # ── Step 3b: Layout post-processing (footnotes, page numbers, headers/footers)
     # When pymupdf4llm was used, footnotes are already extracted and headers/footers
@@ -539,11 +591,11 @@ def run(
     #   - Apply the page number map
     page_number_map: dict[int, int] = {i: i + 1 for i in range(num_pages)}
     if page_layouts is not None:
-        _attach_layout_footnotes(document_structure, page_layouts)
-        _remove_header_footer_paragraphs(document_structure, page_layouts)
+        _attach_layout_footnotes(document_structure, page_layouts, page_numbers=selected_pages)
+        _remove_header_footer_paragraphs(document_structure, page_layouts, page_numbers=selected_pages)
 
         # Build page number map from detected page numbers in headers/footers
-        detected_map = build_page_number_map(page_layouts)
+        detected_map = build_page_number_map(numbering_layouts or page_layouts)
         if detected_map:
             page_number_map = detected_map
             logger.info(
@@ -553,12 +605,15 @@ def run(
                 num_pages,
             )
             # Update document structure page numbers to use real printed numbers
-            _apply_page_number_map(document_structure, page_number_map)
+            _apply_page_number_map(
+                document_structure,
+                _structure_page_number_map(document_structure, page_number_map, selected_pages),
+            )
     elif cfg.use_layout_analysis:
         try:
             page_layouts = analyze_document_layout(pdf_path)
-            _attach_layout_footnotes(document_structure, page_layouts)
-            _remove_header_footer_paragraphs(document_structure, page_layouts)
+            _attach_layout_footnotes(document_structure, page_layouts, page_numbers=selected_pages)
+            _remove_header_footer_paragraphs(document_structure, page_layouts, page_numbers=selected_pages)
 
             detected_map = build_page_number_map(page_layouts)
             if detected_map:
@@ -569,13 +624,16 @@ def run(
                     len(page_number_map),
                     num_pages,
                 )
-                _apply_page_number_map(document_structure, page_number_map)
+                _apply_page_number_map(
+                    document_structure,
+                    _structure_page_number_map(document_structure, page_number_map, selected_pages),
+                )
         except Exception:
             logger.warning("Layout analysis failed", exc_info=True)
 
     # ── Step 4: PageIndex tree (default, uses PDF directly) ─────────
     pageindex_tree_json = None
-    if cfg.use_pageindex:
+    if cfg.use_pageindex and not cfg.pages:
         try:
             from .pageindex_tree import pageindex_to_citeindex_tree, run_pageindex_tree
             pi_result = run_pageindex_tree(pdf_path, model=cfg.pageindex_model)
@@ -599,23 +657,16 @@ def run(
     # Use original PyMuPDF blocks before layout cleanup removes imprint text.
     source_blocks = build_source_blocks([(p["page_number"], [b[4] for b in p["blocks"] if len(b) > 4 and isinstance(b[4], str)]) for p in source_pages])
     candidate_regions = select_candidate_regions(pageindex_tree_json)
-    if cfg.citation_engine == "grobid":
-        grobid_metadata = _run_grobid(pdf_path)
-        enriched_csl = dict(base_csl)
-        enriched_csl.update(grobid_metadata)
-        if grobid_metadata:
-            enriched_csl["_extraction_method"] = "grobid"
-    else:
-        region_hints = []
-        if pageindex_tree_json:
-            from .dspy_extract import select_candidate_regions
-            region_hints = [r.get("heading", "") for r in select_candidate_regions(pageindex_tree_json) if r.get("heading")]
-        enriched_csl = enrich_csl_with_citation_cascade(
-            base_csl=base_csl, ordered_text=ordered_text,
-            pdf_path=pdf_path, num_pages=num_pages, config=cfg,
-            region_hints=region_hints, source_blocks=source_blocks,
-            candidate_regions=candidate_regions,
-        )
+    region_hints = []
+    if pageindex_tree_json:
+        from .dspy_extract import select_candidate_regions
+        region_hints = [r.get("heading", "") for r in select_candidate_regions(pageindex_tree_json) if r.get("heading")]
+    enriched_csl = enrich_csl_with_citation_cascade(
+        base_csl=base_csl, ordered_text=ordered_text,
+        pdf_path=pdf_path, num_pages=num_pages, config=cfg,
+        region_hints=region_hints, source_blocks=source_blocks,
+        candidate_regions=candidate_regions,
+    )
 
     csl = dict(base_csl)
     for key, value in enriched_csl.items():
@@ -638,12 +689,19 @@ def run(
     ) else "incomplete"
 
     # ── Step 6: Nodes + Merkle ─────────────────────────────────────
-    nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
-    merkle_tree = build_merkle_for_nodes(nodes)
-    if document_structure.get("pages"):
-        hierarchical = build_hierarchical_merkle_tree(document_structure)
-        merkle_tree["hierarchical_root"] = hierarchical.get("root")
-        merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
+    if cfg.pages:
+        # Nodes exist only to feed the Merkle root, and a scoped record is
+        # anchored to the file digest plus the page window instead.
+        nodes: list[dict[str, Any]] = []
+        merkle_tree: dict[str, Any] | None = None
+        logger.info("Scoped page ingestion: nodes and Merkle tree skipped")
+    else:
+        nodes = build_nodes_with_granularity(source_id, page_paragraphs, is_primary=cfg.is_primary)
+        merkle_tree = build_merkle_for_nodes(nodes)
+        if document_structure.get("pages"):
+            hierarchical = build_hierarchical_merkle_tree(document_structure)
+            merkle_tree["hierarchical_root"] = hierarchical.get("root")
+            merkle_tree["proof_tree"] = hierarchical.get("proof_tree")
 
     document_json: dict[str, Any] = {
         "source_id": source_id,
@@ -670,7 +728,7 @@ def run(
             doc_id=source_id,
             csl_data=csl,
             page_number_map=page_number_map,
-            merkle_root=merkle_tree.get("root"),
+            merkle_root=(merkle_tree or {}).get("root"),
             page_layouts=page_layouts,
         )
         _annotate_document_with_pageindex(document_structure, ci_tree)

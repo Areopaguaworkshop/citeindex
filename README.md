@@ -36,14 +36,18 @@ pip install citeindex
 pip install 'citeindex[ocr-mineru,layout]'
 ```
 
-The default install handles digital PDFs and ordinary HTML URLs. Scanned PDFs
+The default install handles digital PDFs and ordinary HTML URLs. For HTML
+URLs, Highwire Press, Dublin Core, OpenGraph, and Schema.org JSON-LD metadata
+is extracted deterministically from the page `<head>` without any external
+service. Scanned PDFs
 need `ocr-mineru` (MinerU's pipeline backend) or `ocr-paddle` with
 `--ocr-engine glm-ocr`. Media transcription with WhisperX needs `media`; the
 separate Wenbi environment needs only `media-wenbi` here. JavaScript-rendered
 pages need `web-browser` plus `playwright install chromium`, while
 `--all-url-article` needs `crawl`. The legacy OCR helpers need `ocr-legacy`.
 Enhanced PDF layout extraction uses `layout`; otherwise it falls back to the
-built-in heuristic. Install several extras together as needed.
+built-in heuristic. The optional MCP server needs `mcp`. Install several
+extras together as needed.
 
 ### Docker
 
@@ -114,6 +118,30 @@ review. Use `--no-crossref` to disable registry lookup or
 An independent harness audit is available only through an explicit Codex,
 Claude Code, OpenCode, or Pi skill/command; running `citeindex` directly does
 not auto-trigger one.
+
+## MCP server (optional)
+
+Run CiteIndex as a local MCP server so agent harnesses call tools directly
+instead of shelling out:
+
+```bash
+pip install 'citeindex[mcp]'
+citeindex-mcp --corpus-root corpus                      # stdio
+citeindex-mcp --http 127.0.0.1:8765 --corpus-root corpus  # shared Streamable HTTP
+# or without a global install:
+uvx --from 'citeindex[mcp]' citeindex-mcp --corpus-root corpus
+```
+
+Read tools (`citeindex_info`, `library_list`, `library_search`, `library_get`,
+`citation_verify`, `citation_format`) are always available. `ingest_url`
+requires `--allow-write` (or `CITEINDEX_MCP_ALLOW_WRITE=1`), uses deterministic
+HTML metadata by default, and opts into DSPy/PageIndex with `llm=True` /
+`deep=True`. The server also exposes CSL, Merkle manifests, verification
+reports, and the project's `citation-verification` skill as resources, plus
+`cite-this-source` / `ingest-verified` prompts.
+
+Client registration snippets for OpenCode, Codex, Pi, and OMP:
+[docs/2026-11-17-citeindex-mcp-plan.html](docs/2026-11-17-citeindex-mcp-plan.html).
 
 ## Benchmarking
 
@@ -292,6 +320,7 @@ result = ingest("paper.pdf", corpus_root="my_corpus", config=config)
 - `citeindex/ingestion/master.py` detects input types, routes pipelines, verifies metadata, and persists results.
 - `citeindex/ingestion/pipelines/` contains the digital PDF, scanned PDF, URL, media, GROBID, PageIndex, and metadata-extraction implementations.
 - `citeindex/ingestion/storage.py` and `markdown_export.py` write corpus artifacts and companion library Markdown.
+- `citeindex/mcp/` is the optional MCP server (`citeindex[mcp]`): library tools, write-gated URL ingestion, resources, prompts, and the bundled verification skill.
 - `.agents/`, `.claude/`, `.codex/`, `.opencode/`, and `.pi/` expose the optional citation-evidence audit to supported agent harnesses.
 
 ## Ingestion Pipelines
@@ -370,17 +399,26 @@ citeindex scanned.pdf --ocr-engine glm-ocr --ollama-host http://localhost:11434
 ### URL Article
 
 ```
-URL → Playwright/requests (fetch) → trafilatura/readability (content)
+URL → Playwright/requests (fetch) → HTML head metadata (deterministic)
+    → trafilatura/readability (content)
     → Zotero / in-page citation guidance (candidates) → web-specific DSPy + source evidence
+    → _field_evidence binding → snapshot SHA-256
     → section-hierarchical paragraphs → PageIndex tree (optional)
     → hashes → Merkle tree → store to corpus/
 ```
 
 - **Playwright** renders JavaScript-heavy pages (fallback to **requests**)
-- **trafilatura** extracts clean markdown with heading structure (fallback to **readability-lxml**)
+- **Deterministic HTML head parsing** runs before any LLM call and extracts structured metadata from:
+  - **Highwire Press / Google Scholar** tags (`citation_title`, `citation_doi`, `citation_author` multi-value, `citation_journal_title`, `citation_volume`, `citation_issue`, `citation_firstpage`/`lastpage`, `citation_publisher`, `citation_issn`, `citation_isbn`)
+  - **Dublin Core** (`dc.title`, `dc.creator`, `dc.date`, `dc.publisher`, `dc.identifier`)
+  - **OpenGraph** (`og:title`, `og:site_name`, `article:published_time`, `article:author`)
+  - **Prism** (`prism.doi`, `prism.publicationname`, `prism.publicationdate`)
+  - **Schema.org JSON-LD** inline scripts (`ScholarlyArticle`, `Article`, `NewsArticle`, `BlogPosting`, `Book`, `Chapter`)
+- **trafilatura** extracts clean markdown with heading structure (fallback to **readability-lxml**); `trafilatura` is an optional dependency — the base pipeline works without it
 - **Zotero** extracts citation metadata via translation-server (title, authors, date, DOI)
 - Discovers in-page citation guidance: 若要引用 / 引用格式 / Cite this / Zitierweise / Pour citer
 - Web-specific DSPy uses original HTML text/metadata, preserves bibliographic subtype and date precision, and requires field quotations.
+- Extracted HTML-head metadata fields are automatically bound to `source_blocks` as `_field_evidence` with block ID, quote, and locator; `source_snapshot_digest` (SHA-256 of the fetched HTML) is stored in `csl.json` extra data alongside `source_snapshot_path`.
 - Regex/provider candidates remain unverified without evidence; access and revision dates are not publication dates.
 - Supports batch crawling with `--all-url-article` and `--update-url-article`
 
@@ -452,6 +490,7 @@ the original source evidence; otherwise CiteIndex records `needs_review`.
 | `use_layout_analysis` | `--no-layout` | `True` | Disable column/footnote detection |
 | `is_primary` | `--is-primary` | `False` | Line-level granularity (vs paragraph-level) |
 | `use_pageindex` | `--no-pageindex` | `True` | PageIndex hierarchy is enabled by default; pass `--no-pageindex` to disable it |
+| `use_llm_metadata` | (API/MCP only) | `True` | Disable DSPy web metadata extraction for deterministic offline runs; MCP `ingest_url` sets `False` by default |
 | `pageindex_model` | `--pageindex-model` | `ollama/deepseek-v4.1-flash:cloud` | LLM for PageIndex tree building |
 | `force_pdf_kind` | `--force-ocr`, `--force-digital` | auto | Override automatic PDF classification |
 | `verify_citations` | `--verify-citations` | `False` | Enable evidence-backed metadata verification |
@@ -614,7 +653,7 @@ If you use CiteIndex in your work, please cite it:
 
 **APA:**
 
-> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.15.0). MIT. https://github.com/ajia/citeindex
+> ajia. (2025). *CiteIndex: Ingest sources with proper citation* (Version 0.15.2). MIT. https://github.com/ajia/citeindex
 
 **BibTeX:**
 
@@ -622,18 +661,36 @@ If you use CiteIndex in your work, please cite it:
 @software{citeindex2025,
   author  = {Yongjia, Yuan},
   title   = {CiteIndex: Ingest sources with proper citation},
-  version = {0.15.0},
+  version = {0.15.2},
   year    = {2025},
   license = {MIT},
   url     = {https://github.com/ajia/citeindex},
 }
 ```
 
-## Status (2026-10-17)
+## Status (2026-11-18)
 
-- Tests: 379 passing; CI (ruff + mypy + pytest) on Python 3.12/3.13
-  (`.github/workflows/tests.yml`). Branch-coverage gate at ~40%, ratcheting
-  toward 85% as legacy modules gain tests.
+- Tests: 662 passing, 6 skipped in the full local suite; CI (ruff + mypy +
+  pytest) on Python 3.12/3.13 (`.github/workflows/tests.yml`). MCP tests are
+  skipped when the optional `mcp` extra is absent. Branch-coverage gate at
+  ~40%, ratcheting toward 85% as legacy modules gain tests.
+- PyPI: `citeindex` **0.15.2** published 2026-11-18; the optional `[mcp]` extra
+  and bundled `citation-verification` skill are included in the release.
+- MCP server: optional `citeindex[mcp]` extra and `citeindex-mcp` entry point
+  expose library search/read, `citation_verify`, `citation_format`, and
+  write-gated `ingest_url` over stdio or Streamable HTTP. The
+  `citation-verification` skill is served as `citeindex://skills/citation-verification`
+  and embedded in the `cite-this-source` / `ingest-verified` prompts.
+- HTML URL pipeline: deterministic HTML head metadata extraction added
+  (Highwire Press, Dublin Core, OpenGraph, Prism, Schema.org JSON-LD); evidence
+  binding and `source_snapshot_digest` now recorded without requiring Zotero or
+  trafilatura. Page ranges bind to joined first/last-page metadata spans, and
+  CNKI/Wanfang GB/T 7714 guidance strings ("引用本文：…"), gcdfl/ctcfol
+  copyright preambles, and title-matched unlabeled GB/T self-citations are
+  parsed into CSL fields. Dedicated tests cover these paths
+  (`tests/test_html_article_pipeline.py`).
+  A live 20-URL, no-LLM benchmark lives in
+  [benchmarks/html/README.md](benchmarks/html/README.md).
 - Scale benchmark (default pipeline, digital PDFs, 3 workers):
   **10,052 pages across 14 volumes** at **44.1 ok-pages/min wall**; per-document
   results and failure modes in [benchmarks/scale/README.md](benchmarks/scale/README.md).

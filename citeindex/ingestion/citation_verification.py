@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import unicodedata
 from collections.abc import Iterable
 from typing import Any, TypeGuard
 
@@ -26,102 +27,272 @@ _LOCATOR_KEYS = ("node_id", "char_start", "char_end", "bbox")
 # support for the value. This is the plan v2 §4 "multi-line title" fix.
 _WS_STRIP_RE = re.compile(r"[\s\u3000\u200b\ufeff]+")
 
+# Presentation-only glyph differences (NFKC handles full-width forms; these
+# remain after it) must not turn a verbatim quote into an invented one.
+_EVIDENCE_TRANSLATION = str.maketrans({
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
+    "\u2015": "-", "\u2212": "-",
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"',
+})
+
+# Closed set of reasons a field can be dropped from verified CSL.
+DROP_REASONS = ("not_found", "quote_mismatch", "empty", "wrong_role")
+
+_SPAN_PAGE_KEYS = ("physical_page_index", "section_index", "segment_id")
+
 
 def _compact(text: str) -> str:
     """Casefolded, whitespace-stripped form for tolerance comparisons."""
     return _WS_STRIP_RE.sub("", text.casefold())
 
 
+def _normalise_units(text: str) -> Iterable[tuple[str, int]]:
+    """Canonical characters paired with their index in the original ``text``.
+
+    Applies NFKC (full-width punctuation, ligatures), maps dashes and curly
+    quotes to ASCII, drops soft hyphens and collapses every whitespace run to
+    a single space. Working character by character keeps original offsets
+    recoverable for the locator.
+    """
+    pending_space: int | None = None
+    emitted = False
+    for position, char in enumerate(text):
+        if char == "\u00ad":
+            continue
+        piece = unicodedata.normalize("NFKC", char).translate(_EVIDENCE_TRANSLATION)
+        if not piece:
+            continue
+        if piece.isspace() or not piece.strip():
+            if pending_space is None:
+                pending_space = position
+            continue
+        if pending_space is not None and emitted:
+            yield " ", pending_space
+        pending_space = None
+        for unit in piece:
+            emitted = True
+            yield unit, position
+
+
+def _normalise_evidence(text: str) -> str:
+    """Canonical text used on both sides of the evidence containment check."""
+    if not isinstance(text, str):
+        return ""
+    return "".join(unit for unit, _ in _normalise_units(text))
+
+
+def _normalised_index(text: str, target: int) -> int:
+    """Original offset of canonical character ``target`` (approximate fallback)."""
+    position = 0
+    for _, original in _normalise_units(text):
+        if position == target:
+            return original
+        position += 1
+    return 0
+
+
 def _quote_in_block(quote: str, block_text: str) -> int | None:
-    """Index of ``quote`` in ``block_text``, whitespace-tolerant, else ``None``.
+    """Index of ``quote`` in ``block_text``, presentation-tolerant, else ``None``.
 
     Fast path: exact substring (the common case — unchanged behavior).
-    Slow path: whitespace-insensitive scan bounded by the quote's own span.
+    Slow paths: whitespace-insensitive scan, then full evidence normalisation
+    (NFKC, dashes, curly quotes, soft hyphens, collapsed spaces).
     """
     if quote in block_text:
         return block_text.index(quote)
     compacted_quote = _compact(quote)
-    if not compacted_quote:
+    if compacted_quote:
+        compacted_block = _compact(block_text)
+        idx = compacted_block.find(compacted_quote)
+        if idx >= 0:
+            # Map the compacted hit back to an original-text span: walk the
+            # block skipping whitespace, counting non-space chars.
+            char_count = 0
+            for pos, ch in enumerate(block_text):
+                if _WS_STRIP_RE.match(ch):
+                    continue
+                if char_count == idx:
+                    return pos
+                char_count += 1
+    normalised_quote = _normalise_evidence(quote)
+    if not normalised_quote:
         return None
-    compacted_block = _compact(block_text)
-    idx = compacted_block.find(compacted_quote)
+    idx = _normalise_evidence(block_text).find(normalised_quote)
     if idx < 0:
         return None
-    # Map the compacted hit back to an original-text span: walk the block
-    # skipping whitespace, counting non-space chars until the match begins.
-    char_count = 0
-    for pos, ch in enumerate(block_text):
-        if _WS_STRIP_RE.match(ch):
+    return _normalised_index(block_text, idx)
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.findall(r"\w+", _normalise_evidence(text).casefold()))
+
+
+def _supports_quote(field: str, value: Any, quote: str) -> bool:
+    """Whether ``quote`` can support ``value`` for this field."""
+    if field == "type" or _find_evidence(value, [{"quote": quote}]):
+        return True
+    # A page range is supported when a joined quote carries both endpoints
+    # (``citation_firstpage`` + ``citation_lastpage``).
+    if field == "page" and isinstance(value, str):
+        parts = [part for part in re.split(r"\s*[-–—/]\s*", value) if part.strip()]
+        if len(parts) > 1 and all(_compact(part) in _compact(quote) for part in parts):
+            return True
+    if field not in {*NAME_FIELDS, "title", "subtitle", "publisher", "publisher-place"}:
+        return False
+    normalized = _plain(quote)
+    if all(_plain(part) in normalized for part in _value_strings(value)):
+        return True
+    # Multi-line OCR tolerance: value words may straddle line breaks in the
+    # quote; whitespace-stripped containment still entails support.
+    return all(_compact(part) in _compact(quote) for part in _value_strings(value))
+
+
+def _empty_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, dict)):
+        return not value
+    return False
+
+
+def _same_span_page(left: dict, right: dict) -> bool:
+    """Joins across pages are never allowed."""
+    metadata_pair = bool(left["locator"].get("metadata_key") and right["locator"].get("metadata_key"))
+    for key in _SPAN_PAGE_KEYS:
+        if key == "section_index" and metadata_pair:
+            # Metadata blocks share one source.html snapshot; section_index is
+            # only their emit order inside <head>, not a physical page.
             continue
-        if char_count == idx:
-            return pos
-        char_count += 1
-    return None
+        first = left["locator"].get(key)
+        second = right["locator"].get(key)
+        if first is not None and second is not None and first != second:
+            return False
+    return True
+
+
+def _adjacent_blocks(left_id: Any, right_id: Any, blocks: list[dict]) -> bool:
+    ids = [block.get("id") for block in blocks]
+    try:
+        return ids.index(right_id) == ids.index(left_id) + 1
+    except ValueError:
+        return False
+
+
+def _resolve_span(field: str, span: Any, blocks: list[dict]) -> tuple[dict | None, str | None]:
+    """Resolve one span to a locator, or return ``(None, drop_reason)``."""
+    if not isinstance(span, dict):
+        return None, "not_found"
+    quote = span.get("quote")
+    if not isinstance(quote, str) or not quote.strip():
+        return None, "empty"
+    block = next((b for b in blocks if b.get("id") == span.get("block_id")), None)
+    if not block:
+        return None, "not_found"
+    start = _quote_in_block(quote, block["text"])
+    if start is None:
+        return None, "quote_mismatch"
+    if field in NAME_FIELDS and block.get("metadata_key") in {"uploader", "channel", "platform"}:
+        return None, "wrong_role"
+    if field == "publisher" and block.get("metadata_key") == "platform":
+        return None, "wrong_role"
+    if field == "title" and block.get("metadata_key") in {"filename", "source_path"}:
+        return None, "wrong_role"
+    if field == "accessed" and block.get("metadata_key") != "accessed":
+        return None, "wrong_role"
+    metadata_key = str(block.get("metadata_key", "")).casefold()
+    if field == "issued" and ("modified" in metadata_key or metadata_key in {"event-date", "event_date"}):
+        return None, "wrong_role"
+    # start already resolved tolerantly; an exact re-index here raised on
+    # OCR line-break drift.
+    locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index", "segment_id", "start_seconds", "end_seconds", "metadata_key", "snapshot_artifact", "source_digest") if k in block}
+    locator.update(block_id=block["id"], char_start=start, char_end=start + len(quote))
+    if not valid_source_locator(locator):
+        return None, "not_found"
+    return {"block_id": block["id"], "quote": quote, "locator": locator}, None
+
+
+def _resolve_joined_span(field: str, quote: str, span: dict, blocks: list[dict]) -> tuple[dict | None, str | None]:
+    """Resolve a quote assembled from two adjacent same-page blocks.
+
+    The join must be exactly one separator (a space or a line break) and both
+    halves must resolve in their own block; a join across pages is rejected.
+    """
+    ids = [block.get("id") for block in blocks]
+    try:
+        index = ids.index(span.get("block_id"))
+    except ValueError:
+        return None, "not_found"
+    if index + 1 >= len(blocks):
+        return None, "quote_mismatch"
+    neighbour = blocks[index + 1]
+    if not isinstance(neighbour.get("text"), str):
+        return None, "quote_mismatch"
+    for position, char in enumerate(quote):
+        if char not in {" ", "\n"}:
+            continue
+        if position == 0 or position + 1 >= len(quote):
+            continue
+        if quote[position - 1].isspace() or quote[position + 1].isspace():
+            continue
+        head, tail = quote[:position], quote[position + 1:]
+        left, left_reason = _resolve_span(field, {"block_id": span.get("block_id"), "quote": head}, blocks)
+        right, _ = _resolve_span(field, {"block_id": neighbour.get("id"), "quote": tail}, blocks)
+        if left and right and _same_span_page(left, right):
+            return {"spans": [left, right], "quote": quote,
+                    "locator": left["locator"]}, None
+        if left_reason == "wrong_role":
+            return None, "wrong_role"
+    return None, "quote_mismatch"
+
+
+def evaluate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[dict]) -> tuple[dict | None, str | None]:
+    """Resolve source spans, returning ``(evidence, drop_reason)``.
+
+    Reasons come from :data:`DROP_REASONS`; ``None`` means the field is
+    supported.
+    """
+    if not valid_host_value(field, value):
+        return None, "empty" if _empty_value(value) else "wrong_role"
+    spans = evidence.get("spans") if isinstance(evidence, dict) and "spans" in evidence else evidence
+    if spans is None:
+        return None, "not_found"
+    if isinstance(spans, list):
+        if not 1 <= len(spans) <= 8:
+            return None, "not_found"
+        resolved: list[dict] = []
+        for span in spans:
+            item, reason = _resolve_span(field, span, blocks)
+            if item is None:
+                return None, reason
+            resolved.append(item)
+        for left, right in zip(resolved, resolved[1:], strict=False):
+            if not _same_span_page(left, right) or not _adjacent_blocks(
+                    left["block_id"], right["block_id"], blocks):
+                return None, "quote_mismatch"
+        quote = " ".join(span["quote"] for span in resolved)
+        if not _supports_quote(field, value, quote):
+            return None, "quote_mismatch"
+        return {"spans": resolved, "quote": quote, "locator": resolved[0]["locator"]}, None
+    single, reason = _resolve_span(field, spans, blocks)
+    if single is None:
+        quote = spans.get("quote") if isinstance(spans, dict) else None
+        if reason == "quote_mismatch" and isinstance(quote, str):
+            joined, join_reason = _resolve_joined_span(field, quote, spans, blocks)
+            if joined is not None and _supports_quote(field, value, joined["quote"]):
+                return joined, None
+            return None, join_reason or reason
+        return None, reason
+    if not _supports_quote(field, value, single["quote"]):
+        return None, "quote_mismatch"
+    return single, None
 
 
 def validate_block_evidence(field: str, value: Any, evidence: Any, blocks: list[dict]) -> dict | None:
     """Resolve exact source spans. This establishes support, not host attribution."""
-    if not valid_host_value(field, value):
-        return None
-    def supports(quote: str) -> bool:
-        if field == "type" or _find_evidence(value, [{"quote": quote}]):
-            return True
-        if field not in {*NAME_FIELDS, "title", "subtitle", "publisher", "publisher-place"}:
-            return False
-        def plain(text: str) -> str:
-            text = text.casefold().translate(str.maketrans("‘’“”–—", "''\"\"--"))
-            return " ".join(re.findall(r"\w+", text))
-        normalized = plain(quote)
-        if all(plain(part) in normalized for part in _value_strings(value)):
-            return True
-        # Multi-line OCR tolerance: value words may straddle line breaks in
-        # the quote; whitespace-stripped containment still entails support.
-        return all(_compact(part) in _compact(quote) for part in _value_strings(value))
-    def resolve(span: Any) -> dict | None:
-        if not isinstance(span, dict):
-            return None
-        quote = span.get("quote")
-        block = next((b for b in blocks if b.get("id") == span.get("block_id")), None)
-        if not isinstance(quote, str) or not quote.strip() or not block:
-            return None
-        start = _quote_in_block(quote, block["text"])
-        if start is None:
-            return None
-        if field in NAME_FIELDS and block.get("metadata_key") in {"uploader", "channel", "platform"}:
-            return None
-        if field == "publisher" and block.get("metadata_key") == "platform":
-            return None
-        if field == "title" and block.get("metadata_key") in {"filename", "source_path"}:
-            return None
-        if field == "accessed" and block.get("metadata_key") != "accessed":
-            return None
-        metadata_key = str(block.get("metadata_key", "")).casefold()
-        if field == "issued" and ("modified" in metadata_key or metadata_key in {"event-date", "event_date"}):
-            return None
-        # start already resolved whitespace-tolerantly at the top of resolve();
-        # an exact re-index here raised on OCR line-break drift.
-        locator = {k: block[k] for k in ("physical_page_index", "printed_page_label", "section_index", "segment_id", "start_seconds", "end_seconds", "metadata_key", "snapshot_artifact", "source_digest") if k in block}
-        locator.update(block_id=block["id"], char_start=start, char_end=start + len(quote))
-        return {"block_id": block["id"], "quote": quote, "locator": locator} if valid_source_locator(locator) else None
-
-    spans = evidence.get("spans") if isinstance(evidence, dict) and "spans" in evidence else evidence
-    if isinstance(spans, list):
-        if not 1 <= len(spans) <= 8:
-            return None
-        resolved: list[dict] = []
-        for span in spans:
-            item = resolve(span)
-            if item is None:
-                return None
-            resolved.append(item)
-        quote = " ".join(span["quote"] for span in resolved)
-        if not supports(quote):
-            return None
-        return {"spans": resolved, "quote": quote, "locator": resolved[0]["locator"]}
-    single = resolve(spans)
-    if single and supports(single["quote"]):
-        return single
-    return None
+    return evaluate_block_evidence(field, value, evidence, blocks)[0]
 
 
 def valid_source_locator(locator: Any) -> bool:
@@ -271,6 +442,10 @@ def _value_strings(value: Any) -> list[str]:
             if len(parts) >= 2 and 1 <= parts[1] <= 12:
                 month = calendar.month_name[parts[1]]
                 candidates.add(f"{parts[0]}年{parts[1]}月" + (f"{parts[2]}日" if len(parts) == 3 else ""))
+                candidates.add(
+                    f"{parts[0]}年{str(parts[1]).zfill(2)}月"
+                    + (f"{str(parts[2]).zfill(2)}日" if len(parts) == 3 else "")
+                )
                 if len(parts) == 3:
                     for name in (month, calendar.month_abbr[parts[1]]):
                         candidates.update((f"{name} {parts[2]}, {parts[0]}", f"{parts[2]} {name} {parts[0]}"))

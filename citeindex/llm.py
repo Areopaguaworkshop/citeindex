@@ -1,6 +1,13 @@
 import logging
 
-import dspy
+try:
+    import dspy
+except ImportError:
+    class _MockDspy:
+        class LM:
+            def __init__(self, *a, **k):
+                pass
+    dspy = _MockDspy()
 
 
 def get_llm_model(model_name: str = "ollama/deepseek-v4.1-flash:cloud", temperature: float = 0.1) -> dspy.LM:

@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CiteIndex — MCP Server Plan</title>
+<style>
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --bg: #0d1117;
+  --paper: #161b22;
+  --paper-border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --heading: #f0f6fc;
+  --accent: #58a6ff;
+  --accent-bg: rgba(56, 139, 253, 0.15);
+  --ok: #3fb950;
+  --ok-bg: rgba(63, 185, 80, 0.15);
+  --warn: #d29922;
+  --warn-bg: rgba(210, 153, 34, 0.15);
+  --err: #f85149;
+  --err-bg: rgba(248, 81, 73, 0.15);
+}
+@media (prefers-color-scheme: light) {
+  :root[data-mode="auto"] {
+    --bg: #f6f8fa;
+    --paper: #ffffff;
+    --paper-border: #d0d7de;
+    --text: #24292f;
+    --text-muted: #57606a;
+    --heading: #1f2328;
+    --accent: #0969da;
+    --accent-bg: #ddf4ff;
+    --ok: #1a7f37;
+    --ok-bg: #dafbe1;
+    --warn: #9a6700;
+    --warn-bg: #fff8c5;
+    --err: #cf222e;
+    --err-bg: #ffebe9;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem 1rem;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+header.main-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--paper-border);
+}
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+h1 { font-size: 2rem; color: var(--heading); margin-bottom: 0.5rem; }
+.subtitle { color: var(--text-muted); font-size: 1.1rem; }
+.lead-box {
+  background: var(--accent-bg);
+  border-left: 4px solid var(--accent);
+  padding: 1rem 1.25rem;
+  margin-bottom: 2rem;
+  border-radius: 0 6px 6px 0;
+  font-size: 1.05rem;
+  color: var(--heading);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--paper);
+  border: 1px solid var(--paper-border);
+  border-radius: 6px;
+  padding: 1.5rem;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--paper-border);
+}
+.card-id {
+  background: var(--paper-border);
+  color: var(--heading);
+  font-weight: bold;
+  font-size: 0.85rem;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+.card h2 { font-size: 1.25rem; color: var(--heading); }
+.card.span-2 { grid-column: 1 / -1; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
+th, td { padding: 0.6rem 0.8rem; border: 1px solid var(--paper-border); text-align: left; vertical-align: top; }
+th { background: rgba(255, 255, 255, 0.03); color: var(--heading); font-weight: 600; }
+.status-done { color: var(--ok); font-weight: 600; }
+.status-build { color: var(--warn); font-weight: 600; }
+.status-todo { color: var(--accent); font-weight: 600; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+}
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--paper-border);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+pre code { background: none; padding: 0; }
+ul, ol { padding-left: 1.4rem; margin: 0.75rem 0; }
+li { margin-bottom: 0.4rem; }
+.callout { padding: 0.85rem 1rem; border-radius: 6px; margin: 1rem 0; font-size: 0.95rem; }
+.callout-warn { background: var(--warn-bg); border-left: 4px solid var(--warn); color: var(--heading); }
+.callout-ok { background: var(--ok-bg); border-left: 4px solid var(--ok); color: var(--heading); }
+.callout-err { background: var(--err-bg); border-left: 4px solid var(--err); color: var(--heading); }
+.muted { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="main-header">
+    <div class="badge">Feasibility &amp; Architecture Plan</div>
+    <h1>CiteIndex — MCP Server Plan</h1>
+    <div class="subtitle">Expose ingestion, library lookup, and citation verification as MCP tools for OpenCode, Pi, OMP, and Codex</div>
+  </header>
+
+  <div class="lead-box">
+    <strong>Verdict: feasible without rewriting the pipeline.</strong>
+    All four harnesses installed on this machine support local (stdio) and remote (Streamable HTTP) MCP servers.
+    CiteIndex already exposes a Python API (<code>citeindex.ingest()</code> plus the corpus artifacts), so the work is a thin,
+    permissioned MCP adapter — not a second ingestion engine.
+  </div>
+
+  <div class="callout callout-ok">
+    <strong>Implemented MVP (2026-11-17):</strong> <code>citeindex-mcp</code> now ships phases 0–2 —
+    <code>library_list/search/get</code>, <code>citation_verify</code>, <code>citation_format</code>,
+    <code>ingest_url</code> (write-gated, deterministic by default), <code>citeindex_info</code>,
+    corpus/skill resources, and <code>cite-this-source</code> / <code>ingest-verified</code> prompts.
+    The project's <code>citation-verification</code> skill is served as
+    <code>citeindex://skills/citation-verification</code> and embedded in both prompts.
+    Verified with stdio and Streamable HTTP round trips, a live PLOS URL ingest (~3.5 s, deterministic metadata),
+    and 7 dedicated MCP tests; wheel builds include the skill under <code>citeindex/mcp/skills/</code>.
+  </div>
+
+  <div class="grid">
+    <!-- Panel A: Harness support -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">A</span>
+        <h2>Harness Support (verified locally, 2026-11-17)</h2>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Harness</th><th>Version</th><th>stdio</th><th>Streamable HTTP</th><th>Configuration</th><th>Add command</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>OpenCode</strong></td>
+            <td>2.3.0</td>
+            <td class="status-done">yes</td>
+            <td class="status-done">yes</td>
+            <td><code>~/.config/opencode/opencode.json</code> → <code>mcp.servers</code></td>
+            <td><code>opencode mcp add citeindex -- citeindex-mcp</code></td>
+          </tr>
+          <tr>
+            <td><strong>Codex</strong></td>
+            <td>0.169.0</td>
+            <td class="status-done">yes</td>
+            <td class="status-done">yes</td>
+            <td><code>~/.codex/config.toml</code> → <code>[mcp_servers.citeindex]</code></td>
+            <td><code>codex mcp add citeindex -- citeindex-mcp</code></td>
+          </tr>
+          <tr>
+            <td><strong>Pi</strong></td>
+            <td>current</td>
+            <td class="status-done">yes</td>
+            <td class="status-done">yes</td>
+            <td><code>~/.pi/agent/mcp.json</code> → <code>mcpServers</code></td>
+            <td><code>pi mcp add citeindex -- citeindex-mcp</code></td>
+          </tr>
+          <tr>
+            <td><strong>OMP</strong></td>
+            <td>18.22.0</td>
+            <td class="status-done">yes</td>
+            <td class="status-done">yes</td>
+            <td><code>~/.omp/agent/mcp.json</code> → <code>mcpServers</code></td>
+            <td class="status-build">manual JSON entry (no <code>omp mcp add</code> in this build)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted">Each client launches the same executable and negotiates tools/resources over MCP; only the registration file differs.</p>
+    </section>
+
+    <!-- Panel B: Why MCP -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">B</span>
+        <h2>Why MCP Instead of Shelling Out</h2>
+      </div>
+      <ul>
+        <li><strong>Typed calls:</strong> agents pass structured arguments; no quoting, escaping, or parsing CLI output.</li>
+        <li><strong>Structured results:</strong> CSL JSON, field status, evidence, artifact paths — not stdout prose.</li>
+        <li><strong>Resources:</strong> agents can read <code>citeindex://library/&lt;id&gt;/csl</code> directly instead of re-running ingestion.</li>
+        <li><strong>Prompts:</strong> ship the "cite → verify → report" workflow as an MCP prompt instead of repeating instructions per harness.</li>
+        <li><strong>Governance:</strong> per-tool annotations and client approval prompts distinguish read-only lookup from corpus writes.</li>
+      </ul>
+      <div class="callout callout-warn">
+        MCP does not remove the cost or permissions of ingestion: OCR, media, and network fetches still take the same time and still
+        need the same sandbox/network access. It only makes the interface safer and more direct.
+      </div>
+    </section>
+
+    <!-- Panel C: Architecture -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">C</span>
+        <h2>Architecture</h2>
+      </div>
+      <pre><code>Agent (OpenCode / Codex / Pi / OMP)
+        │  MCP (stdio default, optional Streamable HTTP)
+        ▼
+citeindex-mcp                         ← new console script
+        │
+        ├── tools_library.py          read-only corpus/library index
+        ├── tools_ingest.py           wraps citeindex.ingest()
+        ├── jobs.py                   bounded worker + progress + cancel
+        └── security.py               roots allowlist, write gate, audit log
+        │
+        ▼
+citeindex.ingest() / pipelines / corpus artifacts
+(csl.json, merkle.json, citation_verification.json, source.html, library/*.md)</code></pre>
+      <ul>
+        <li><strong>Packaging:</strong> extra <code>mcp = ["mcp&gt;=2.3,&lt;3"]</code> and script <code>citeindex-mcp = "citeindex.mcp.server:main"</code>.</li>
+        <li><strong>SDK:</strong> implement against the MCP Python SDK v2 <code>MCPServer</code> (<code>from mcp.server.mcpserver import MCPServer</code>).</li>
+        <li><strong>Transport:</strong> <code>stdio</code> by default; <code>citeindex-mcp --http 127.0.0.1:8765</code> serves Streamable HTTP for containers or shared use.</li>
+        <li><strong>State:</strong> corpus root resolved once at startup; a per-corpus writer lock prevents concurrent ingestion collisions.</li>
+      </ul>
+    </section>
+
+    <!-- Panel D: Tool surface -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">D</span>
+        <h2>Tool Surface (phased)</h2>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Tool</th><th>Purpose</th><th>Inputs → output</th><th>Side effects</th><th>Phase</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>library_list</code></td>
+            <td>Page through corpus records</td>
+            <td><code>limit, offset, kind?</code> → record summaries</td>
+            <td>none</td><td class="status-todo">1</td>
+          </tr>
+          <tr>
+            <td><code>library_search</code></td>
+            <td>Title/author/DOI/URL search over <code>csl.json</code></td>
+            <td><code>query, limit</code> → ranked records</td>
+            <td>none</td><td class="status-todo">1</td>
+          </tr>
+          <tr>
+            <td><code>library_get</code></td>
+            <td>Full record: CSL, <code>_field_status</code>, artifact paths</td>
+            <td><code>source_id</code> → record</td>
+            <td>none</td><td class="status-todo">1</td>
+          </tr>
+          <tr>
+            <td><code>citation_verify</code></td>
+            <td>Run the evidence audit on an existing record</td>
+            <td><code>source_id, offline?</code> → report</td>
+            <td>none (report only)</td><td class="status-todo">1</td>
+          </tr>
+          <tr>
+            <td><code>citation_format</code></td>
+            <td>Render CSL to a bibliography/style</td>
+            <td><code>source_ids, style</code> → formatted text</td>
+            <td>none</td><td class="status-todo">1</td>
+          </tr>
+          <tr>
+            <td><code>ingest_url</code></td>
+            <td>Ingest one HTML article synchronously (bounded)</td>
+            <td><code>url, verify?, deep?, llm?</code> → record</td>
+            <td class="status-build">writes corpus + library</td><td class="status-build">2</td>
+          </tr>
+          <tr>
+            <td><code>ingest_file</code></td>
+            <td>Queue PDF / Office / DJVU / media ingestion</td>
+            <td><code>path, kind?, pages?, config?</code> → <code>job_id</code></td>
+            <td class="status-build">writes corpus + library</td><td class="status-build">3</td>
+          </tr>
+          <tr>
+            <td><code>job_status</code> / <code>job_cancel</code></td>
+            <td>Poll or cancel long ingestion jobs</td>
+            <td><code>job_id</code> → state/progress</td>
+            <td>cancel terminates worker</td><td class="status-build">3</td>
+          </tr>
+          <tr>
+            <td><code>citeindex_info</code></td>
+            <td>Version, corpus root, allowlisted roots, capability flags</td>
+            <td>none → diagnostics</td>
+            <td>none</td><td class="status-done">0</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted">MVP intentionally stays at 6–8 tools so the tool list remains legible to smaller models. Bulk data is served through resources, not extra tools.</p>
+    </section>
+
+    <!-- Panel E: Resources and prompts -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">E</span>
+        <h2>Resources &amp; Prompts</h2>
+      </div>
+      <ul>
+        <li><code>citeindex://library/{source_id}/csl</code> — processor-ready CSL JSON plus <code>_field_status</code> and <code>_field_evidence</code>.</li>
+        <li><code>citeindex://corpus/{source_id}/manifest</code> — Merkle manifest and artifact index.</li>
+        <li><code>citeindex://corpus/{source_id}/verification</code> — latest <code>citation_verification.json</code>, when present.</li>
+        <li><code>citeindex://skills/{name}</code> — serves the project's canonical <code>.agents/skills/&lt;name&gt;/SKILL.md</code>
+          (or <code>CITEINDEX_SKILL_ROOT</code>); wheel builds force-include it under <code>citeindex/mcp/skills/</code> so installed servers keep the skill.</li>
+        <li>Prompt <code>cite-this-source</code> — ingest (or load) → verify → report only source-supported fields, with evidence quotes.</li>
+        <li>Prompt <code>repair-citation</code> — generate a repair proposal; applying it stays a separate, explicitly approved tool call (phase 4).</li>
+      </ul>
+      <div class="callout callout-ok">
+        Shipping the verification prompt inside the server keeps behaviour consistent across harnesses and matches
+        <code>AGENTS.md</code>: never present citation accuracy before the evidence audit.
+      </div>
+    </section>
+
+    <!-- Panel F: Client wiring -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">F</span>
+        <h2>Client Wiring</h2>
+      </div>
+      <p><strong>OpenCode</strong> — CLI or <code>opencode.json</code>:</p>
+      <pre><code>opencode mcp add citeindex -- citeindex-mcp --corpus-root /home/ajiap/Projects/citeindex/corpus
+
+// ~/.config/opencode/opencode.json
+"mcp": { "servers": { "citeindex": {
+  "type": "local", "enabled": true,
+  "command": ["citeindex-mcp", "--corpus-root", "/path/to/corpus"]
+}}}</code></pre>
+      <p><strong>Codex</strong> — CLI or <code>~/.codex/config.toml</code>:</p>
+      <pre><code>codex mcp add citeindex -- citeindex-mcp --corpus-root /path/to/corpus
+
+[mcp_servers.citeindex]
+command = "citeindex-mcp"
+args = ["--corpus-root", "/path/to/corpus"]</code></pre>
+      <p><strong>Pi</strong> — CLI or <code>~/.pi/agent/mcp.json</code>:</p>
+      <pre><code>pi mcp add citeindex -- citeindex-mcp --corpus-root /path/to/corpus
+
+{ "mcpServers": { "citeindex": {
+  "command": "citeindex-mcp",
+  "args": ["--corpus-root", "/path/to/corpus"]
+}}}</code></pre>
+      <p><strong>OMP</strong> — edit <code>~/.omp/agent/mcp.json</code> (same schema as Pi; this build has no <code>omp mcp add</code>):</p>
+      <pre><code>{ "mcpServers": { "citeindex": {
+  "command": "citeindex-mcp",
+  "args": ["--corpus-root", "/path/to/corpus"]
+}}}</code></pre>
+      <p><strong>Shared HTTP server</strong> — one process, all harnesses:</p>
+      <pre><code>citeindex-mcp --http 127.0.0.1:8765 --corpus-root /path/to/corpus
+
+# Codex:   codex mcp add citeindex --url http://127.0.0.1:8765/mcp
+# OpenCode: opencode mcp add citeindex --url http://127.0.0.1:8765/mcp
+# Pi:      pi mcp add citeindex --url http://127.0.0.1:8765/mcp
+# OMP:     { "mcpServers": { "citeindex": { "url": "http://127.0.0.1:8765/mcp" } } }</code></pre>
+      <p class="muted">Do not expose a write-enabled HTTP server on a public interface; bind to loopback and use auth if it ever leaves the machine.</p>
+    </section>
+
+    <!-- Panel G: Security -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">G</span>
+        <h2>Security &amp; Permission Model</h2>
+      </div>
+      <table>
+        <thead><tr><th>Control</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td>Read tools</td><td>enabled (corpus root only)</td></tr>
+          <tr><td>Write tools (<code>ingest_*</code>, repair apply)</td><td>disabled unless <code>CITEINDEX_MCP_ALLOW_WRITE=1</code></td></tr>
+          <tr><td>File paths</td><td>must resolve under <code>CITEINDEX_MCP_ROOTS</code>; symlinks resolved first</td></tr>
+          <tr><td>Network fetches</td><td>reuse <code>validate_public_url</code> (SSRF/private-IP guard) + size/time caps</td></tr>
+          <tr><td>Shell</td><td>never exposed as a tool</td></tr>
+          <tr><td>Tool annotations</td><td>read-only / destructive / idempotent hints set per tool</td></tr>
+          <tr><td>Audit</td><td>JSONL tool-call log with arguments, duration, source_id</td></tr>
+          <tr><td>Concurrency</td><td>1 writer per corpus; queue rather than racing</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Panel H: Phases -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">H</span>
+        <h2>Phases &amp; Estimates</h2>
+      </div>
+      <table>
+        <thead><tr><th>Phase</th><th>Scope</th><th>Estimate</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>Package skeleton, <code>MCPServer</code>, <code>citeindex_info</code>, MCP Inspector smoke</td><td>0.5–1 day</td><td class="status-done">Done</td></tr>
+          <tr><td>1</td><td>Read-only library tools + resources + <code>citation_format</code></td><td>1–2 days</td><td class="status-done">Done</td></tr>
+          <tr><td>2</td><td><code>ingest_url</code> (sync, no-LLM default) + verification prompt</td><td>1–2 days</td><td class="status-done">Done</td></tr>
+          <tr><td>3</td><td>Job manager + <code>ingest_file</code> for PDF/Office/DJVU/media</td><td>2–3 days</td><td class="status-todo">Next</td></tr>
+          <tr><td>4</td><td>Hardening, per-client smoke tests, docs, release</td><td>2 days</td><td class="status-todo">Planned</td></tr>
+        </tbody>
+      </table>
+      <p><strong>MVP delivered = phases 0–2:</strong> an agent can search the library, read a record, format citations, ingest a URL, and verify evidence — without any file-system write permission beyond the corpus.</p>
+    </section>
+
+    <!-- Panel I: Risks -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">I</span>
+        <h2>Risks &amp; Mitigations</h2>
+      </div>
+      <table>
+        <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr><td>MCP SDK churn (v1 <code>FastMCP</code> → v2 <code>MCPServer</code>)</td><td>Pin <code>mcp&gt;=2.3,&lt;3</code>; keep SDK imports in one adapter module; CI smoke test against the pinned version.</td></tr>
+          <tr><td>Long ingestion exceeds agent/tool timeouts</td><td>URL ingest capped (~60 s); file/media ingestion always returns a <code>job_id</code>; progress notifications + cancel.</td></tr>
+          <tr><td>Client sandbox/network differences</td><td>stdio local mode is the default; document per-client env; provide HTTP mode for containerised clients.</td></tr>
+          <tr><td>Tool list crowds the model context</td><td>Six to eight tools maximum in MVP; resources carry bulk data; defer repair/apply tools.</td></tr>
+          <tr><td>Concurrent ingestion corrupts a corpus</td><td>Per-corpus writer lock; queue submissions; idempotent re-ingestion via existing artifact replacement.</td></tr>
+          <tr><td>Optional OCR/media dependencies missing</td><td>Capability detection in <code>citeindex_info</code>; return an actionable error instead of silently degrading.</td></tr>
+          <tr><td>Path traversal or SSRF through tool arguments</td><td>Root allowlist + <code>validate_public_url</code>; reject absolute paths outside roots; audit rejected calls.</td></tr>
+          <tr><td>OMP has no <code>mcp add</code> command</td><td>Document the manual <code>~/.omp/agent/mcp.json</code> entry; verify with a session-level tool listing.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Panel J: Recommendation -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">J</span>
+        <h2>Recommendation &amp; Success Criteria</h2>
+      </div>
+      <div class="callout callout-ok">
+        <strong>MVP delivered; proceed to file ingestion.</strong> Phases 0–2 are implemented and tested.
+        Phase 3 (job manager + <code>ingest_file</code>) should be built only after write approval behaviour is proven in real sessions;
+        the URL path already exercises the same permission and evidence rules.
+      </div>
+      <ol>
+        <li>An agent can say "cite this URL" and receive CSL JSON with <code>_field_status</code> and evidence quotes — no shell commands.</li>
+        <li>An agent can search the existing corpus and format an existing record without re-ingesting.</li>
+        <li>Write-enabled mode is explicit, bounded to an allowlisted corpus, and leaves an audit trail.</li>
+        <li>All four harnesses load the same tool set and return identical results for the same inputs.</li>
+      </ol>
+      <p class="muted">Implementation: <code>citeindex/mcp/</code> with protocol tests in <code>tests/test_mcp_server.py</code>, using the same evidence rules as the CLI.</p>
+    </section>
+
+    <!-- Panel K: Publishing -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">K</span>
+        <h2>Publishing &amp; Distribution</h2>
+      </div>
+      <table>
+        <thead><tr><th>Decision</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Distribution name</td><td><code>citeindex</code> — the existing PyPI project (0.14.0 live; 0.15.0 local)</td></tr>
+          <tr><td>MCP packaging</td><td>Same distribution, optional extra: <code>mcp = ["mcp&gt;=2.3,&lt;3"]</code></td></tr>
+          <tr><td>Entry point</td><td><code>citeindex-mcp = "citeindex.mcp.cli:main"</code> (base installs get a clear "install citeindex[mcp]" message)</td></tr>
+          <tr><td>Install / run</td><td><code>pip install 'citeindex[mcp]'</code>; <code>uvx --from 'citeindex[mcp]' citeindex-mcp</code></td></tr>
+          <tr><td>MCP registry entry</td><td>server name <code>citeindex</code>, package <code>citeindex</code>, extra <code>mcp</code>, command <code>citeindex-mcp</code></td></tr>
+          <tr><td>Separate <code>citeindex-mcp</code> PyPI project</td><td class="status-build">Not recommended — the server imports CiteIndex internals and would need a pinned <code>citeindex[mcp]==X</code> plus a second release train</td></tr>
+        </tbody>
+      </table>
+      <div class="callout callout-warn">
+        The <code>citeindex</code> PyPI name is already registered (0.14.0). Publish 0.15.x under that project; do not create a
+        second package just for MCP. <code>uvx --from 'citeindex[mcp]' citeindex-mcp</code> gives the same one-command ergonomics
+        without splitting versions.
+      </div>
+      <p><strong>Release checklist:</strong> bump version → <code>uv lock</code> → <code>uv build</code> → verify the wheel contains
+        <code>citeindex/mcp/*</code> and the bundled skill → test base install (helpful extra message) and
+        <code>citeindex[mcp]</code> install → stdio + HTTP smoke → publish → tag.</p>
+      <div class="callout callout-ok">
+        <strong>Release status (2026-11-18):</strong> 0.15.2 is published on PyPI
+        (<code>citeindex-0.15.2-py3-none-any.whl</code> + sdist), with the <code>[mcp]</code> extra and bundled
+        <code>citation-verification</code> skill. Install with
+        <code>pip install 'citeindex[mcp]==0.15.2'</code> or run
+        <code>uvx --from 'citeindex[mcp]==0.15.2' citeindex-mcp</code>.
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CiteIndex — Next Steps & HTML Pipeline Plan</title>
+<style>
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --bg: #0d1117;
+  --paper: #161b22;
+  --paper-border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --heading: #f0f6fc;
+  --accent: #58a6ff;
+  --accent-bg: rgba(56, 139, 253, 0.15);
+  --ok: #3fb950;
+  --ok-bg: rgba(63, 185, 80, 0.15);
+  --warn: #d29922;
+  --warn-bg: rgba(210, 153, 34, 0.15);
+  --err: #f85149;
+  --err-bg: rgba(248, 81, 73, 0.15);
+}
+@media (prefers-color-scheme: light) {
+  :root[data-mode="auto"] {
+    --bg: #f6f8fa;
+    --paper: #ffffff;
+    --paper-border: #d0d7de;
+    --text: #24292f;
+    --text-muted: #57606a;
+    --heading: #1f2328;
+    --accent: #0969da;
+    --accent-bg: #ddf4ff;
+    --ok: #1a7f37;
+    --ok-bg: #dafbe1;
+    --warn: #9a6700;
+    --warn-bg: #fff8c5;
+    --err: #cf222e;
+    --err-bg: #ffebe9;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem 1rem;
+}
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+header.main-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--paper-border);
+}
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+h1 {
+  font-size: 2rem;
+  color: var(--heading);
+  margin-bottom: 0.5rem;
+}
+.subtitle {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+.lead-box {
+  background: var(--accent-bg);
+  border-left: 4px solid var(--accent);
+  padding: 1rem 1.25rem;
+  margin-bottom: 2rem;
+  border-radius: 0 6px 6px 0;
+  font-size: 1.05rem;
+  color: var(--heading);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+@media (max-width: 600px) {
+  .grid { grid-template-columns: 1fr; }
+}
+.card {
+  background: var(--paper);
+  border: 1px solid var(--paper-border);
+  border-radius: 6px;
+  padding: 1.5rem;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--paper-border);
+}
+.card-id {
+  background: var(--paper-border);
+  color: var(--heading);
+  font-weight: bold;
+  font-size: 0.85rem;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+.card h2 {
+  font-size: 1.25rem;
+  color: var(--heading);
+}
+.card.span-2 {
+  grid-column: 1 / -1;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+th, td {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--paper-border);
+  text-align: left;
+}
+th {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--heading);
+  font-weight: 600;
+}
+.status-done { color: var(--ok); font-weight: 600; }
+.status-build { color: var(--warn); font-weight: 600; }
+.status-todo { color: var(--accent); font-weight: 600; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+}
+ul, ol {
+  padding-left: 1.4rem;
+  margin: 0.75rem 0;
+}
+li { margin-bottom: 0.4rem; }
+.callout {
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+.callout-warn {
+  background: var(--warn-bg);
+  border-left: 4px solid var(--warn);
+  color: var(--heading);
+}
+.callout-ok {
+  background: var(--ok-bg);
+  border-left: 4px solid var(--ok);
+  color: var(--heading);
+}
+.callout-err {
+  background: var(--err-bg);
+  border-left: 4px solid var(--err);
+  color: var(--heading);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="main-header">
+    <div class="badge">Architecture & Execution Plan</div>
+    <h1>CiteIndex — HTML Pipeline Hardening & Plan</h1>
+    <div class="subtitle">Evidence-backed web article extraction, deterministic Highwire/JSON-LD parsing, and cryptographic provenance</div>
+  </header>
+
+  <div class="lead-box">
+    <strong>Scope & Safety Boundary:</strong> As instructed, PDF and media pipelines are left untouched. Improvements are strictly targeted to the <strong>HTML / URL article pipeline</strong> (<code>citeindex/ingestion/pipelines/url_article.py</code>) to deliver evidence-backed metadata parity, zero-dependency academic scraping, and cryptographic snapshot binding.
+  </div>
+
+  <div class="grid">
+    <!-- Panel A: Completed HTML Upgrades -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">A</span>
+        <h2>Completed HTML Pipeline Improvements</h2>
+      </div>
+      <p>The following enhancements have been implemented in <code>citeindex/ingestion/pipelines/url_article.py</code> and verified via <code>tests/test_html_article_pipeline.py</code>:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Subsystem</th>
+            <th>Previous Behavior</th>
+            <th>New Implementation</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Academic Tag Extraction</strong></td>
+            <td>Required active Zotero translation-server; fell back to Trafilatura (missing DOIs/journals/authors).</td>
+            <td>Built-in <code>_extract_html_head_metadata</code> parses Highwire Press (<code>citation_title</code>, <code>citation_doi</code>, <code>citation_author</code>, <code>citation_journal_title</code>, <code>citation_volume</code>, <code>citation_issue</code>, <code>citation_page</code>), Dublin Core (<code>dc.*</code>), OpenGraph, and Prism.</td>
+            <td><span class="status-done">✓ Delivered</span></td>
+          </tr>
+          <tr>
+            <td><strong>Schema.org JSON-LD</strong></td>
+            <td>Raw text only in Trafilatura; required DSPy LLM call to structure.</td>
+            <td>Deterministic JSON-LD parser extracting <code>ScholarlyArticle</code>, <code>NewsArticle</code>, <code>BlogPosting</code> with typed authors, dates, publishers, and publication containers; prefers schema.org <code>name</code> over description-like <code>headline</code> values (Wikipedia/Wikidata).</td>
+            <td><span class="status-done">✓ Delivered</span></td>
+          </tr>
+          <tr>
+            <td><strong>Evidence Gate Binding</strong></td>
+            <td>Fields from HTML metadata had no <code>_field_evidence</code> without DSPy, resulting in <code>"unverified"</code> status.</td>
+            <td>Automatically anchors extracted metadata fields (title, DOI, container-title, publisher, issued, author, volume, issue, page, type, ISSN, ISBN) to source DOM blocks in <code>source_blocks</code> with <code>block_id</code>, exact quote, and locator, achieving <code>"source-supported"</code> status.</td>
+            <td><span class="status-done">✓ Delivered</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cryptographic Provenance</strong></td>
+            <td>Temporary file path only; digest not captured in extra.</td>
+            <td>Computes and persists <code>source_snapshot_digest</code> (SHA-256) in <code>extra</code>, matching the locator digest in <code>source_blocks</code>.</td>
+            <td><span class="status-done">✓ Delivered</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Panel B: Evidence & Verification Contract -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">B</span>
+        <h2>Web Evidence Verification Contract</h2>
+      </div>
+      <p>In accordance with <code>AGENTS.md</code> and <code>citation_verification.py</code>:</p>
+      <ul>
+        <li><strong>Metadata Locator Structure:</strong> Every HTML metadata block carries:
+          <pre><code>{
+  "metadata_key": "citation_doi",
+  "snapshot_artifact": "source.html",
+  "source_digest": "&lt;sha256&gt;"
+}</code></pre>
+        </li>
+        <li><strong>Deterministic Validation:</strong> <code>validate_block_evidence</code> validates the quote against the source block text without external calls.</li>
+        <li><strong>Citation Status:</strong> When both title and authors are source-supported, <code>_citation_status</code> evaluates to <code>"source-supported"</code>.</li>
+      </ul>
+    </section>
+
+    <!-- Panel C: Preserved Boundaries -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-id">C</span>
+        <h2>Strict Pipeline Isolation</h2>
+      </div>
+      <div class="callout callout-ok">
+        <strong>Untouched Pipelines:</strong>
+        <ul>
+          <li><code>citeindex/ingestion/pipelines/digital_pdf.py</code> (Unmodified)</li>
+          <li><code>citeindex/ingestion/pipelines/scanned_pdf.py</code> (Unmodified)</li>
+          <li><code>citeindex/ingestion/pipelines/mineru.py</code> (Unmodified)</li>
+          <li><code>citeindex/ingestion/pipelines/glm_ocr.py</code> (Unmodified)</li>
+          <li><code>citeindex/ingestion/pipelines/media.py</code> (Unmodified)</li>
+          <li><code>citeindex/ingestion/pipelines/layout.py</code> (Unmodified)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Panel D: Next Steps in HTML Pipeline -->
+    <section class="card span-2">
+      <div class="card-header">
+        <span class="card-id">D</span>
+        <h2>Verification &amp; Remaining Tasks</h2>
+      </div>
+      <ol>
+        <li>
+          <strong>1. CJK Citation-Guidance Coverage — Done.</strong><br>
+          <code>_find_citation_guidance</code> now recognises the 版权声明 / 版权申明 preambles used by
+          <code>gcdfl.org</code> and <code>ctcfol.org</code>, bare 引用本文 / 引用此文 labels, and
+          <code>_parse_gbt_citation</code> parses GB/T 7714
+          <code>[J]</code>/<code>[D]</code>/<code>[M]</code>/<code>[C]</code>/<code>[R]</code>/<code>[EB/OL]</code>
+          strings (CNKI, Wanfang, VIP exporters) into CSL fields; <code>run()</code> binds
+          volume / issue / page / type from the guidance block. Policy headings such as
+          "若要引用本文，请参考版权申明" are ignored instead of being returned as the citation.
+          Unlabeled GB/T reference-list lines are accepted only when the parsed title matches the page
+          title, so a bibliography of other works is never adopted as the page's own citation.
+        </li>
+        <li>
+          <strong>2. Headless Fallback — Implemented.</strong><br>
+          <code>_extract_markdown</code> degrades trafilatura markdown → trafilatura plain text →
+          readability-lxml summary text → raw HTML, so a disabled Playwright/headless sandbox still yields body text.
+        </li>
+        <li>
+          <strong>3. URL Article Benchmark — Done (2026-11-17).</strong><br>
+          Reproducible harness: <code>benchmarks/html/run.py</code> with a 20-URL manifest
+          (12 scholarly + 8 reference/blog/news) and no LLM/Zotero calls.
+          Result: 17/20 URLs extractable (1 HTTP 403, 2 bot interstitials); among extractable URLs
+          title, DOI, author, date, and container-title all scored <strong>100%</strong>.
+          Raw run: <code>benchmarks/html/results/2026-11-17.json</code>.
+        </li>
+        <li>
+          <strong>4. Page &amp; Type Field Status — Done.</strong><br>
+          <code>citation_firstpage</code> + <code>citation_lastpage</code> (or Prism equivalents) are bound as a
+          joined metadata span, and page ranges validate against both endpoints. <code>type</code> is anchored to
+          <code>citation_journal_title</code> (article-journal), <code>citation_conference_title</code>
+          (paper-conference), or the JSON-LD <code>@type</code> block. Derived pages without an endpoint, and
+          default <code>webpage</code> types, remain <code>unverified</code> rather than claiming false support.
+        </li>
+      </ol>
+    </section>
+  </div>
+</div>
+</body>
+</html>

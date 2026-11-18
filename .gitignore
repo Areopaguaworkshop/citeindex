@@ -22,6 +22,10 @@ benchmarks/citations/predictions/
 benchmarks/citations/reports/
 benchmarks/citations/manifest.jsonl
 
+# ScienceMetaBench track (downloaded data and generated reports are local)
+benchmarks/sciencemeta/data/
+benchmarks/sciencemeta/reports/
+
 # Test output
 test_output/
 .coverage

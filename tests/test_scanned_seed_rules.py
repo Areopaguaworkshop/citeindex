@@ -285,14 +285,36 @@ def test_garbled_pattern_title_is_not_filled(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Scope: the digital path (content_list=None) sees no scanned rules
+# Scope: the digital path (content_list=None) sees no scanned-OCR-only rules
 # ---------------------------------------------------------------------------
 
 
-def test_digital_path_ignores_scanned_seeds():
-    content = _cl((1, "Copyright© 2006 St. Bede's Publications", None))
+def test_digital_path_ignores_scanned_only_credit_rules():
+    # Heading/LoC/credit seeds need the scanned OCR payload. The year and
+    # imprint seeds only need the block list, so they run on both paths
+    # (plan 2026-10-27; was 'digital path seeds nothing at all').
+    content = _cl((1, "The BOOK of STEPS The Syriac Liber Graduum", 1),
+                  (1, "by Adalbert deVogüé", None),
+                  (1, "Copyright© 2006 St. Bede's Publications", None))
     accepted, evidence = {}, {}
     _seed_deterministic_candidates(_blocks(content), [], [],
                                    {"document_type": "book", "selected_pages": [1]},
                                    accepted, evidence, content_list=None)
-    assert "issued" not in accepted
+    assert "title" not in accepted
+    assert "author" not in accepted
+    assert accepted["issued"] == {"date-parts": [[2006]]}
+
+
+def test_content_list_markdown_skips_structured_text():
+    # MinerU can emit a structured (non-string) text payload for some items.
+    # The markdown builder must skip it instead of calling .strip() on a dict.
+    from citeindex.ingestion.pipelines.scanned_common import content_list_to_markdown
+
+    markdown = content_list_to_markdown(
+        [
+            {"page_idx": 0, "type": "text", "text": {"lines": ["1998"]}},
+            {"page_idx": 0, "type": "text", "text": "\u6b63\u6587\u5185\u5bb9"},
+        ],
+        {0: 1},
+    )
+    assert "\u6b63\u6587\u5185\u5bb9" in markdown

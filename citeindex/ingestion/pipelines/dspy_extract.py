@@ -10,6 +10,21 @@ import dspy
 from ...llm import get_llm_model
 from ..models import IngestionConfig
 from .common import PAGE_NUMBER_PATTERNS as _PAGE_NUM_PATTERNS
+from .confidence import (
+    CONFIDENCE_WEAK_SEED,
+    build_review_queue,
+    confidence_for_evidence,
+    review_threshold,
+    seed_confidence,
+)
+from .doc_type_judge import judge_document_type
+from .zones import (
+    evidence_zone,
+    has_zone_candidate,
+    is_degenerate_zone,
+    label_zones,
+    rank_zones,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -206,8 +221,27 @@ def _deterministic_scan(blocks):
         return [], []
 
 
+def _page_window_blocks(blocks, config, total_pages):
+    """Every block inside the configured page window.
+
+    The locator answers the document type only; extraction always reads the
+    whole configured window so a page it did not select cannot lose a field.
+    """
+    from ...utils import parse_page_range
+
+    window = {page for page in parse_page_range(config.page_range, total_pages)
+              if 1 <= page <= total_pages}
+    return [block for block in blocks
+            if isinstance(block.get("physical_page_index"), int)
+            and block["physical_page_index"] + 1 in window]
+
+
 def locate_bibliographic_pages(blocks, total_pages, config, lm, doc_type):
-    """Bound the search deterministically, then jointly locate and classify."""
+    """Classify the document type and record which pages the locator chose.
+
+    The extraction window is taken from ``config.page_range`` by the caller;
+    ``audit["selected_pages"]`` is evidence for comparison, not a filter.
+    """
     from ...utils import parse_page_range
 
     window = set(parse_page_range(config.page_range, total_pages))
@@ -306,38 +340,25 @@ class ExtractDocumentMetadata(dspy.Signature):
     field_evidence: dict[str, Any] = dspy.OutputField(desc="CSL field -> {block_id, quote} or list of exact spans when names/title cross blocks. No invented IDs or quotations.")
 
 
-class ReconcileMetadata(dspy.Signature):
-    """Reconcile document metadata from two sources: GROBID and MinerU+DSPy.
+class RefineMissingField(dspy.Signature):
+    """Answer exactly ONE CSL field that the main pass left empty.
 
-    Choose the most accurate value for each field. GROBID is deterministic
-    and reliable for standard Western academic PDFs. MinerU+DSPy may be
-    better for CJK text, non-standard layouts, or fields GROBID missed.
+    Read only the supplied blocks: they are the ones whose printed zone owns
+    the requested field. Return the value in the same CSL shape the host
+    extractor uses (a string for title/publisher, ``{"date-parts": [[year]]}``
+    for issued, a name array for author) plus the block_id and the exact quote
+    that prints it. Never infer a publisher from a place, a date from a
+    copyright renewal, or an author from a work cited inside. If the blocks do
+    not print the field, return an empty value.
     """
-
-    grobid_json = dspy.InputField(
-        desc="JSON string of GROBID-extracted metadata (may be empty '{}')."
-    )
-    dspy_json = dspy.InputField(
-        desc="JSON string of DSPy-extracted metadata from MinerU output."
-    )
-    doc_type = dspy.InputField(desc="Document type.")
-
-    final_title = dspy.OutputField(desc="Best title from either source.")
-    final_author = dspy.OutputField(desc="Best author(s), semicolon-separated.")
-    final_container_title = dspy.OutputField(desc="Best container title (or empty).")
-    final_publisher = dspy.OutputField(desc="Best publisher (or empty).")
-    final_year = dspy.OutputField(desc="Best publication year YYYY (or empty).")
-    final_volume = dspy.OutputField(desc="Best volume (or empty).")
-    final_issue = dspy.OutputField(desc="Best issue (or empty).")
-    final_pages = dspy.OutputField(desc="Best page range (or empty).")
-    final_doi = dspy.OutputField(desc="Best DOI (or empty).")
-    final_abstract = dspy.OutputField(desc="Best abstract (or empty).")
-    provenance = dspy.OutputField(
-        desc=(
-            "For each field, note which source was chosen: 'grobid', 'dspy', or 'both'. "
-            "Format: 'title:grobid; author:dspy; year:both; ...'"
-        )
-    )
+    field: str = dspy.InputField(
+        desc="One of title, publisher, issued, author.")
+    source_blocks: list[dict[str, Any]] = dspy.InputField(
+        desc="Blocks whose zone owns the field; each has id, text and zone.")
+    value: Any = dspy.OutputField(
+        desc="The single CSL value: string for title/publisher, date-parts for issued, name array for author.")
+    block_id: str = dspy.OutputField(desc="id of the block that prints the value.")
+    quote: str = dspy.OutputField(desc="Exact substring of that block supporting the value.")
 
 
 # ---------------------------------------------------------------------------
@@ -809,6 +830,18 @@ def extract_metadata_with_dspy_fallback(
     return csl
 
 
+def _evidence_quote(evidence: Any) -> str | None:
+    """Quote(s) submitted for a rejected field, for the ``_field_drops`` audit."""
+    spans = evidence.get("spans") if isinstance(evidence, dict) and "spans" in evidence else evidence
+    if isinstance(spans, list):
+        quotes = [span.get("quote") for span in spans
+                  if isinstance(span, dict) and isinstance(span.get("quote"), str)]
+        return " ".join(quotes) if quotes else None
+    if isinstance(spans, dict) and isinstance(spans.get("quote"), str):
+        return spans["quote"]
+    return None
+
+
 def _rejection_reason(field: str, value: Any, evidence: Any) -> str:
     """Short human-readable reason why validate_block_evidence rejected a field."""
     from ..csl import valid_host_value
@@ -983,6 +1016,45 @@ def _person_leading(text: str):
     return _latin_person_value(" ".join(taken)) if len(taken) == 2 else None
 
 
+# Chinese imprint year statements, ranked on the same ladder as the Latin
+# copyright lines (year2 → copyright → bare): an edition statement
+# ('1998年3月第1版', '1998年第1版', '第一版1998') outranks an explicit
+# publication year ('1998年出版', '出版年份：1998').
+_CJK_YEAR_PATTERNS = {
+    "year2": re.compile(
+        r"(?P<year>(?:19|20)\d{2})\s*年(?:\s*\d{1,2}\s*月)?\s*"
+        r"第\s*[0-9一二三四五六七八九十]{1,2}\s*版"
+        r"|第\s*[0-9一二三四五六七八九十]{1,2}\s*版[^\n]{0,8}?(?P<year2>(?:19|20)\d{2})"),
+    "copyright": re.compile(
+        r"(?P<year>(?:19|20)\d{2})\s*年(?:\s*\d{1,2}\s*月)?\s*(?:出版发行|出版|发行|印刷)"
+        r"|(?:出版|印刷|发行)年(?:份)?\s*[:：]\s*(?P<year2>(?:19|20)\d{2})"),
+}
+# Chinese imprint lines end in the publisher form ('中华书局', '北京：商务印书馆').
+# A full-line match only: a citation or body sentence that merely mentions a
+# publisher must not seed one.
+_CJK_IMPRINT_BLOCK_RE = re.compile(
+    r"^(?:(?P<place>[\u4e00-\u9fff]{2,10})[:：,，]\s*)?"
+    r"(?P<pub>[\u4e00-\u9fff·]{2,14}"
+    r"(?:出版社|出版集团|出版公司|书局|書局|印书馆|印書館|书店|書店))$")
+
+
+def _cjk_year(text: str, priority: str):
+    """Chinese imprint year at one priority level ('year2'/'copyright'), else None."""
+    pattern = _CJK_YEAR_PATTERNS.get(priority)
+    if pattern is None:
+        return None
+    m = pattern.search(text)
+    return (m.group("year") or m.group("year2")) if m else None
+
+
+def _cjk_imprint(text: str):
+    """(publisher, place) from a Chinese imprint line, else None."""
+    m = _CJK_IMPRINT_BLOCK_RE.match(text.strip())
+    if not m:
+        return None
+    return m.group("pub"), m.group("place") or ""
+
+
 def _roman_year(text: str):
     """'MDCCCCXLIX' → 1949 when the Roman numeral is a plausible imprint year."""
     m = re.fullmatch(r"(?P<num>[MDCLXVI]{6,18})", text.strip())
@@ -1087,17 +1159,28 @@ _CIP_ALLOWED_BY_TYPE = {
 
 
 def _seed_deterministic_candidates(pre_blocks, scan_annotations, scan_ranked,
-                                   selection, accepted, evidence, content_list=None):
+                                   selection, accepted, evidence, content_list=None,
+                                   zones=None):
     """Seed evidence-gated CIP/LoC candidates into ``accepted``/``evidence``.
 
     Candidates carry confidence ≥0.95 (anchored CIP 0.99 / LoC RDA 0.98;
     unanchored 0.9 is excluded). Values must pass ``validate_block_evidence``
     like any LLM proposal — deterministic provenance is not a bypass.
+    ``zones`` maps block id → zone; a ``running_head``/``contents`` block may
+    not seed a title or publisher while another zone could supply it. Each
+    seeded candidate also records its Phase 6 ``_confidence`` (0.90, or 0.50
+    when the host block carries no strong marker) for ``_field_confidence``.
     Returns the list of seeded (csl_field, candidate) pairs for the audit.
     """
     from ..citation_verification import validate_block_evidence
 
     if selection is None or not pre_blocks:
+        return []
+    # OCR backends can hand back structured text for a block. The seeds reason
+    # about strings only, so a block without string text is dropped once here
+    # rather than crashing each scan loop on .strip().
+    pre_blocks = [b for b in pre_blocks if isinstance(b.get("text"), str)]
+    if not pre_blocks:
         return []
     doc_type = selection.get("document_type")
     allowed = _CIP_ALLOWED_BY_TYPE.get(doc_type)
@@ -1108,9 +1191,10 @@ def _seed_deterministic_candidates(pre_blocks, scan_annotations, scan_ranked,
         from .frontmatter import parse_cip, parse_loc_cip, validate_isbn13
         candidates = []
         seen = set()
-        # Scanned-only rules: content_list is the scanned pipeline's OCR
-        # payload. The digital path passes None and keeps its frozen
-        # behaviour. Heading candidates go first so a title-page heading
+        # Heading/LoC/credit rules are scanned-only: content_list is the
+        # scanned pipeline's OCR payload, and the digital path passes None.
+        # The year and imprint seeds below run on both paths — they only need
+        # the block list. Heading candidates go first so a title-page heading
         # beats a CIP/LoC transcription of the same field.
         scanned = content_list is not None
         if scanned:
@@ -1190,22 +1274,33 @@ def _seed_deterministic_candidates(pre_blocks, scan_annotations, scan_ranked,
                                            "confidence": 0.99,
                                            "quote": block.get("text", "")})
                     break
-        # Scanned books: Latin-script imprint lines are high-precision year
-        # sources. Branch priority matters (scanned two-type plan 2026-09-26):
+        # Imprint copyright lines are high-precision year sources on both
+        # pipelines: the scanned OCR blocks and the digital path's
+        # build_source_blocks output share the same block shape. Branch
+        # priority matters (scanned two-type plan 2026-09-26):
         # an edition-first-publication statement beats a Copyright-prefixed
         # line, which beats a bare © notice. anthony1-letters carries both
         # 'first pub lished in 1995' and 'Copyright ©1990, 1995' (the 1990
         # earlier edition); benedict carries '©2001 Abbaye de Bellefontaine'
         # (the French original) and 'Copyright© 2006 St. Bede's Publications'
-        # (this edition). CJK blocks are excluded — ©-years there are often
-        # reprint years.
-        if scanned and doc_type in {"book", "thesis"}:
+        # (this edition). Latin ©-years inside a CJK block are often reprint
+        # years, so such a block is ignored unless a Chinese year form
+        # matched ('1998年第1版', '出版年份：1998', ...); a CJK block with
+        # no year at all is still skipped.
+        if doc_type in {"book", "thesis"}:
             year_block = None
             for priority in ("year2", "copyright", None):
                 for block in pre_blocks:
-                    text = block.get("text", "")
-                    if _has_cjk(text):
+                    raw = block.get("text")
+                    text = raw if isinstance(raw, str) else ""
+                    if not text:
                         continue
+                    if _has_cjk(text):
+                        cjk_year = _cjk_year(text, priority)
+                        if cjk_year is None:
+                            continue
+                        year_block = (cjk_year, text)
+                        break
                     matches = list(_COPYRIGHT_YEAR_RE.finditer(text))
                     if not matches:
                         continue
@@ -1244,13 +1339,40 @@ def _seed_deterministic_candidates(pre_blocks, scan_annotations, scan_ranked,
                         break
         # Imprint lines name the publisher and usually a place (book-step1
         # 'CISTERCIAN PUBLICATIONS KALAMAZOO, MICHIGAN'; benedict "St. Bede's
-        # Publications Petersham, MA"). The title-page garbles
-        # ('Gstercian Publications', 'paBLfcatíons') fail the digit/garble
-        # guards, so only a clean imprint seeds. 'edition' is not a suffix
-        # word (it would match 'Third Edition').
-        if scanned and doc_type in {"book", "thesis"}:
+        # Publications Petersham, MA"). Both pipelines supply the block list
+        # the seed consumes. The title-page garbles ('Gstercian Publications',
+        # 'paBLfcatíons') fail the digit/garble guards, so only a clean
+        # imprint seeds. 'edition' is not a suffix word (it would match
+        # 'Third Edition'). Chinese imprints ('中华书局', '北京：商务印书馆')
+        # are matched by their own full-line rule; _IMPRINT_BLOCK_RE stays
+        # Latin-only.
+        if doc_type in {"book", "thesis"}:
             for block in pre_blocks:
-                text = block.get("text", "").strip()
+                raw = block.get("text")
+                text = (raw if isinstance(raw, str) else "").strip()
+                if not text:
+                    continue
+                # Phase 3: a repeated imprint line is a running head, not the
+                # printed imprint; skip it while an imprint zone exists.
+                if is_degenerate_zone((zones or {}).get(block["id"])) \
+                        and has_zone_candidate("publisher", zones or {}):
+                    logger.warning("Skipping publisher seed from %s zone (another zone could supply it)",
+                                   (zones or {}).get(block["id"]))
+                    continue
+                if _has_cjk(text):
+                    found = _cjk_imprint(text)
+                    if not found:
+                        continue
+                    pub, place = found
+                    for field, value in (("publisher", pub), ("place", place)):
+                        if not value:
+                            continue
+                        key = (field, json.dumps(value, sort_keys=True, ensure_ascii=False))
+                        if key not in seen:
+                            seen.add(key)
+                            candidates.append({"field": field, "value": value,
+                                               "confidence": 0.95, "quote": text})
+                    break
                 m = _IMPRINT_BLOCK_RE.match(text)
                 if not m:
                     continue
@@ -1440,6 +1562,15 @@ def _seed_deterministic_candidates(pre_blocks, scan_annotations, scan_ranked,
                 logger.warning("Deterministic candidate %s=%r lacks a host block",
                                csl_field, value)
                 continue
+            # Phase 3: a running head repeats another page's line and a
+            # contents entry lists another work's title. Neither may seed a
+            # title or publisher while another zone could supply the field.
+            seed_zone = (zones or {}).get(host["id"])
+            if csl_field in {"title", "publisher"} and is_degenerate_zone(seed_zone) \
+                    and has_zone_candidate(csl_field, zones or {}):
+                logger.warning("Skipping %s seed from %s zone (another zone could supply it)",
+                               csl_field, seed_zone)
+                continue
             spans = [{"block_id": host["id"], "quote": quote}]
             supported = validate_block_evidence(csl_field, value, spans, pre_blocks)
             if not supported:
@@ -1449,6 +1580,11 @@ def _seed_deterministic_candidates(pre_blocks, scan_annotations, scan_ranked,
                 continue
             accepted[csl_field] = value
             evidence[csl_field] = supported
+            # Phase 6: a seed starts at 0.90 and falls to 0.50 only when its
+            # host block carries no strong marker; a degenerate-zone fallback
+            # still scores 0.60 through the ladder.
+            cand["_confidence"], cand["_confidence_reason"] = seed_confidence(
+                csl_field, host.get("text", ""), seed_zone)
             seeded_fields.append((csl_field, cand))
     except Exception:
         logger.warning("Deterministic candidate seeding failed", exc_info=True)
@@ -1465,6 +1601,78 @@ def _equivalent_candidate_values(csl_field, deterministic, llm):
         and deterministic.strip() in llm or llm.strip() in deterministic)
 
 
+def _refine_empty_fields(
+    lm: Any,
+    accepted: dict[str, Any],
+    evidence: dict[str, Any],
+    field_drops: dict[str, dict[str, Any]],
+    field_confidences: dict[str, float],
+    confidence_reasons: dict[str, str],
+    field_source: dict[str, str],
+    blocks: list[dict[str, Any]],
+    zone_by_id: dict[str, str],
+    evaluated: set[str],
+) -> int:
+    """Re-ask only the evaluated fields the main pass left empty.
+
+    One focused question per field, in :data:`refinement.TARGETED_FIELDS`
+    priority order and at most ``refinement.TARGETED_MAX_CALLS`` per record. A
+    field whose owning zones are absent from the window is never asked. The
+    answer enters the record only when :func:`evaluate_block_evidence` passes;
+    a rejected attempt stays visible as ``_field_drops[field]["targeted"]``.
+
+    Returns the number of model calls attempted.
+    """
+    from ..citation_verification import evaluate_block_evidence
+    from . import refinement as targeted
+
+    pending = targeted.empty_fields(accepted, evaluated)
+    if not pending or lm is None:
+        return 0
+    predictor = dspy.Predict(RefineMissingField)
+    calls = 0
+    for field in pending:
+        if calls >= targeted.TARGETED_MAX_CALLS:
+            break
+        excerpts = targeted.owning_blocks(field, blocks, zone_by_id)
+        if not excerpts:
+            continue
+        calls += 1
+        excerpt_ids = {block["id"] for block in excerpts}
+        try:
+            with dspy.context(lm=lm):
+                result = predictor(field=field, source_blocks=excerpts)
+            value = getattr(result, "value", None)
+            span = {"block_id": getattr(result, "block_id", None),
+                    "quote": getattr(result, "quote", None)}
+            supported, reason = evaluate_block_evidence(field, value, span, blocks)
+        except Exception:
+            logger.warning("Targeted refinement failed for %s", field, exc_info=True)
+            continue
+        # The question was scoped to the owning zones; a quote resolved outside
+        # them is a wrong-role answer, exactly as Phase 3 judges the main pass.
+        resolved = supported.get("spans") if isinstance(supported, dict) and "spans" in supported \
+            else [supported]
+        if supported and any(isinstance(item, dict) and item.get("block_id") not in excerpt_ids
+                             for item in resolved):
+            supported, reason = None, "wrong_role"
+        if supported:
+            accepted[field] = value
+            evidence[field] = supported
+            field_source[field] = "targeted"
+            # Phase 6 ladder, unchanged: an owning-zone exact quote scores 0.95,
+            # a normalised match 0.90. A value accepted here is not a seed.
+            field_confidences[field], confidence_reasons[field] = \
+                confidence_for_evidence(field, supported, blocks, zone_by_id)
+            field_drops.pop(field, None)
+            logger.info("Targeted refinement filled %s", field)
+            continue
+        drop = field_drops.setdefault(field, {"reason": reason or "quote_mismatch"})
+        drop["targeted"] = "rejected"
+        logger.warning("Targeted refinement rejected %s: %s", field, reason or "quote_mismatch")
+    return calls
+
+
 def _run_dspy_extraction(
     source_text: str,
     doc_type: str,
@@ -1476,10 +1684,12 @@ def _run_dspy_extraction(
     content_list: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Locate/classify PDF pages, extract and validate, with at most one refinement."""
-    from ..citation_verification import HOST_FIELDS, validate_block_evidence
+    from ..citation_verification import HOST_FIELDS, evaluate_block_evidence, validate_block_evidence
     from ..csl import evaluation_fields
     from .common import doc_type_to_csl_type
     cfg = config or IngestionConfig()
+    # Phase 6: a misconfigured threshold fails before any model call.
+    threshold = review_threshold(cfg)
     blocks = source_blocks if source_blocks is not None else [
         {"id": f"text_{i}", "text": text, "char_start": start}
         for i, (start, text) in enumerate(
@@ -1488,43 +1698,83 @@ def _run_dspy_extraction(
     ]
     if not blocks:
         return {}
+    # Stage 2 (advisory): a deterministic type verdict is recorded for audit
+    # only. It must not change doc_type, prompts, deterministic seeds or the
+    # locator's answer; a later stage wires it into policy.
+    doc_type_judgement = judge_document_type(
+        blocks, page_count=total_pages, override=cfg.doc_type_override)
     selection = None
+    located = False
     lm = None
     pre_blocks = blocks  # full pre-locate block list for deterministic candidates
     if total_pages is not None:
         try:
             lm = get_llm_model(cfg.llm_model, temperature=0.1)
-            blocks, selection = locate_bibliographic_pages(blocks, total_pages, cfg, lm, doc_type)
+            located_blocks, selection = locate_bibliographic_pages(blocks, total_pages, cfg, lm, doc_type)
+            located = selection.get("status") != "failed"
         except Exception:
             logger.warning("Bibliographic page selection failed", exc_info=True)
-            return {"_bibliographic_selection": {"status": "failed"},
-                    "_citation_status": "incomplete"}
-        if not blocks or selection["document_type"] == "unknown":
-            return {"_bibliographic_selection": selection, "_citation_status": "incomplete"}
-        doc_type = {"chapter": "bookchapter", "article-journal": "journal"}.get(
-            selection["document_type"], selection["document_type"])
-    ranked = ([{**b, "score": 0} for b in blocks] if selection else
+            selection = {"status": "failed"}
+            located_blocks = []
+        # Phase 1 ships both behaviours behind --evidence-window so the two can
+        # be measured against each other: "range" feeds every block in the
+        # configured window, "locator" keeps the pages the locator chose.
+        window_blocks = _page_window_blocks(blocks, cfg, total_pages)
+        if getattr(cfg, "evidence_window", "locator") == "range" or not located_blocks:
+            blocks = window_blocks
+        else:
+            blocks = located_blocks
+        if not blocks:
+            return {"_bibliographic_selection": selection, "_citation_status": "incomplete",
+                    "_doc_type_judgement": doc_type_judgement}
+        if located and selection.get("document_type") != "unknown":
+            doc_type = {"chapter": "bookchapter", "article-journal": "journal"}.get(
+                selection["document_type"], selection["document_type"])
+        # An 'unknown' type means the page locator found the front matter but
+        # could not confirm what the document is. Extraction still runs over
+        # the window with the caller's doc_type and no forced type: discarding
+        # it would leave the filename as the only title.
+    ranked = ([{**b, "score": 0} for b in blocks] if located else
               gather_evidence_candidates(blocks, " ".join(region_hints or [])))
     for block in ranked:
         physical = block.get("physical_page_index")
-        for region in ([] if selection else candidate_regions or []):
+        for region in ([] if located else candidate_regions or []):
             start, end = region.get("start_page"), region.get("end_page")
             if isinstance(physical, int) and isinstance(start, int) and isinstance(end, int) and start <= physical + 1 <= end:
                 block["score"] += 12 if region["role"] in {"imprint", "front_matter"} else -20 if region["role"] == "bibliography" else 0
     ranked.sort(key=lambda block: -block["score"])
     accepted, evidence, used = {}, {}, set()
-    if selection:
+    field_drops: dict[str, dict[str, Any]] = {}
+    field_confidences: dict[str, float] = {}
+    confidence_reasons: dict[str, str] = {}
+    field_source: dict[str, str] = {}
+    # Phase 3 (plan v2 §3): one rule-based labelling pass over the window.
+    # The prompt reads identity zones first and furniture last; the block set
+    # itself is unchanged (Phase 1 owns the window). Built before the locator's
+    # type is accepted so its evidence can be scored too.
+    zone_by_id = {block["id"]: block["zone"]
+                  for block in label_zones(blocks, page_count=total_pages)}
+    if located and selection.get("document_type") != "unknown":
         accepted["type"] = selection["document_type"]
         evidence["type"] = validate_block_evidence(
-            "type", accepted["type"], selection["type_evidence"], blocks)
+            "type", accepted["type"], selection["type_evidence"], pre_blocks)
+        if evidence["type"] is not None:
+            field_confidences["type"], confidence_reasons["type"] = confidence_for_evidence(
+                "type", evidence["type"], pre_blocks, zone_by_id)
     # Phase 2 (plan v2 §3.5-3.7): deterministic CIP/LoC candidates seeded
     # with evidence-gated confidence; recurring watermark lines dropped from
     # non-ranked pages before the LLM sees them.
     scan_annotations, scan_ranked = _deterministic_scan(pre_blocks)
     blocks, ranked = _filter_repeated_lines(blocks, ranked, scan_ranked)
+    if getattr(cfg, "zone_ranking", True):
+        ranked = rank_zones([{**block, "zone": zone_by_id.get(block["id"], "body")}
+                             for block in ranked])
     seeded = _seed_deterministic_candidates(
         pre_blocks, scan_annotations, scan_ranked, selection, accepted, evidence,
-        content_list=content_list)
+        content_list=content_list, zones=zone_by_id)
+    for csl_field, cand in seeded:
+        field_confidences[csl_field] = cand["_confidence"]
+        confidence_reasons[csl_field] = cand["_confidence_reason"]
     profile = evaluation_fields({"type": doc_type_to_csl_type(doc_type)}, "digital_pdf")
     profile |= {"publisher-place", "subtitle", "collection-title", "collection-number"}
     # A scanned title seeded from a lone heading with no printed subtitle
@@ -1534,6 +1784,7 @@ def _run_dspy_extraction(
         profile.discard("subtitle")
     carry: list[dict] = []
     last_values = None
+    model_proposals: dict[str, Any] = {}
     try:
         if lm is None:
             lm = get_llm_model(cfg.llm_model, temperature=0.1)
@@ -1548,7 +1799,7 @@ def _run_dspy_extraction(
                 if block["id"] in used or block["score"] < 0:
                     continue
                 available = remaining
-                if selection:
+                if located:
                     page = block["physical_page_index"]
                     available = min(remaining, page_allowance.setdefault(page, 12000 // max(page_count, 1)))
                 text = block["text"][:available]
@@ -1557,7 +1808,7 @@ def _run_dspy_extraction(
                 selected.append({**block, "text": text})
                 used.add(block["id"])
                 remaining -= len(text)
-                if selection:
+                if located:
                     page_allowance[page] -= len(text)
             if not selected:
                 break
@@ -1565,20 +1816,49 @@ def _run_dspy_extraction(
                 carry = selected[:4]
             with dspy.context(lm=lm):
                 result = predictor(source_blocks=selected, doc_type=doc_type,
-                                   bibliographic_pages=selection["selected_pages"] if selection else [],
+                                   bibliographic_pages=selection.get("selected_pages", []) if selection else [],
                                    missing_fields=[f for f in sorted(profile) if f not in accepted])
             values, citations = result.csl, result.field_evidence
             if not isinstance(values, dict) or not isinstance(citations, dict):
                 continue
+            # Every proposal is kept for arbitration: the final attempt may
+            # break out of the loop before it could be recorded as last_values.
+            for field in HOST_FIELDS:
+                if field in values:
+                    model_proposals[field] = values[field]
             for field in HOST_FIELDS:
                 if field in accepted or field not in values:
                     continue
-                if field == "type" and selection and values[field] != selection["document_type"]:
+                if (field == "type" and located
+                        and selection.get("document_type") not in (None, "unknown")
+                        and values[field] != selection["document_type"]):
+                    field_drops[field] = {"reason": "wrong_role",
+                                          "quote": _evidence_quote(citations.get(field))}
                     continue
-                supported = validate_block_evidence(field, values[field], citations.get(field), selected)
+                supported, reason = evaluate_block_evidence(
+                    field, values[field], citations.get(field), selected)
                 if supported:
+                    # Phase 3: a running head or contents line may not supply
+                    # a title or publisher while another zone could.
+                    if field in {"title", "publisher"}:
+                        chosen_zone = evidence_zone(supported, zone_by_id)
+                        if chosen_zone and has_zone_candidate(field, zone_by_id):
+                            field_drops[field] = {
+                                "reason": "wrong_role",
+                                "quote": _evidence_quote(citations.get(field))}
+                            logger.warning("Rejected %s from %s zone (another zone could supply it)",
+                                           field, chosen_zone)
+                            continue
                     accepted[field], evidence[field] = values[field], supported
+                    field_drops.pop(field, None)
+                    # Phase 6: score the rung the evidence gate actually used.
+                    field_confidences[field], confidence_reasons[field] = \
+                        confidence_for_evidence(field, supported, selected, zone_by_id)
                 else:
+                    # Never drop a field silently: the audit carries why and
+                    # the quote the model offered.
+                    field_drops[field] = {"reason": reason or "quote_mismatch",
+                                          "quote": _evidence_quote(citations.get(field))}
                     logger.warning("Rejected host field %s (%s doc_type=%s): %s",
                                    field, len(selected), doc_type,
                                    _rejection_reason(field, values[field], citations.get(field)))
@@ -1592,10 +1872,14 @@ def _run_dspy_extraction(
         logger.warning("DSPy host metadata extraction failed", exc_info=True)
     # Phase 2 §3.7 audit: deterministic seeds win over LLM proposals by
     # confidence; disagreements are recorded, never silently dropped.
+    # Phase 3 §Explicit arbitration: a deterministic seed wins a disagreement
+    # with the model, and both values are recorded so the choice is auditable.
+    # Agreement records nothing; a model-only field is kept as before.
+    field_conflicts: dict[str, dict[str, Any]] = {}
     if seeded:
         conflicts = []
         for csl_field, cand in seeded:
-            llm_value = (last_values or {}).get(csl_field)
+            llm_value = model_proposals.get(csl_field) or (last_values or {}).get(csl_field)
             if llm_value and not _equivalent_candidate_values(csl_field, cand["value"], llm_value):
                 conflicts.append({
                     "field": csl_field,
@@ -1603,11 +1887,54 @@ def _run_dspy_extraction(
                     "llm_value": llm_value,
                     "confidence": cand["confidence"],
                 })
+                field_conflicts[csl_field] = {
+                    "seed": accepted.get(csl_field, cand["value"]),
+                    "model": llm_value,
+                    "chosen": "seed",
+                }
         if conflicts:
             # Audit-only key (underscore namespace, never a CSL field).
             accepted["_metadata_conflicts"] = conflicts
+    # A title/publisher that had to come from a running head or a contents
+    # line (no other zone could supply it) is auditable, never silent.
+    for field in ("title", "publisher"):
+        if field in accepted:
+            fallback = evidence_zone(evidence.get(field), zone_by_id)
+            if fallback:
+                field_conflicts.setdefault(field, {})["fallback_zone"] = fallback
+    if field_conflicts:
+        accepted["_field_conflicts"] = field_conflicts
+    # Phase 7: only the fields still absent get one focused question each, and
+    # only when an LM is configured. `evaluated` is the field profile for this
+    # document type, so a journal article never re-asks for a publisher.
+    if lm is not None:
+        try:
+            _refine_empty_fields(
+                lm, accepted, evidence, field_drops, field_confidences,
+                confidence_reasons, field_source, blocks, zone_by_id,
+                {field for field in profile if field not in accepted})
+        except Exception:
+            logger.warning("Targeted field refinement failed", exc_info=True)
+    if field_source:
+        accepted["_field_source"] = field_source
     if accepted:
         accepted["_field_evidence"] = evidence
+    if field_drops:
+        accepted["_field_drops"] = field_drops
+    # Phase 6: every accepted field carries a confidence; every absent field
+    # already has a `_field_drops` reason. The queue is a report, not an action.
+    evaluated = {field for field in accepted if not field.startswith("_")}
+    for field in evaluated:
+        if field not in field_confidences:
+            # Only the locator's own type can be accepted without a resolved
+            # span; score it low so the review queue names it.
+            field_confidences[field] = CONFIDENCE_WEAK_SEED
+            confidence_reasons[field] = "unverified"
+    if evaluated:
+        accepted["_field_confidence"] = field_confidences
+        accepted["_review_queue"] = build_review_queue(
+            field_confidences, field_drops, threshold,
+            reasons=confidence_reasons, evidence=evidence)
     # OCR numeral repair is deterministic: the LLM transcribes printed
     # ordinals faithfully but keeps the OCR junk letter ('g9th' for '9th').
     if "title" in accepted or "subtitle" in accepted:
@@ -1619,6 +1946,7 @@ def _run_dspy_extraction(
         accepted["_bibliographic_selection"] = selection
         if not accepted.get("title"):
             accepted["_citation_status"] = "incomplete"
+    accepted["_doc_type_judgement"] = doc_type_judgement
     return accepted
 
 
@@ -1702,95 +2030,6 @@ def extract_metadata_with_dspy_priority(
         merged[key] = value
 
     merged["_extraction_method"] = "pattern+dspy_priority"
-    return merged
-
-
-# ---------------------------------------------------------------------------
-# Public API: reconciliation
-# ---------------------------------------------------------------------------
-
-def reconcile_grobid_and_dspy(
-    grobid_csl: dict[str, Any],
-    pattern_dspy_csl: dict[str, Any],
-    doc_type: str,
-    config: IngestionConfig | None = None,
-) -> dict[str, Any]:
-    """Merge GROBID metadata with pattern+DSPy metadata.
-
-    Strategy:
-    - For CJK content: prefer pattern/DSPy results (GROBID is weak on Chinese).
-    - For Western content: prefer GROBID.
-    """
-    # Fast path: if one source is empty, return the other
-    if not grobid_csl:
-        if pattern_dspy_csl:
-            pattern_dspy_csl.setdefault("_extraction_method", "pattern+dspy")
-        return pattern_dspy_csl or {}
-    if not pattern_dspy_csl:
-        grobid_csl["_extraction_method"] = "grobid"
-        return grobid_csl
-
-    # Detect whether content is CJK-dominant
-    cjk_content = False
-    for field in ("title", "abstract"):
-        val = pattern_dspy_csl.get(field) or grobid_csl.get(field) or ""
-        if isinstance(val, str) and _is_cjk_dominant(val):
-            cjk_content = True
-            break
-
-    # Choose primary / secondary source based on script
-    if cjk_content:
-        primary, secondary = pattern_dspy_csl, grobid_csl
-        primary_label, secondary_label = "pattern_dspy", "grobid"
-    else:
-        primary, secondary = grobid_csl, pattern_dspy_csl
-        primary_label, secondary_label = "grobid", "pattern_dspy"
-
-    merged: dict[str, Any] = {}
-    provenance: dict[str, str] = {}
-
-    simple_fields = [
-        "title", "publisher", "volume", "issue", "page", "DOI",
-        "abstract", "container-title", "ISSN", "keyword",
-    ]
-
-    for field in simple_fields:
-        p_val = primary.get(field)
-        s_val = secondary.get(field)
-
-        if p_val:
-            merged[field] = p_val
-            provenance[field] = primary_label
-        elif s_val:
-            merged[field] = s_val
-            provenance[field] = secondary_label
-
-    # Author — prefer primary; fall back to secondary; prefer longer list
-    p_authors = primary.get("author", [])
-    s_authors = secondary.get("author", [])
-    if p_authors:
-        merged["author"] = p_authors
-        provenance["author"] = primary_label
-    elif s_authors:
-        merged["author"] = s_authors
-        provenance["author"] = secondary_label
-    # If both have authors, prefer the one with more entries
-    if p_authors and s_authors and len(s_authors) > len(p_authors):
-        merged["author"] = s_authors
-        provenance["author"] = secondary_label
-
-    # Issued date
-    p_issued = primary.get("issued")
-    s_issued = secondary.get("issued")
-    if p_issued:
-        merged["issued"] = p_issued
-        provenance["issued"] = primary_label
-    elif s_issued:
-        merged["issued"] = s_issued
-        provenance["issued"] = secondary_label
-
-    merged["_extraction_method"] = "grobid+pattern_dspy"
-    merged["_provenance"] = provenance
     return merged
 
 
