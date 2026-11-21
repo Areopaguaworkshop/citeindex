@@ -25,7 +25,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from citeindex import __version__, ingest
-from citeindex.ingestion.models import IngestionConfig
+from citeindex.ingestion.models import IngestionConfig, OutputMode
 from citeindex.ingestion.url_security import validate_public_url
 
 from . import library, skills
@@ -182,10 +182,11 @@ def ingest_source(
     input_ref: str, verify: bool = False, deep: bool | None = None, llm: bool | None = None,
     pages: str | None = None, ocr_engine: Literal["mineru", "glm-ocr"] = "mineru",
     media_asr_backend: Literal["whisperx", "wenbi"] = "whisperx",
-    repair_proposal: str | None = None,
+    repair_proposal: str | None = None, output_mode: OutputMode = "full",
 ) -> dict[str, Any]:
     """Queue a PDF, Office, DjVu, media file or public URL for ingestion.
 
+    Set output_mode to csl_only for citation-only ingestion or csl_evidence to keep evidence blocks.
     Local sources and repair proposal files require a configured input root.
     Poll ingestion_status with the returned job ID. deep and llm default to
     the shared pipeline settings. Review citation evidence after completion.
@@ -197,7 +198,7 @@ def ingest_source(
         input_ref = str(resolve_input_file(input_ref))
     options = IngestionConfig(
         verify_citations=verify, pages=pages, ocr_engine=ocr_engine,
-        media_asr_backend=media_asr_backend,
+        media_asr_backend=media_asr_backend, output_mode=output_mode,
         repair_proposal=str(resolve_input_file(repair_proposal)) if repair_proposal else None,
     )
     if deep is not None:
@@ -219,12 +220,18 @@ def ingestion_status(job_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=CORPUS_WRITE)
-def ingest_url(url: str, verify: bool = False, deep: bool = False, llm: bool = False) -> dict[str, Any]:
-    """Ingest a public URL. If still running, poll the returned job ID."""
+def ingest_url(
+    url: str, verify: bool = False, deep: bool = False, llm: bool = False,
+    output_mode: OutputMode = "full",
+) -> dict[str, Any]:
+    """Ingest a public URL. Set output_mode to csl_only for citation-only ingestion.
+
+    If still running, poll the returned job ID.
+    """
     require_write("ingest_url")
     validate_public_url(url)
     job_id, future = _submit_ingestion(
-        url, IngestionConfig(use_pageindex=deep, use_llm_metadata=llm, verify_citations=verify),
+        url, IngestionConfig(use_pageindex=deep, use_llm_metadata=llm, verify_citations=verify, output_mode=output_mode),
     )
     return _job_result(job_id, future, server_config().max_url_seconds)
 

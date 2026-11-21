@@ -1,7 +1,7 @@
 import math
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal, get_args
 
 # How much of the artifact set a run persists.  The Merkle tree and nodes are
 # computed in every mode; only their persistence (and the optional stages that
@@ -9,7 +9,8 @@ from typing import Any
 # ``content_hash`` and ``merkle_root`` — is the same in all three modes.  A
 # scoped run (``pages`` set) is the exception: it builds neither and anchors
 # identity to the source file and page window instead.
-OUTPUT_MODES: tuple[str, ...] = ("full", "csl_evidence", "csl_only")
+OutputMode = Literal["full", "csl_evidence", "csl_only"]
+OUTPUT_MODES: tuple[str, ...] = get_args(OutputMode)
 
 # One comma-separated part of a page selection: "6", "1-6", or "-3".
 _PAGE_PART_RE = re.compile(r"^(?:\d+\s*-\s*\d+|-\s*\d+|\d+)$")
@@ -91,7 +92,7 @@ class IngestionConfig:
     doc_type_override: str | None = None
     use_layout_analysis: bool = True
     is_primary: bool = False
-    output_mode: str = "full"  # full, csl_evidence, csl_only
+    output_mode: OutputMode = "full"
     use_pageindex: bool = True  # default changed to True
     use_llm_metadata: bool = True  # MCP/offline runs can disable DSPy metadata extraction
     pageindex_model: str = "ollama/deepseek-v4.1-flash:cloud"

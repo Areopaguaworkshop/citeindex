@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added the `output_mode` option to MCP ingestion tools, including `csl_only` for citation-only records.
+
 ## v0.16.0 — 2026-11-18
 
 - Added MCP ingestion for PDFs, Office, DjVu, media, and URLs through the

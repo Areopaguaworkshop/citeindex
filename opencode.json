@@ -1,0 +1,6 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {"servers": {
+    "citeindex": {"type": "local", "command": ["uvx", "--from", "citeindex[mcp]", "citeindex-mcp", "--corpus-root", "./corpus"]}
+  }}
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "citeindex": {
+      "command": "uvx",
+      "args": ["--from", "citeindex[mcp]", "citeindex-mcp", "--corpus-root", "./corpus"]
+    }
+  }
+}

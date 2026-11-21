@@ -148,6 +148,7 @@ def test_ingest_source_jobs_use_shared_ingestion(corpus: Path, monkeypatch: pyte
 
     def fake_ingest(input_ref, corpus_root, config):
         assert input_ref == str(source)
+        assert config.output_mode == "csl_only"
         assert config.media_asr_backend == "wenbi"
         assert ready.wait(3)
         return {"status": "ok", "standardized_csl_json": {"id": "media-record"}}
@@ -156,9 +157,9 @@ def test_ingest_source_jobs_use_shared_ingestion(corpus: Path, monkeypatch: pyte
     with pytest.raises(PermissionError):
         server.ingest_source(str(corpus / "outside.pdf"))
     try:
-        result = server.ingest_source(str(source), media_asr_backend="wenbi")
+        result = server.ingest_source(str(source), media_asr_backend="wenbi", output_mode="csl_only")
         assert result["status"] in {"queued", "running"}
-        assert server.ingest_source(str(source), media_asr_backend="wenbi")["job_id"] == result["job_id"]
+        assert server.ingest_source(str(source), media_asr_backend="wenbi", output_mode="csl_only")["job_id"] == result["job_id"]
     finally:
         ready.set()
     job_id = result["job_id"]
@@ -199,12 +200,13 @@ def test_ingest_url_returns_record(corpus: Path, monkeypatch: pytest.MonkeyPatch
            "_citation_status": "source-supported"}
 
     def fake_ingest(url: str, corpus_root: str, config):
+        assert config.output_mode == "csl_only"
         return {"status": "ok", "document_path": str(Path(corpus_root) / "New_Article"),
                 "standardized_csl_json": csl, "sub_pipeline_outputs": {"csl_json": csl},
                 "citation_verification": {"status": "verified"}}
 
     monkeypatch.setattr(server, "ingest", fake_ingest)
-    result = server.ingest_url("https://example.org/article")
+    result = server.ingest_url("https://example.org/article", output_mode="csl_only")
     assert result["source_id"] == "src_new"
     assert result["citation_status"] == "source-supported"
     assert result["verification"] == {"status": "verified"}
@@ -224,6 +226,11 @@ def test_protocol_tools_and_resource(corpus: Path):
     async def run():
         tools = await server.mcp.list_tools()
         assert {"library_search", "citation_verify", "ingest_url"} <= {tool.name for tool in tools}
+        for tool in tools:
+            if tool.name in {"ingest_source", "ingest_url"}:
+                mode = tool.input_schema["properties"]["output_mode"]
+                assert mode["default"] == "full"
+                assert set(mode["enum"]) == {"full", "csl_evidence", "csl_only"}
         result = await server.mcp.call_tool("library_search", {"query": "demo"})
         assert result.structured_content["total"] == 1
         content = await server.mcp.read_resource("citeindex://skills/citation-verification")
